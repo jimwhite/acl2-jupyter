@@ -18,6 +18,7 @@ RUN apt-get update && \
         perl \
     && rm -rf /var/lib/apt/lists/* # remove cached apt files
 
+ARG ROSWELL_REPO_LATEST_RELEASE_COMMIT=0
 RUN git clone -b release https://github.com/roswell/roswell.git \
     && cd roswell \
     && sh bootstrap \
@@ -27,6 +28,7 @@ RUN git clone -b release https://github.com/roswell/roswell.git \
     && cd / && rm -rf /tmp/workdir \
     && ros setup
 
+ARG ACL2_REPO_LATEST_COMMIT=0
 RUN git clone --depth 1 https://github.com/acl2/acl2.git /root/acl2
 
 ARG ACL2_BUILD_OPTS=""

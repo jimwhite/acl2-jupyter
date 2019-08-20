@@ -28,7 +28,6 @@ RUN git clone -b release https://github.com/roswell/roswell.git \
     && ros setup
 
 RUN git clone --depth 1 https://github.com/acl2/acl2.git /root/acl2
-#RUN git clone --depth 1 -b 8.2 git://github.com/acl2-devel/acl2-devel.git /root/acl2
 
 ARG ACL2_BUILD_OPTS=""
 ARG ACL2_CERTIFY_OPTS="-j 4"
@@ -44,6 +43,15 @@ RUN apt-get remove -y \
     git \
     automake \
     autoconf \
+    && apt-get install -y --no-install-recommends make \
     && apt-get autoremove -y
+
+RUN mkdir -p /opt/acl2/bin \
+    && ln -s /root/acl2/saved_acl2 /opt/acl2/bin/acl2 \
+    && ln -s /root/acl2/books/build/cert.pl /opt/acl2/bin/cert.pl \
+    && ln -s /root/acl2/books/build/clean.pl /opt/acl2/bin/clean.pl \
+    && ln -s /root/acl2/books/build/critpath.pl /opt/acl2/bin/critpath.pl
+
+ENV PATH="/opt/acl2/bin:${PATH}"
 
 CMD ["/root/acl2/saved_acl2"]

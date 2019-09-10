@@ -55,5 +55,7 @@ RUN mkdir -p /opt/acl2/bin \
     && ln -s /root/acl2/books/build/critpath.pl /opt/acl2/bin/critpath.pl
 
 ENV PATH="/opt/acl2/bin:${PATH}"
+ENV ACL2_SYSTEM_BOOKS="/root/acl2/books"
+ENV ACL2="/root/acl2/saved_acl2"
 
 CMD ["/root/acl2/saved_acl2"]

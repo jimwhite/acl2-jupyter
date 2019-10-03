@@ -16,17 +16,13 @@ RUN apt-get update && \
         ca-certificates \
         libssl-dev \
         perl \
+        sbcl \
+        curl \
     && rm -rf /var/lib/apt/lists/* # remove cached apt files
 
-ARG ROSWELL_REPO_LATEST_RELEASE_COMMIT=0
-RUN git clone -b release https://github.com/roswell/roswell.git \
-    && cd roswell \
-    && sh bootstrap \
-    && ./configure \
-    && make \
-    && make install \
-    && cd / && rm -rf /tmp/workdir \
-    && ros setup
+RUN cd /tmp && \
+    curl -O https://beta.quicklisp.org/quicklisp.lisp && \
+    sbcl --load quicklisp.lisp --quit --eval '(quicklisp-quickstart:install)'
 
 ARG ACL2_REPO_LATEST_COMMIT=0
 RUN git clone --depth 1 https://github.com/acl2/acl2.git /root/acl2
@@ -36,7 +32,7 @@ ARG ACL2_CERTIFY_OPTS="-j 4"
 ARG ACL2_CERTIFY_TARGETS="basic"
 
 RUN cd /root/acl2 \
-    && make LISP="ros run" $ACL2_BUILD_OPTS \
+    && make LISP="sbcl" $ACL2_BUILD_OPTS \
     && cd books \
     && make $ACL2_CERTIFY_TARGETS ACL2=/root/acl2/saved_acl2 $ACL2_CERTIFY_OPTS
 

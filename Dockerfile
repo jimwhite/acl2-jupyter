@@ -4,6 +4,7 @@ FROM debian:stable-slim
 
 # openssl-dev is needed for Quicklisp
 # perl is needed for ACL2's certification scripts
+# wget is needed for downloading some files while building the docker image
 # The rest are needed for Roswell
 
 RUN apt-get update && \
@@ -15,17 +16,26 @@ RUN apt-get update && \
         libcurl4-openssl-dev \
         ca-certificates \
         libssl-dev \
+        wget \
         perl \
         sbcl \
         curl \
+        unzip \
     && rm -rf /var/lib/apt/lists/* # remove cached apt files
+
+ADD fix-quicklisp.pl /tmp/
 
 RUN cd /tmp && \
     curl -O https://beta.quicklisp.org/quicklisp.lisp && \
-    sbcl --load quicklisp.lisp --quit --eval '(quicklisp-quickstart:install)'
+    sbcl --load quicklisp.lisp --quit --eval '(quicklisp-quickstart:install)' &&\
+    perl /tmp/fix-quicklisp.pl
 
 ARG ACL2_REPO_LATEST_COMMIT=0
-RUN git clone --depth 1 https://github.com/acl2/acl2.git /root/acl2
+RUN wget "https://api.github.com/repos/acl2/acl2/zipball/${ACL2_COMMIT}" -O /tmp/acl2.zip -q &&\
+    unzip /tmp/acl2.zip -d /root/acl2_extract &&\
+    rm /tmp/acl2.zip &&\
+    mv /root/acl2_extract/$(ls /root/acl2_extract) /root/acl2 &&\
+    rmdir /root/acl2_extract
 
 ARG ACL2_BUILD_OPTS=""
 ARG ACL2_CERTIFY_OPTS="-j 4"
@@ -41,6 +51,7 @@ RUN apt-get remove -y \
     git \
     automake \
     autoconf \
+    unzip \
     && apt-get install -y --no-install-recommends make \
     && apt-get autoremove -y
 

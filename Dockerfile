@@ -39,7 +39,8 @@ ADD fix-quicklisp.pl /tmp/
 RUN cd /tmp && \
     curl -O https://beta.quicklisp.org/quicklisp.lisp && \
     sbcl --load quicklisp.lisp --quit --eval '(quicklisp-quickstart:install)' &&\
-    perl /tmp/fix-quicklisp.pl
+    perl /tmp/fix-quicklisp.pl &&\
+    sbcl --eval '(load "/root/quicklisp/setup.lisp")' --eval "(ql:add-to-init-file)"
 
 ARG ACL2_REPO_LATEST_COMMIT=0
 RUN wget "https://api.github.com/repos/acl2/acl2/zipball/${ACL2_COMMIT}" -O /tmp/acl2.zip -q &&\

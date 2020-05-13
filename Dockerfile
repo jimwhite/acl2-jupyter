@@ -26,21 +26,13 @@ RUN apt-get update && \
 
 RUN mkdir /root/sbcl \
     && cd /root \
-    && wget "http://prdownloads.sourceforge.net/sbcl/sbcl-2.0.2-source.tar.bz2?download" -O sbcl.tar.bz2 -q \
+    && wget "http://prdownloads.sourceforge.net/sbcl/sbcl-2.0.4-source.tar.bz2?download" -O sbcl.tar.bz2 -q \
     && tar -xjf sbcl.tar.bz2 \
     && rm sbcl.tar.bz2 \
-    && cd sbcl-2.0.2 \
+    && cd sbcl-2.0.4 \
     && sh make.sh --without-immobile-space --without-immobile-code --without-compact-instance-header --fancy --dynamic-space-size=4Gb \
     && apt-get remove -y sbcl \
     && sh install.sh
-
-ADD fix-quicklisp.pl /tmp/
-
-RUN cd /tmp && \
-    curl -O https://beta.quicklisp.org/quicklisp.lisp && \
-    sbcl --load quicklisp.lisp --quit --eval '(quicklisp-quickstart:install)' &&\
-    perl /tmp/fix-quicklisp.pl &&\
-    sbcl --eval '(load "/root/quicklisp/setup.lisp")' --eval "(ql:add-to-init-file)"
 
 ARG ACL2_REPO_LATEST_COMMIT=0
 ENV ACL2_SNAPSHOT_INFO="Git commit hash: ${ACL2_REPO_LATEST_COMMIT}"

@@ -37,7 +37,7 @@ RUN mkdir /root/sbcl \
 ARG ACL2_REPO_LATEST_COMMIT=0
 ENV ACL2_SNAPSHOT_INFO="Git commit hash: ${ACL2_REPO_LATEST_COMMIT}"
 RUN wget "https://api.github.com/repos/acl2/acl2/zipball/${ACL2_COMMIT}" -O /tmp/acl2.zip -q &&\
-    unzip /tmp/acl2.zip -d /root/acl2_extract &&\
+    unzip -qq /tmp/acl2.zip -d /root/acl2_extract &&\
     rm /tmp/acl2.zip &&\
     mv /root/acl2_extract/$(ls /root/acl2_extract) /root/acl2 &&\
     rmdir /root/acl2_extract

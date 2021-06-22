@@ -34,8 +34,8 @@ RUN mkdir /root/sbcl \
     && apt-get remove -y sbcl \
     && sh install.sh
 
-ARG ACL2_REPO_LATEST_COMMIT=0
-ENV ACL2_SNAPSHOT_INFO="Git commit hash: ${ACL2_REPO_LATEST_COMMIT}"
+ARG ACL2_COMMIT=0
+ENV ACL2_SNAPSHOT_INFO="Git commit hash: ${ACL2_COMMIT}"
 RUN wget "https://api.github.com/repos/acl2/acl2/zipball/${ACL2_COMMIT}" -O /tmp/acl2.zip -q &&\
     unzip -qq /tmp/acl2.zip -d /root/acl2_extract &&\
     rm /tmp/acl2.zip &&\

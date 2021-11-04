@@ -26,10 +26,10 @@ RUN apt-get update && \
 
 RUN mkdir /root/sbcl \
     && cd /root \
-    && wget "http://prdownloads.sourceforge.net/sbcl/sbcl-2.1.8-source.tar.bz2?download" -O sbcl.tar.bz2 -q \
+    && wget "http://prdownloads.sourceforge.net/sbcl/sbcl-2.1.10-source.tar.bz2?download" -O sbcl.tar.bz2 -q \
     && tar -xjf sbcl.tar.bz2 \
     && rm sbcl.tar.bz2 \
-    && cd sbcl-2.1.8 \
+    && cd sbcl-* \
     && sh make.sh --without-immobile-space --without-immobile-code --without-compact-instance-header --fancy --dynamic-space-size=4Gb \
     && apt-get remove -y sbcl \
     && sh install.sh

@@ -26,7 +26,7 @@ RUN apt-get update && \
 
 RUN mkdir /root/sbcl \
     && cd /root \
-    && wget "http://prdownloads.sourceforge.net/sbcl/sbcl-2.1.10-source.tar.bz2?download" -O sbcl.tar.bz2 -q \
+    && wget "http://prdownloads.sourceforge.net/sbcl/sbcl-2.1.11-source.tar.bz2?download" -O sbcl.tar.bz2 -q \
     && tar -xjf sbcl.tar.bz2 \
     && rm sbcl.tar.bz2 \
     && cd sbcl-* \

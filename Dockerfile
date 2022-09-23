@@ -47,6 +47,7 @@ RUN wget "https://api.github.com/repos/acl2/acl2/zipball/${ACL2_COMMIT}" -O /tmp
 ARG ACL2_BUILD_OPTS=""
 ARG ACL2_CERTIFY_OPTS="-j 4"
 ARG ACL2_CERTIFY_TARGETS="basic"
+ENV CERT_PL_RM_OUTFILES="1"
 
 RUN cd /root/acl2 \
     && make LISP="sbcl" $ACL2_BUILD_OPTS \

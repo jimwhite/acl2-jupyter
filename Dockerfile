@@ -14,27 +14,32 @@ RUN apt-get update && \
         git \
         automake \
         autoconf \
+        make \
         libcurl4-openssl-dev \
         ca-certificates \
         libssl-dev \
         wget \
         perl \
-        sbcl \
         zlib1g-dev \
         libzstd-dev \
         curl \
         unzip \
     && rm -rf /var/lib/apt/lists/* # remove cached apt files
 
-RUN mkdir /root/sbcl \
-    && cd /root \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends sbcl \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir /root/sbcl \
+    && cd /root/sbcl \
     && wget "http://prdownloads.sourceforge.net/sbcl/sbcl-2.2.8-source.tar.bz2?download" -O sbcl.tar.bz2 -q \
     && tar -xjf sbcl.tar.bz2 \
     && rm sbcl.tar.bz2 \
     && cd sbcl-* \
     && sh make.sh --without-immobile-space --without-immobile-code --without-compact-instance-header --fancy --dynamic-space-size=4Gb \
     && apt-get remove -y sbcl \
-    && sh install.sh
+    && sh install.sh \
+    && cd /root \
+    && rm -R /root/sbcl
 
 ARG ACL2_COMMIT=0
 ENV ACL2_SNAPSHOT_INFO="Git commit hash: ${ACL2_COMMIT}"
@@ -60,7 +65,6 @@ RUN apt-get remove -y \
     automake \
     autoconf \
     unzip \
-    && apt-get install -y --no-install-recommends make \
     && apt-get autoremove -y
 
 RUN mkdir -p /opt/acl2/bin \

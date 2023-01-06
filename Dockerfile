@@ -31,7 +31,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir /root/sbcl \
     && cd /root/sbcl \
-    && wget "http://prdownloads.sourceforge.net/sbcl/sbcl-2.2.11-source.tar.bz2?download" -O sbcl.tar.bz2 -q \
+    && wget "http://prdownloads.sourceforge.net/sbcl/sbcl-2.3.0-source.tar.bz2?download" -O sbcl.tar.bz2 -q \
     && tar -xjf sbcl.tar.bz2 \
     && rm sbcl.tar.bz2 \
     && cd sbcl-* \

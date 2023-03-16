@@ -1,4 +1,5 @@
 FROM debian:stable-slim
+LABEL org.opencontainers.image.source https://github.com/mister-walter/acl2-docker
 
 # Based on https://github.com/wshito/roswell-base
 
@@ -56,14 +57,6 @@ RUN cd /root/acl2 \
     && make LISP="sbcl" $ACL2_BUILD_OPTS \
     && cd books \
     && make $ACL2_CERTIFY_TARGETS ACL2=/root/acl2/saved_acl2 $ACL2_CERTIFY_OPTS
-
-RUN apt-get remove -y \
-    build-essential \
-    git \
-    automake \
-    autoconf \
-    unzip \
-    && apt-get autoremove -y
 
 RUN mkdir -p /opt/acl2/bin \
     && ln -s /root/acl2/saved_acl2 /opt/acl2/bin/acl2 \

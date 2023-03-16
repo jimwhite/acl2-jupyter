@@ -1,5 +1,8 @@
 # ACL2 Docker Image
 
+## Availability
+This image is available on Docker Hub under [`atwalter/acl2`](https://hub.docker.com/r/atwalter/acl2/) and on the GitHub Container Registry under [`mister-walter/acl2`](https://ghcr.io/mister-walter/acl2).
+
 ## Building
 
 The [`jq`](https://github.com/stedolan/jq) command-line tool bust be installed to use the provided `Makefile` to build an ACL2 Docker image. This tool is used to get the latest commit hash for the ACL2 repo from Github.

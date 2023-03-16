@@ -24,14 +24,12 @@ RUN apt-get update && \
         libzstd-dev \
         curl \
         unzip \
+        sbcl \
     && rm -rf /var/lib/apt/lists/* # remove cached apt files
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends sbcl \
-    && rm -rf /var/lib/apt/lists/* \
-    && mkdir /root/sbcl \
+RUN mkdir /root/sbcl \
     && cd /root/sbcl \
-    && wget "http://prdownloads.sourceforge.net/sbcl/sbcl-2.3.1-source.tar.bz2?download" -O sbcl.tar.bz2 -q \
+    && wget "http://prdownloads.sourceforge.net/sbcl/sbcl-2.3.2-source.tar.bz2?download" -O sbcl.tar.bz2 -q \
     && tar -xjf sbcl.tar.bz2 \
     && rm sbcl.tar.bz2 \
     && cd sbcl-* \

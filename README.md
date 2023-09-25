@@ -17,5 +17,8 @@ By default, certification is done with 4 parallel tasks. This can be changed by 
 
 By default, the "basic" book selection is certified. This can be changed by overriding the `ACL2_CERTIFY_TARGETS` build argument. Multiple targets can be provided to this argument if desired.
 
+## Updating the Gradescope image
+To update the Gradescope image, one should update the ACL2_COMMIT value in the make-gradescope.sh script to be the Git hash of the appropriate commit in the ACL2 repo. IMAGE_VERSION should also be modified to be some label appropriate for the semester.
+
 ## Why not Alpine?
 Currently `docker-slim` is the base image used because [this osicat bug](https://github.com/osicat/osicat/issues/19) causes the ACL2 build to fail due to Alpine Linux's use of `musl` instead of `glibc` for its libc implementation.

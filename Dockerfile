@@ -33,8 +33,8 @@ RUN apt-get update && \
 
 RUN mkdir /root/sbcl \
     && cd /root/sbcl \
-    && wget "http://prdownloads.sourceforge.net/sbcl/sbcl-2.3.9-source.tar.bz2?download" -O sbcl.tar.bz2 -q \
-    && echo "7d289a91232022028bf0128900c32bf00e4c5430c32f28af0594c8a592a98654  sbcl.tar.bz2" > sbcl.tar.bz2.sha256 \
+    && wget "http://prdownloads.sourceforge.net/sbcl/sbcl-2.4.0-source.tar.bz2?download" -O sbcl.tar.bz2 -q \
+    && echo "83d8b74f08d2254c59b9790bc1f669e09099457b884720ececbf45f4b46d1776  sbcl.tar.bz2" > sbcl.tar.bz2.sha256 \
     && sha256sum -c sbcl.tar.bz2.sha256 \
     && rm sbcl.tar.bz2.sha256 \
     && tar -xjf sbcl.tar.bz2 \

@@ -1,5 +1,5 @@
 FROM debian:stable-slim
-LABEL org.opencontainers.image.source https://github.com/mister-walter/acl2-docker
+LABEL org.opencontainers.image.source="https://github.com/mister-walter/acl2-docker"
 
 # This will have RW permission for the ACL2 directory.
 RUN groupadd acl2 && usermod -aG acl2 root && exit

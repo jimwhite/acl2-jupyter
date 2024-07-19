@@ -6,6 +6,21 @@ This image is available on Docker Hub under [`atwalter/acl2`](https://hub.docker
 ## M1/M2 Macs
 Be aware that the prebuilt Docker image is known to have issues on non-Intel macOS machines. It will work correctly if the image is rebuilt from scratch on an M1/M2 machine.
 
+## Usage
+
+By default, running this Docker image will drop you into the ACL2 REPL. The "basic" selection of books (per the ACL2 Makefile) has been certified, but you may want to certify additional books. One way to do this is to start a Docker container with a shell rather than ACL2; one can do that with a command like `docker run -it atwalter/acl2 /bin/bash`. Then, one can use [cert.pl](https://www.cs.utexas.edu/~moore/acl2/manuals/current/manual/?topic=BUILD____CERT.PL) to certify some books before starting ACL2. A full example is shown below, where lines prefixed by `$` indicate commands executed outside of Docker and `#` indicate commands executed inside of the Docker container.
+
+```
+$ docker run -it atwalter/acl2 /bin/bash
+# cert.pl ~/acl2/books/sorting/isort
+# acl2
+# ACL2 !> (include-book "sorting/isort" :dir :system)
+# ACL2 !> (isort '(5 2 1 4 3))
+(1 2 3 4 5)
+```
+
+Note that when the Docker container exits, the certificates for any books certified since the container was started will be lost. If you find yourself repeatedly needing to certify the same set of books, you can create a new Docker image based on this one. You can find an example Dockerfile in `examples/certified-books/Dockerfile`.
+
 ## Building
 
 The [`jq`](https://github.com/stedolan/jq) command-line tool bust be installed to use the provided `Makefile` to build an ACL2 Docker image. This tool is used to get the latest commit hash for the ACL2 repo from Github.

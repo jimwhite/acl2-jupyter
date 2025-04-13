@@ -68,6 +68,9 @@ RUN wget "https://api.github.com/repos/acl2/acl2/zipball/${ACL2_COMMIT}" -O /tmp
     && chmod g+s /root/acl2 \
     && find /root/acl2 -type d -print0 | xargs -0 chmod g+s
 
+# Needed for books/oslib/tests/copy to certify
+RUN touch /root/foo && chmod a-w /root/foo
+
 RUN mkdir -p /opt/acl2/bin \
     && ln -s /root/acl2/saved_acl2 /opt/acl2/bin/acl2 \
     && ln -s /root/acl2/books/build/cert.pl /opt/acl2/bin/cert.pl \

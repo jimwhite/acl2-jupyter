@@ -1,0 +1,18 @@
+;;; GUIX channel definition for ACL2 packages
+;;;
+;;; To use this channel, add it to your ~/.config/guix/channels.scm:
+;;;
+;;; (cons* (channel
+;;;          (name 'acl2-channel)
+;;;          (url "https://github.com/jimwhite/acl2-docker.git")
+;;;          (branch "main"))
+;;;        %default-channels)
+
+;; This file marks this repository as a GUIX channel
+(channel
+  (version 0)
+  (dependencies 
+   (channel
+    (name guix)
+    (url "https://git.savannah.gnu.org/git/guix.git")
+    (minimum-guix "1.4.0"))))

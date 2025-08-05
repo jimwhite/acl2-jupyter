@@ -4,6 +4,10 @@
 
 This image is available on Docker Hub under [`atwalter/acl2`](https://hub.docker.com/r/atwalter/acl2/) and on the GitHub Container Registry under [`mister-walter/acl2`](https://ghcr.io/mister-walter/acl2).
 
+## GUIX Package
+
+In addition to the Docker image, this repository now provides a GUIX package definition for ACL2 running on SBCL. See [`GUIX-README.md`](GUIX-README.md) for details on how to install and use ACL2 via GUIX.
+
 ## Apple Silicon Macs
 
 This image is now built and distributed as a multi-platform Docker image. This means that both a `linux/amd64` and `linux/arm64` version of the image are built, and Docker should automatically use the appropriate version for your computer's architecture.

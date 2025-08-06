@@ -13,8 +13,9 @@ This directory contains a GUIX package definition for ACL2 (A Computational Logi
 ### Method 1: Using the package definition directly
 
 ```bash
-# Install ACL2 using the local package definition
-guix install -f acl2.scm
+# build ACL2 using the local package definition
+guix build -f acl2.scm
+guix install acl2
 
 # Or create a development environment
 guix shell -f acl2.scm

@@ -16,37 +16,33 @@
   #:use-module (gnu packages lisp)
   #:use-module (gnu packages perl)
   #:use-module (gnu packages pkg-config)
-  #:use-module (gnu packages tls))
+  #:use-module (gnu packages tls)
+  #:use-module (gnu packages version-control))
 
 (define-public acl2
   (package
     (name "acl2")
     ;; Use a recent stable commit from ACL2 repository
     ;; This should be updated to match the latest stable release
-    (version "8.6-git")
+    (version "8.6")
     (source
      (origin
-       (method git-fetch)
-       (uri (git-reference
-             (url "https://github.com/acl2/acl2.git")
-         ;; NOTE: This commit hash should be updated to the latest stable ACL2 commit
-         ;; You can find the latest commit at: https://github.com/acl2/acl2/commits/master
-         ;; Use: guix hash -S git-recursive https://github.com/acl2/acl2.git <commit>
-         ;; to compute the corresponding sha256 hash
-         (commit "UPDATEME-use-latest-stable-commit-hash")))
-       (file-name (git-file-name name version))
-       (sha256
-        (base32
-         ;; NOTE: This hash needs to be computed for the actual commit using:
-         ;; guix hash -S git-recursive https://github.com/acl2/acl2.git <commit>
-         "UPDATEME-compute-hash-for-chosen-commit-using-guix-hash"))))
+              (method url-fetch)
+              (uri
+               (string-append "https://github.com/acl2-devel/acl2-devel/releases/download/"
+                              version
+                              "/acl2-"
+                              version ".tar.gz"))
+              (sha256
+               (base32
+                "0nahdm00wh2gs5lybx487s70y2qigriklv1k6jy51jysnryf9xh3"))))
     (build-system gnu-build-system)
     (native-inputs
      (list autoconf
            automake
            curl
            git
-           make
+           gnu-make
            perl
            pkg-config
            zlib
@@ -144,3 +140,5 @@ systems, together with a tool to help you prove properties of those models.
 This package builds ACL2 using SBCL (Steel Bank Common Lisp) as the underlying
 Lisp implementation and includes the basic certified books for immediate use.")
     (license license:bsd-3)))
+
+acl2

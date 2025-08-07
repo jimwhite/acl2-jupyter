@@ -83,7 +83,7 @@ ENV ACL2_SYSTEM_BOOKS="/root/acl2/books"
 ENV ACL2="/root/acl2/saved_acl2"
 
 # rlwrap is a 'readline wrapper', a small utility that uses the GNU Readline library to allow the editing of keyboard input for any command.
-# Run the image this way if you want keyboard edits to work.  
+# Run the image this way if you want keyboard edits to work.
 # Pass in TERM so rlwrap will have the right keybindings.
 # The --rm makes this container temporary.
 # Use --name acl2 instead if you want to keep it around.

@@ -1,5 +1,7 @@
-FROM debian:stable-slim
-LABEL org.opencontainers.image.source="https://github.com/mister-walter/acl2-docker"
+FROM quay.io/jupyter/pyspark-notebook:latest
+LABEL org.opencontainers.image.source="https://github.com/jimwhite/acl2-docker"
+
+USER root
 
 # This will have RW permission for the ACL2 directory.
 RUN groupadd acl2 && usermod -aG acl2 root && exit

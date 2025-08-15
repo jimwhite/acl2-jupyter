@@ -9,6 +9,7 @@ DOCKERHUB_IMAGE_NAME ?= atwalter/$(IMAGE_NAME)
 GHCR_IMAGE_NAME ?= ghcr.io/mister-walter/$(IMAGE_NAME)
 DOCKERFILE ?= Dockerfile
 PLATFORM ?= linux/amd64,linux/arm64
+# Book certification order is indeterminate with multiple jobs so we may get failures that need to be retried
 ACL2_CERT_JOBS ?= 4
 ACL2_CERTIFY_OPTS ?= "-j $(ACL2_CERT_JOBS)"
 

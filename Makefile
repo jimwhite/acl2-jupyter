@@ -1,6 +1,8 @@
 all: build
 .PHONY: all build push push-ghcr build-multiplatform build-multiplatform-ghcr
 
+# By default this builds the latest commit from source at https://github.com/acl2/acl2
+# TODO: Default/easy selection of released version.
 ACL2_COMMIT ?= $(shell curl --silent https://api.github.com/repos/acl2/acl2/commits/master | jq -r .sha)
 
 IMAGE_NAME ?= acl2-jupyter
@@ -18,7 +20,8 @@ BUILD_CACHE ?=
 # Some books like acl2s and centaur will sometimes fail certification when using multiple jobs.
 # Make sure Docker has enough memory allocated if using max jobs.
 ACL2_CERT_JOBS ?= $(shell nproc)
-# ACL2_CERT_JOBS ?= 4
+# `shell nproc` didn't work for multiplatform on MacOS.
+# ACL2_CERT_JOBS ?= 12
 # ACL2_CERTIFY_TARGETS="basic"
 # ACL2 Bridge is CCL-only so we don't really need anything other than basic.
 # ACL2_CERTIFY_TARGETS ?= regression acl2s centaur/bridge
@@ -49,4 +52,5 @@ push-ghcr:
 	$(DOCKER) push $(GHCR_IMAGE_NAME):$(IMAGE_VERSION)
 
 run:
+	# docker run -it -p 8888:8888 -v $(PWD):/home/jovyan/work acl2-jupyter:latest
 	$(DOCKER) run -it -p 8888:8888 -v $(PWD):/home/jovyan/work $(IMAGE_NAME):$(IMAGE_VERSION)

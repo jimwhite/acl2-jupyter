@@ -13,7 +13,10 @@ ENV HOME=/home/${USER}
 # https://github.com/yitzchak/common-lisp-jupyter/blob/2df55291592943851d013c66af920e7c150b1de2/Dockerfile#L5C8-L5C43
 
 # mkdir -p context/quicklisp/local-projects
+
+# sha256 of quicklisp.lisp = 4a7a5c2aebe0716417047854267397e24a44d0cce096127411e9ce9ccfeb2c17
 # wget -kL -P context https://beta.quicklisp.org/quicklisp.lisp
+
 # git submodule add https://github.com/yitzchak/archlinux-cl.git context/archlinux-cl
 # git submodule add https://github.com/yitzchak/common-lisp-jupyter.git context/quicklisp/local-projects/common-lisp-jupyter
 # git submodule add https://github.com/yitzchak/delta-vega.git context/quicklisp/local-projects/delta-vega

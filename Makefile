@@ -3,10 +3,12 @@ all: build
 
 ACL2_COMMIT ?= $(shell curl --silent https://api.github.com/repos/acl2/acl2/commits/master | jq -r .sha)
 
+IMAGE_NAME ?= acl2-jupyter
 IMAGE_VERSION ?= latest
-IMAGE_NAME ?= acl2
+
 DOCKERHUB_IMAGE_NAME ?= jimwhite/$(IMAGE_NAME)
 GHCR_IMAGE_NAME ?= ghcr.io/jimwhite/$(IMAGE_NAME)
+
 # Tried to use podman but had more flakiness in book certification, even with single job.
 DOCKER ?= docker
 DOCKERFILE ?= Dockerfile
@@ -23,6 +25,9 @@ ACL2_CERT_JOBS ?= $(shell nproc)
 ACL2_CERTIFY_TARGETS ?= basic
 ACL2_CERTIFY_OPTS ?= "-j $(ACL2_CERT_JOBS)"
 
+git-submodules:
+	git submodule update --init --recursive
+
 build-multiplatform:
 	$(DOCKER) buildx build --platform=$(PLATFORM) $(BUILD_CACHE) -t $(DOCKERHUB_IMAGE_NAME):$(IMAGE_VERSION) context \
 		--build-arg ACL2_COMMIT=$(ACL2_COMMIT) --build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" -f $(DOCKERFILE) --push
@@ -32,7 +37,7 @@ build-multiplatform-ghcr:
 		--build-arg ACL2_COMMIT=$(ACL2_COMMIT) --build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" -f $(DOCKERFILE) --push
 
 build:
-	$(DOCKER) build context $(BUILD_CACHE) -t $(IMAGE_NAME):$(IMAGE_VERSION) \
+	$(DOCKER) buildx build context $(BUILD_CACHE) -t $(IMAGE_NAME):$(IMAGE_VERSION) \
 		--build-arg ACL2_COMMIT=$(ACL2_COMMIT) --build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" -f $(DOCKERFILE)
 
 push:
@@ -42,3 +47,6 @@ push:
 push-ghcr:
 	$(DOCKER) image tag $(IMAGE_NAME):$(IMAGE_VERSION) $(GHCR_IMAGE_NAME):$(IMAGE_VERSION)
 	$(DOCKER) push $(GHCR_IMAGE_NAME):$(IMAGE_VERSION)
+
+run:
+	$(DOCKER) run -it -p 8888:8888 -v $(PWD):/home/jovyan/work $(IMAGE_NAME):$(IMAGE_VERSION)

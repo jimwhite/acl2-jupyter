@@ -10,3 +10,6 @@
 [submodule "context/quicklisp/local-projects/ngl-clj"]
 	path = context/quicklisp/local-projects/ngl-clj
 	url = https://github.com/yitzchak/ngl-clj.git
+[submodule "context/archlinux-cl"]
+	path = context/archlinux-cl
+	url = https://github.com/yitzchak/archlinux-cl.git

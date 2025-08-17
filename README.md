@@ -1,14 +1,36 @@
-# ACL2 Docker Image
+# ACL2-Jupyter Docker Image
 
 ## Availability
 
-This image is available on Docker Hub under [`atwalter/acl2`](https://hub.docker.com/r/atwalter/acl2/) and on the GitHub Container Registry under [`mister-walter/acl2`](https://ghcr.io/mister-walter/acl2).
+This image is available on the GitHub Container Registry at [`jimwhite/acl2-jupyter`](https://ghcr.io/jimwhite/acl2-jupyter).
+
+The project source is at https://github.com/jimwhite/acl2-jupyter.
+
+It built from https://github.com/mister-walter/acl2-docker by Andrew Walter, https://github.com/jimwhite/acl2-docker-images by Ruben Gamoa, and https://github.com/yitzchak/common-lisp-jupyter along with several other repos by Tarn Burton.
 
 ## Apple Silicon Macs
 
 This image is now built and distributed as a multi-platform Docker image. This means that both a `linux/amd64` and `linux/arm64` version of the image are built, and Docker should automatically use the appropriate version for your computer's architecture.
 
 ## Usage
+
+By default, running this Docker image will launch the JupyterLab server on port 8888.  
+
+```bash
+docker pull ghcr.io/jimwhite/acl2-jupyter:latest
+docker run -it -p 8888:8888 acl2-jupyter
+```
+
+This is WIP and the ACL2 Jupyter kernel is not working yet but Python3 and SBCL work fine.
+
+To get the CLI just supply the command.  For SBCL and ACL2 in a terminal you'll want `rlwrap`.
+
+```bash
+docker run -it acl2-jupyter rlwrap acl2
+```
+
+
+## Old Usage
 
 By default, running this Docker image will drop you into the ACL2 REPL. The "basic" selection of books (per the ACL2 Makefile) has been certified, but you may want to certify additional books. One way to do this is to start a Docker container with a shell rather than ACL2; one can do that with a command like `docker run -it atwalter/acl2 /bin/bash`. Then, one can use [cert.pl](https://www.cs.utexas.edu/~moore/acl2/manuals/current/manual/?topic=BUILD____CERT.PL) to certify some books before starting ACL2. A full example is shown below, where lines prefixed by `$` indicate commands executed outside of Docker and `#` indicate commands executed inside of the Docker container.
 
@@ -24,6 +46,8 @@ $ docker run -it atwalter/acl2 /bin/bash
 Note that when the Docker container exits, the certificates for any books certified since the container was started will be lost. If you find yourself repeatedly needing to certify the same set of books, you can create a new Docker image based on this one. You can find an example Dockerfile in `examples/certified-books/Dockerfile`.
 
 ## Building
+
+This project uses several submodules from https://github.com/yitzchak. Either use `git clone --recurse-submodules` or run `make git-submodules` to sync those files.
 
 The [`jq`](https://github.com/stedolan/jq) command-line tool must be installed to use the provided `Makefile` to build an ACL2 Docker image. This tool is used to get the latest commit hash for the ACL2 repo from Github.
 
@@ -48,3 +72,5 @@ To update the Gradescope image, one should update the ACL2_COMMIT value in the m
 ## Why not Alpine?
 
 Currently `docker-slim` is the base image used because [this osicat bug](https://github.com/osicat/osicat/issues/19) causes the ACL2 build to fail due to Alpine Linux's use of `musl` instead of `glibc` for its libc implementation.
+
+Actually acl2-jupyter is built on quay.io/jupyter/pyspark-notebook:latest because we want the JupyterLab stuff to work and we're gonna build SBCL and ACL2 the way we want anyhow.

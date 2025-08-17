@@ -18,7 +18,7 @@ By default, running this Docker image will launch the JupyterLab server on port 
 
 ```bash
 docker pull ghcr.io/jimwhite/acl2-jupyter:latest
-docker run -it -p 8888:8888 acl2-jupyter
+docker run -it -p 8888:8888 -v $(PWD):/home/jovyan/work acl2-jupyter
 ```
 
 This is WIP and the ACL2 Jupyter kernel is not working yet but Python3 and SBCL work fine.
@@ -26,7 +26,7 @@ This is WIP and the ACL2 Jupyter kernel is not working yet but Python3 and SBCL 
 To get the CLI just supply the command.  For SBCL and ACL2 in a terminal you'll want `rlwrap`.
 
 ```bash
-docker run -it acl2-jupyter rlwrap acl2
+docker run -it acl2-jupyter -v $(PWD):/home/jovyan/work rlwrap acl2
 ```
 
 

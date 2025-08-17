@@ -26,7 +26,7 @@ This is WIP and the ACL2 Jupyter kernel is not working yet but Python3 and SBCL 
 To get the CLI just supply the command.  For SBCL and ACL2 in a terminal you'll want `rlwrap`.
 
 ```bash
-docker run -it acl2-jupyter -v $(PWD):/home/jovyan/work rlwrap acl2
+docker run -it -v $(PWD):/home/jovyan/work acl2-jupyter rlwrap acl2
 ```
 
 

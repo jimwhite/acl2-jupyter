@@ -1,3 +1,12 @@
 [submodule "context/quicklisp/local-projects/common-lisp-jupyter"]
 	path = context/quicklisp/local-projects/common-lisp-jupyter
 	url = https://github.com/yitzchak/common-lisp-jupyter.git
+[submodule "context/quicklisp/local-projects/delta-vega"]
+	path = context/quicklisp/local-projects/delta-vega
+	url = https://github.com/yitzchak/delta-vega.git
+[submodule "context/quicklisp/local-projects/resizable-box-clj"]
+	path = context/quicklisp/local-projects/resizable-box-clj
+	url = https://github.com/yitzchak/resizable-box-clj.git
+[submodule "context/quicklisp/local-projects/ngl-clj"]
+	path = context/quicklisp/local-projects/ngl-clj
+	url = https://github.com/yitzchak/ngl-clj.git

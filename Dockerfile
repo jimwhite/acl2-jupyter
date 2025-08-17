@@ -7,6 +7,20 @@ ARG SBCL_SHA256=c4fafeb795699d5bcff9085091acc762dcf5e55f85235625f3d7aef12c89d1d3
 ARG USER=jovyan
 ENV HOME=/home/${USER}
 
+
+# https://github.com/yitzchak/archlinux-cl/blob/main/Dockerfile
+# https://yitzchak.github.io/common-lisp-jupyter/install
+# https://github.com/yitzchak/common-lisp-jupyter/blob/2df55291592943851d013c66af920e7c150b1de2/Dockerfile#L5C8-L5C43
+
+# mkdir -p context/quicklisp/local-projects
+# wget -kL -P context https://beta.quicklisp.org/quicklisp.lisp
+# git submodule add https://github.com/yitzchak/archlinux-cl.git context/archlinux-cl
+# git submodule add https://github.com/yitzchak/common-lisp-jupyter.git context/quicklisp/local-projects/common-lisp-jupyter
+# git submodule add https://github.com/yitzchak/delta-vega.git context/quicklisp/local-projects/delta-vega
+# git submodule add https://github.com/yitzchak/resizable-box-clj.git context/quicklisp/local-projects/resizable-box-clj
+# git submodule add https://github.com/yitzchak/ngl-clj.git context/quicklisp/local-projects/ngl-clj
+    
+
 USER root
 
 # This will have RW permission for the ACL2 directory.
@@ -70,6 +84,12 @@ RUN mkdir /root/sbcl \
     && cd /root \
     && rm -R /root/sbcl
 
+
+COPY archlinux-cl/asdf-add /usr/local/bin/asdf-add
+COPY archlinux-cl/make-rc /usr/local/bin/make-rc
+COPY archlinux-cl/lisp /usr/local/bin/lisp
+
+
 ARG ACL2_COMMIT=0
 ENV ACL2_SNAPSHOT_INFO="Git commit hash: ${ACL2_COMMIT}"
 ARG ACL2_BUILD_OPTS=""
@@ -114,9 +134,19 @@ RUN mkdir -p /opt/acl2/bin \
 # RUN mkdir -p ${HOME}/programming-tutorial
 # COPY acl2-notebooks/programming-tutorial/* ${HOME}/programming-tutorial/
 
+COPY quicklisp.lisp quicklisp.lisp
+COPY quicklisp quicklisp/
+
 RUN chown -R ${USER}:users ${HOME}
 
 USER ${USER}
+
+# Do we need these XDG vars?
+# ENV XDG_CONFIG_HOME=/root/.config
+# ENV XDG_DATA_HOME=/root/.local/share
+# ENV XDG_CACHE_HOME=/root/.cache
+
+# Definitely need this stuff:
 
 ENV PATH="/opt/acl2/bin:${PATH}"
 ENV ACL2_SYSTEM_BOOKS="${ACL2_HOME}/books"
@@ -124,10 +154,9 @@ ENV ACL2="/opt/acl2/bin/saved_acl2"
 
 WORKDIR ${HOME}
 
-# Use the ACL2 Jupyter bridge as entrypoint
-CMD ["rlwrap", "acl2"]
+RUN sbcl --non-interactive --load quicklisp.lisp \
+      --eval "(quicklisp-quickstart:install)" --eval "(ql-util:without-prompting (ql:add-to-init-file))" \
+      --eval "(ql:quickload '(:common-lisp-jupyter :cytoscape-clj :kekule-clj :resizable-box-clj :ngl-clj :delta-vega))" \
+      --eval "(clj:install :implementation t)"
 
-# https://yitzchak.github.io/common-lisp-jupyter/install
-# https://github.com/yitzchak/common-lisp-jupyter/blob/2df55291592943851d013c66af920e7c150b1de2/Dockerfile#L5C8-L5C43
-# cd ${HOME}/quicklisp/local-projects
-# git clone https://github.com/yitzchak/common-lisp-jupyter.git
+CMD ["jupyter", "lab"]

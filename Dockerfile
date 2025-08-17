@@ -1,5 +1,5 @@
 FROM quay.io/jupyter/pyspark-notebook:latest
-LABEL org.opencontainers.image.source="https://github.com/jimwhite/acl2-docker"
+LABEL org.opencontainers.image.source="https://github.com/jimwhite/acl2-jupyter"
 
 ARG SBCL_VERSION=2.5.7
 ARG SBCL_SHA256=c4fafeb795699d5bcff9085091acc762dcf5e55f85235625f3d7aef12c89d1d3
@@ -72,6 +72,7 @@ RUN apt-get update && \
         sbcl \
     && rm -rf /var/lib/apt/lists/* # remove cached apt files
 
+# This /root/sbcl dir seems to be a tmp so why in /root?
 RUN mkdir /root/sbcl \
     && cd /root/sbcl \
     && wget "http://prdownloads.sourceforge.net/sbcl/sbcl-${SBCL_VERSION}-source.tar.bz2?download" -O sbcl.tar.bz2 -q \
@@ -145,6 +146,8 @@ RUN chown -R ${USER}:users ${HOME}
 USER ${USER}
 
 # Do we need these XDG vars?
+# Yes: https://github.com/yitzchak/common-lisp-jupyter/blob/2df55291592943851d013c66af920e7c150b1de2/src/lab-extension/asdf.lisp#L12
+# ... #-(or darwin windows) (uiop:xdg-data-home)))
 # ENV XDG_CONFIG_HOME=/root/.config
 # ENV XDG_DATA_HOME=/root/.local/share
 # ENV XDG_CACHE_HOME=/root/.cache

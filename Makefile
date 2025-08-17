@@ -12,8 +12,11 @@ DOCKER ?= docker
 DOCKERFILE ?= Dockerfile
 PLATFORM ?= linux/amd64,linux/arm64
 BUILD_CACHE ?=
+# ACL2_CERT_JOBS ?= 1
 # Some books like acl2s and centaur will sometimes fail certification when using multiple jobs.
-ACL2_CERT_JOBS ?= 12
+# Make sure Docker has enough memory allocated if using max jobs.
+ACL2_CERT_JOBS ?= $(shell nproc)
+# ACL2_CERT_JOBS ?= 4
 # ACL2_CERTIFY_TARGETS="basic"
 # ACL2 Bridge is CCL-only so we don't really need anything other than basic.
 # ACL2_CERTIFY_TARGETS ?= regression acl2s centaur/bridge

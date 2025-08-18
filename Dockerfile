@@ -1,4 +1,6 @@
-FROM quay.io/jupyter/pyspark-notebook:latest
+ARG BASE_IMAGE=quay.io/jupyter/pyspark-notebook:latest
+
+FROM ${BASE_IMAGE}
 LABEL org.opencontainers.image.source="https://github.com/jimwhite/acl2-jupyter"
 
 ARG SBCL_VERSION=2.5.7

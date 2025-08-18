@@ -1,2 +1,7 @@
 (in-package "ACL2")
-(ql:quickload '(:common-lisp-jupyter))
+(defttag :common-lisp-jupyter)
+(progn!
+ (set-raw-mode t)
+ #+acl2-raw
+ (ql:quickload '(:common-lisp-jupyter))
+)

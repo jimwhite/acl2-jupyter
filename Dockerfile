@@ -132,6 +132,7 @@ RUN touch ${ACL2_HOME}/../foo && chmod a-w ${ACL2_HOME}/../foo && chown ${USER}:
 
 RUN mkdir -p /opt/acl2/bin \
     && ln -s ${ACL2_HOME}/saved_acl2 /opt/acl2/bin/acl2 \
+    && ln -s ${ACL2_HOME}/saved_acl2 /opt/acl2/bin/saved_acl2 \
     && ln -s ${ACL2_HOME}/books/build/cert.pl /opt/acl2/bin/cert.pl \
     && ln -s ${ACL2_HOME}/books/build/clean.pl /opt/acl2/bin/clean.pl \
     && ln -s ${ACL2_HOME}/books/build/critpath.pl /opt/acl2/bin/critpath.pl
@@ -166,5 +167,3 @@ RUN sbcl --non-interactive --load quicklisp.lisp \
       --eval "(quicklisp-quickstart:install)" --eval "(ql-util:without-prompting (ql:add-to-init-file))" \
       --eval "(ql:quickload '(:common-lisp-jupyter :cytoscape-clj :kekule-clj :resizable-box-clj :ngl-clj :delta-vega))" \
       --eval "(clj:install :implementation t)"
-
-CMD ["jupyter", "lab"]

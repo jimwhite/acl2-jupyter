@@ -1,0 +1,13 @@
+{
+    "name": "ACL2-Jupyter",
+    "image": "ghcr.io/jimwhite/acl2-jupyter:latest",
+    "forwardPorts": [
+        8888
+    ],
+    "portsAttributes": {
+        "8888": {
+            "label": "Jupyter",
+            "requireLocalPort": true
+        }
+    }
+}

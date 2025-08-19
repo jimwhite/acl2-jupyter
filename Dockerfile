@@ -10,6 +10,8 @@ ARG USER=jovyan
 ENV HOME=/home/${USER}
 
 
+# TODO: This stuff belongs in the Makefile and/or README.
+
 # https://github.com/yitzchak/archlinux-cl/blob/main/Dockerfile
 # https://yitzchak.github.io/common-lisp-jupyter/install
 # https://github.com/yitzchak/common-lisp-jupyter/blob/2df55291592943851d013c66af920e7c150b1de2/Dockerfile#L5C8-L5C43
@@ -19,6 +21,7 @@ ENV HOME=/home/${USER}
 # sha256 of quicklisp.lisp = 4a7a5c2aebe0716417047854267397e24a44d0cce096127411e9ce9ccfeb2c17
 # wget -kL -P context https://beta.quicklisp.org/quicklisp.lisp
 
+# git submodule add https://github.com/jimwhite/acl2-kernel.git context/acl2-kernel
 # git submodule add https://github.com/yitzchak/archlinux-cl.git context/archlinux-cl
 # git submodule add https://github.com/yitzchak/common-lisp-jupyter.git context/quicklisp/local-projects/common-lisp-jupyter
 # git submodule add https://github.com/yitzchak/delta-vega.git context/quicklisp/local-projects/delta-vega
@@ -49,6 +52,8 @@ RUN echo 'jovyan ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers && \
 #    6 | #include <zmq.h>
 # https://github.com/yitzchak/common-lisp-jupyter/blob/2df55291592943851d013c66af920e7c150b1de2/docs/install.md?plain=1#L18
 
+# pipx is for poetry install for acl2-kernel
+
 # retry might be used to retry book certification makefiles that are flaky.
 
 RUN apt-get update && \
@@ -69,6 +74,7 @@ RUN apt-get update && \
         libczmq-dev \
         curl \
         unzip \
+        pipx \
         rlwrap \
         retry \
         sbcl \
@@ -144,6 +150,8 @@ RUN mkdir -p /opt/acl2/bin \
 COPY quicklisp.lisp quicklisp.lisp
 COPY quicklisp quicklisp/
 
+COPY acl2-kernel acl2-kernel
+
 RUN chown -R ${USER}:users ${HOME}
 
 USER ${USER}
@@ -167,3 +175,10 @@ RUN sbcl --non-interactive --load quicklisp.lisp \
       --eval "(quicklisp-quickstart:install)" --eval "(ql-util:without-prompting (ql:add-to-init-file))" \
       --eval "(ql:quickload '(:common-lisp-jupyter :cytoscape-clj :kekule-clj :resizable-box-clj :ngl-clj :delta-vega))" \
       --eval "(clj:install :implementation t)"
+
+RUN cd acl2-kernel \
+    && pipx install poetry \
+    && ~/.local/bin/poetry build \
+    && pip install --no-cache ./dist/acl2_kernel-*.whl \
+    && rm ./dist/acl2_kernel-*.whl \
+    && python3 -m acl2_kernel.install --acl2="${ACL2}"

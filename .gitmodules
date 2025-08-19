@@ -13,3 +13,6 @@
 [submodule "context/archlinux-cl"]
 	path = context/archlinux-cl
 	url = https://github.com/yitzchak/archlinux-cl.git
+[submodule "context/acl2-kernel"]
+	path = context/acl2-kernel
+	url = https://github.com/jimwhite/acl2-kernel.git

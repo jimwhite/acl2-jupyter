@@ -1,0 +1,11 @@
+#!/bin/sh
+
+# Saved August 18, 2025  07:31:25
+
+export SBCL_HOME='/usr/local/lib/sbcl/'
+exec "/usr/local/bin/sbcl" --tls-limit 16384 --dynamic-space-size 32000 --control-stack-size 64 --disable-ldb \
+  --core "/home/acl2/saved_acl2.core" ${SBCL_USER_ARGS} --end-runtime-options \
+  --load /home/jovyan/quicklisp/setup.lisp \
+  --eval "(ql:quickload :common-lisp-jupyter :cytoscape-clj :kekule-clj :resizable-box-clj :ngl-clj :delta-vega)" \
+  --eval "(jupyter:run-kernel 'jupyter/common-lisp:kernel)" \
+  --eval '(acl2::sbcl-restart)' "$@"

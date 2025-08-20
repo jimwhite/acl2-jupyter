@@ -9,36 +9,17 @@ ARG SBCL_SHA256=c4fafeb795699d5bcff9085091acc762dcf5e55f85235625f3d7aef12c89d1d3
 ARG USER=jovyan
 ENV HOME=/home/${USER}
 
-
-# TODO: This stuff belongs in the Makefile and/or README.
-
-# https://github.com/yitzchak/archlinux-cl/blob/main/Dockerfile
-# https://yitzchak.github.io/common-lisp-jupyter/install
-# https://github.com/yitzchak/common-lisp-jupyter/blob/2df55291592943851d013c66af920e7c150b1de2/Dockerfile#L5C8-L5C43
-
-# mkdir -p context/quicklisp/local-projects
-
-# sha256 of quicklisp.lisp = 4a7a5c2aebe0716417047854267397e24a44d0cce096127411e9ce9ccfeb2c17
-# wget -kL -P context https://beta.quicklisp.org/quicklisp.lisp
-
-# git submodule add https://github.com/jimwhite/acl2-kernel.git context/acl2-kernel
-# git submodule add https://github.com/yitzchak/archlinux-cl.git context/archlinux-cl
-# git submodule add https://github.com/yitzchak/common-lisp-jupyter.git context/quicklisp/local-projects/common-lisp-jupyter
-# git submodule add https://github.com/yitzchak/delta-vega.git context/quicklisp/local-projects/delta-vega
-# git submodule add https://github.com/yitzchak/resizable-box-clj.git context/quicklisp/local-projects/resizable-box-clj
-# git submodule add https://github.com/yitzchak/ngl-clj.git context/quicklisp/local-projects/ngl-clj
-    
-
 USER root
 
 # This will have RW permission for the ACL2 directory.
-RUN echo 'jovyan ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers && \
-    adduser jovyan sudo && \
-    groupadd acl2 && \
-    usermod -aG acl2 ${USER} && \
-    mkdir /opt/acl2 && \
-    chown -R ${USER}:acl2 /opt/acl2
-    # && chmod -R g+rx /opt/acl2
+# `sudo` does not require a password.
+RUN echo 'jovyan ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers \
+    && adduser jovyan sudo \
+    && groupadd acl2 \
+    && usermod -aG acl2 ${USER} \
+    && mkdir /opt/acl2 \
+    && chown -R ${USER}:acl2 /opt/acl2 \
+    && chmod -R g+rx /opt/acl2
 
 # Based on https://github.com/wshito/roswell-base
 
@@ -119,6 +100,7 @@ RUN unzip -qq /tmp/acl2.zip -d /tmp/acl2_extract \
     && mv -T /tmp/acl2_extract/$(ls /tmp/acl2_extract) /tmp/acl2 \
     && mv -T /tmp/acl2 ${ACL2_HOME} \
     && cd ${ACL2_HOME} \
+    && rmdir /tmp/acl2_extract \
     && make LISP="sbcl" $ACL2_BUILD_OPTS \
     && cd ${ACL2_HOME}/books \
     && make ACL2=${ACL2_HOME}/saved_acl2 ${ACL2_CERTIFY_OPTS} ${ACL2_CERTIFY_TARGETS} \
@@ -130,8 +112,7 @@ RUN unzip -qq /tmp/acl2.zip -d /tmp/acl2_extract \
 
 # Don't remove the acl2 zipball.
 # This guards against future inaccessibility and speeds up Docker rebuilds
-# && rm /tmp/acl2.zip \
-# && rmdir /tmp/acl2_extract \
+# && rm /tmp/acl2.zip
 
 # # Needed for books/oslib/tests/copy to certify
 RUN touch ${ACL2_HOME}/../foo && chmod a-w ${ACL2_HOME}/../foo && chown ${USER}:acl2 ${ACL2_HOME}/../foo
@@ -168,8 +149,6 @@ USER ${USER}
 ENV PATH="/opt/acl2/bin:${PATH}"
 ENV ACL2_SYSTEM_BOOKS="${ACL2_HOME}/books"
 ENV ACL2="/opt/acl2/bin/saved_acl2"
-
-WORKDIR ${HOME}
 
 RUN sbcl --non-interactive --load quicklisp.lisp \
       --eval "(quicklisp-quickstart:install)" --eval "(ql-util:without-prompting (ql:add-to-init-file))" \

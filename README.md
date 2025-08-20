@@ -1,34 +1,62 @@
 # ACL2-Jupyter Docker Image
 
+Use *Applicative Common Lisp : A Computational Logic (ACL2)* in Jupyter notebooks running in a container with just a command or two. 
+
 ## Availability
 
 This image is available on the GitHub Container Registry at [`jimwhite/acl2-jupyter`](https://ghcr.io/jimwhite/acl2-jupyter).
 
 The project source is at https://github.com/jimwhite/acl2-jupyter.
 
-It built from https://github.com/mister-walter/acl2-docker by Andrew Walter, https://github.com/jimwhite/acl2-docker-images by Ruben Gamoa, and https://github.com/yitzchak/common-lisp-jupyter along with several other repos by Tarn Burton.
+## Credits
+This project is built from:
 
-## Apple Silicon Macs
+* https://github.com/mister-walter/acl2-docker by [Andrew Walter](https://www.atwalter.com/)
+* https://github.com/yitzchak/common-lisp-jupyter along with several other repos by [Tarn Burton](https://github.com/yitzchak)
+* https://github.com/tani/acl2-kernel by [Masaya Taniguchi](https://tani.cc/).
+* https://github.com/rubengamboa/acl2-docker-images by [Ruben Gamoa](https://www.uwyo.edu/eecs/faculty-staff/faculty/ruben-gamboa/index.html)
 
-This image is now built and distributed as a multi-platform Docker image. This means that both a `linux/amd64` and `linux/arm64` version of the image are built, and Docker should automatically use the appropriate version for your computer's architecture.
-
-## Usage
+## Using a prebuilt image locally
 
 By default, running this Docker image will launch the JupyterLab server on port 8888.  
 
 ```bash
 docker pull ghcr.io/jimwhite/acl2-jupyter:latest
-docker run -it -p 8888:8888 -v $(PWD):/home/jovyan/work acl2-jupyter
+docker run -it --rm -p 8888:8888 -v $(PWD):/home/jovyan/work acl2-jupyter
 ```
-
-This is WIP and the ACL2 Jupyter kernel is not working yet but Python3 and SBCL work fine.
 
 To get the CLI just supply the command.  For SBCL and ACL2 in a terminal you'll want `rlwrap`.
 
 ```bash
-docker run -it -v $(PWD):/home/jovyan/work acl2-jupyter rlwrap acl2
+docker run -it --rm -v $(PWD):/home/jovyan/work acl2-jupyter rlwrap acl2
 ```
 
+Using `sudo` within the container does not require a password.
+
+## Using a prebuilt image in a GitHub Codespace (free!)
+
+There is a [devcontainer.json](https://github.com/jimwhite/acl2-jupyter/blob/main/.devcontainer/devcontainer.json) file in the [repo](https://github.com/jimwhite/acl2-jupyter) so use the "New codespace" action in the "+" dropdown (middle of the buttons at top right of the repo page) then enter "jimwhite/acl2-jupyter" for "Select repository".  The smallest machine type is 2 CPUs which is plenty.
+
+<div style="display: flex; align-items: center;">
+  <img src="img/s13292008202025.png" alt="Dropdown: New codespace" width="320"/>
+  <img src="img/s13372308202025.png" alt="Select repository: jimwhite/acl2-jupyter" width="320"/>
+  <img src="img/s12161208202025.png" alt="Create new codespace" width="320"/>
+</div>
+
+It takes a few minutes to build the codespace because the image is fairly large (~10GB).  After it loads there may be some messages about various extensions loading or not and such but they can (probably) be ignored.  Choose "My codespaces" from the top left menu icon, then select the codespace for the "jimwhite/acl2-jupyter" repo, click "Show more actions for this codespace" (... menu at the right), and choose "Open in JupyterLab".
+
+<div style="display: flex; align-items: center;">
+  <img src="img/s13460808202025.png" alt="Building codespace..." width="320"/>
+<img src="img/s13565108202025.png" alt="My codespaces" width="320"/>
+<img src="img/s14021208202025.png" alt="Open in JupyterLab" width="320"/>
+</div>
+
+And success!
+![alt text](img/s14075208202025.png)
+
+The Free Tier on GitHub gets 120 CPU hours free: https://docs.github.com/en/billing/concepts/product-billing/github-codespaces.  The small dual CPU is $0.18 per hour after the free allocation.
+
+But GitHub recently deployed budgets for all billed services with $0 allocation by default; so if you get a "Billing Error" message, go to your billing settings and set appropriate quotas.
 
 ## Old Usage
 
@@ -47,13 +75,27 @@ Note that when the Docker container exits, the certificates for any books certif
 
 ## Building
 
+The [`jq`](https://github.com/stedolan/jq) command-line tool must be installed to use the provided `Makefile` to build an ACL2 Docker image. This tool is used to get the latest commit hash for the ACL2 repo from Github.
+
+So `which jq` and then `brew install jq` or `sudo apt-get install jq` as appropriate if not already installed.
+
 This project uses several submodules from https://github.com/yitzchak. Either use `git clone --recurse-submodules` or run `make git-submodules` to sync those files.
 
-The [`jq`](https://github.com/stedolan/jq) command-line tool must be installed to use the provided `Makefile` to build an ACL2 Docker image. This tool is used to get the latest commit hash for the ACL2 repo from Github.
+```bash
+git clone https://github.com/jimwhite/acl2-jupyter.git
+cd acl2-jupyter
+make git-submodules
+make
+make run
+```
+
+The `make run` will run sharing the CWD as above (`docker run -it -p 8888:8888 -v $(PWD):/home/jovyan/work acl2-jupyter`).
 
 To enable reproducible builds and reduce image size, image build time, and download bandwidth during a build, the Dockerfile expects that it is provided a `ACL2_REPO_LATEST_COMMIT` build argument. This argument must be set to a URL-safe string corresponding to a commit or tag format that Github understands. I have tested this with full commit hashes and short commit hashes (e.g. the first 8 characters of the full commit hash). As suggested above, the `build` make target will  use Github's API to determine the commit hash for the latest commit to the ACL2 repo and pass that to Docker when building an image.
 
 ### Multi-Platform Building
+
+This image is now built and distributed as a multi-platform Docker image. This means that both a `linux/amd64` and `linux/arm64` version of the image are built, and Docker should automatically use the appropriate version for your computer's architecture.
 
 The images on Docker Hub and the GitHub Container Registry are built using the `build-multiplatform` and `build-multiplatform-ghcr` make targets. To use these targets, you need to be using a Docker builder that is capable of building for both the `linux/amd64` and `linux/arm64` platforms. macOS' emulation for `linux/amd64` is at present insufficient, as it does not emulate FPU traps and ACL2 expects these traps to occur. So, I build the images using a Docker builder that consists of two nodes (an Apple Silicon machine and an x86-64 machine). The best information I've found on how to do this is in [this Medium post](https://medium.com/@spurin/using-docker-and-multiple-buildx-nodes-for-simultaneous-cross-platform-builds-cee0f797d939).
 
@@ -65,12 +107,33 @@ To provide additional arguments to the `make` command that will be used to build
 
 By default, the "basic" book selection is certified. This can be changed by overriding the `ACL2_CERTIFY_TARGETS` build argument. Multiple targets can be provided to this argument if desired.
 
-## Updating the Gradescope image
+## Sources
 
-To update the Gradescope image, one should update the ACL2_COMMIT value in the make-gradescope.sh script to be the Git hash of the appropriate commit in the ACL2 repo. IMAGE_VERSION should also be modified to be some label appropriate for the semester.
+```bash
+# sha256 of quicklisp.lisp = 4a7a5c2aebe0716417047854267397e24a44d0cce096127411e9ce9ccfeb2c17
+wget -kL -P context https://beta.quicklisp.org/quicklisp.lisp
 
-## Why not Alpine?
+git submodule add https://github.com/jimwhite/acl2-kernel.git context/acl2-kernel
+git submodule add https://github.com/yitzchak/archlinux-cl.git context/archlinux-cl
+git submodule add https://github.com/yitzchak/common-lisp-jupyter.git context/quicklisp/local-projects/common-lisp-jupyter
+git submodule add https://github.com/yitzchak/delta-vega.git context/quicklisp/local-projects/delta-vega
+git submodule add https://github.com/yitzchak/resizable-box-clj.git context/quicklisp/local-projects/resizable-box-clj
+git submodule add https://github.com/yitzchak/ngl-clj.git context/quicklisp/local-projects/ngl-clj
+```
 
-Currently `docker-slim` is the base image used because [this osicat bug](https://github.com/osicat/osicat/issues/19) causes the ACL2 build to fail due to Alpine Linux's use of `musl` instead of `glibc` for its libc implementation.
+* https://github.com/jimwhite/acl2-kernel.git context/acl2-kernel is forked from https://github.com/tani/acl2-kernel to bring it up-to-date.
 
-Actually acl2-jupyter is built on quay.io/jupyter/pyspark-notebook:latest because we want the JupyterLab stuff to work and we're gonna build SBCL and ACL2 the way we want anyhow.
+* https://github.com/jimwhite/acl2-jupyter itself is forked from https://github.com/mister-walter/acl2-docker (and was unforked due to a GitHub permissions confusion and can't be undone).
+
+### Base Image
+
+ACL2-Jupyter uses the [quay.io/jupyter/pyspark-notebook:latest](https://quay.io/repository/jupyter/pyspark-notebook) image (source https://github.com/jupyter/docker-stacks/tree/main/images/pyspark-notebook) because we want the JupyterLab stuff to work and we're gonna build SBCL and ACL2 the way we want anyhow.  Note that the DockerHub image is no longer updated.
+
+## Moar Information
+
+* *ACL2* home page at UT Austin https://www.cs.utexas.edu/~moore/acl2/acl2-doc.html
+* *Hyper-Card for ACL2 Programming* https://www.cs.utexas.edu/~moore/publications/hyper-card.html
+* *Using ACL2 To Teach Students About Software Testing* by Gamboa and Thoney ACL2 2022 https://arxiv.org/abs/2205.11695
+* *ACL2(ml): Machine-Learning for ACL2* by Heras and Komendantskaya ACL2 2014 https://arxiv.org/abs/1404.3034
+* https://github.com/s-expressionists - active community developing kewl new CL packages
+

@@ -1,6 +1,6 @@
 # ACL2-Jupyter Docker Image
 
-Use *Applicative Common Lisp : A Computational Logic (ACL2)* in Jupyter notebooks running in a container with just a command or two. 
+Use *A Computational Logic for Applicative Common Lisp (ACL2)* in Jupyter notebooks running in a container with just a command or two. 
 
 ## Availability
 
@@ -40,19 +40,22 @@ There is a [devcontainer.json](https://github.com/jimwhite/acl2-jupyter/blob/mai
 <div style="display: flex; align-items: center;">
   <img src="img/s13292008202025.png" alt="Dropdown: New codespace" width="320"/>
   <img src="img/s13372308202025.png" alt="Select repository: jimwhite/acl2-jupyter" width="320"/>
+</div>
+<div style="display: flex; align-items: center;">
   <img src="img/s12161208202025.png" alt="Create new codespace" width="320"/>
+  <img src="img/s13460808202025.png" alt="Building codespace..." width="320"/>
 </div>
 
 It takes a few minutes to build the codespace because the image is fairly large (~10GB).  After it loads there may be some messages about various extensions loading or not and such but they can (probably) be ignored.  Choose "My codespaces" from the top left menu icon, then select the codespace for the "jimwhite/acl2-jupyter" repo, click "Show more actions for this codespace" (... menu at the right), and choose "Open in JupyterLab".
 
 <div style="display: flex; align-items: center;">
-  <img src="img/s13460808202025.png" alt="Building codespace..." width="320"/>
 <img src="img/s13565108202025.png" alt="My codespaces" width="320"/>
 <img src="img/s14021208202025.png" alt="Open in JupyterLab" width="320"/>
 </div>
 
 And success!
-![alt text](img/s14075208202025.png)
+
+![JupyterLab with Python3, ACL2, and SBCL](img/s14075208202025.png)
 
 The Free Tier on GitHub gets 120 CPU hours free: https://docs.github.com/en/billing/concepts/product-billing/github-codespaces.  The small dual CPU is $0.18 per hour after the free allocation.
 
@@ -133,6 +136,10 @@ ACL2-Jupyter uses the [quay.io/jupyter/pyspark-notebook:latest](https://quay.io/
 
 * *ACL2* home page at UT Austin https://www.cs.utexas.edu/~moore/acl2/acl2-doc.html
 * *Hyper-Card for ACL2 Programming* https://www.cs.utexas.edu/~moore/publications/hyper-card.html
+* *ACL2 versions of (some of) the Top 100 Theorems List* https://acl2.org/doc/?topic=ACL2____100-THEOREMS
+* *ACL2 Documentation* https://acl2.org/doc
+* *ACL2 Community* https://acl2.org/doc/?topic=ACL2____COMMUNITY
+* *ACL2 Workshops*  https://acl2.org/doc/?topic=ACL2____WORKSHOPS
 * *Using ACL2 To Teach Students About Software Testing* by Gamboa and Thoney ACL2 2022 https://arxiv.org/abs/2205.11695
 * *ACL2(ml): Machine-Learning for ACL2* by Heras and Komendantskaya ACL2 2014 https://arxiv.org/abs/1404.3034
 * https://github.com/s-expressionists - active community developing kewl new CL packages

@@ -140,6 +140,8 @@ ACL2-Jupyter uses the [quay.io/jupyter/pyspark-notebook:latest](https://quay.io/
 * *ACL2 Documentation* https://acl2.org/doc
 * *ACL2 Community* https://acl2.org/doc/?topic=ACL2____COMMUNITY
 * *ACL2 Workshops*  https://acl2.org/doc/?topic=ACL2____WORKSHOPS
+* *An ACL2(s) Interface to Z3* by Walter and Manolios, ACL2 2025 https://cgi.cse.unsw.edu.au/~eptcs/paper.cgi?ACL2in2025.10
+* *Advances in ACL2 Proof Debugging Tools* by Kaufman and Moore, ACL2 2023 https://cgi.cse.unsw.edu.au/~eptcs/paper.cgi?ACL22023.7
 * *Using ACL2 To Teach Students About Software Testing* by Gamboa and Thoney ACL2 2022 https://arxiv.org/abs/2205.11695
 * *ACL2(ml): Machine-Learning for ACL2* by Heras and Komendantskaya ACL2 2014 https://arxiv.org/abs/1404.3034
 * https://github.com/s-expressionists - active community developing kewl new CL packages

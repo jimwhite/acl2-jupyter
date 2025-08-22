@@ -130,7 +130,9 @@ git submodule add https://github.com/yitzchak/ngl-clj.git context/quicklisp/loca
 
 ### Base Image
 
-ACL2-Jupyter uses the [quay.io/jupyter/pyspark-notebook:latest](https://quay.io/repository/jupyter/pyspark-notebook) image (source https://github.com/jupyter/docker-stacks/tree/main/images/pyspark-notebook) because we want the JupyterLab stuff to work and we're gonna build SBCL and ACL2 the way we want anyhow.  Note that the DockerHub image is no longer updated.
+ACL2-Jupyter uses the [quay.io/jupyter/minimal-notebook:latest](https://quay.io/repository/jupyter/minimal-notebook) image (source https://github.com/jupyter/docker-stacks/tree/main/images/minimal-notebook) because we want the JupyterLab stuff to work and we're gonna build SBCL and ACL2 the way we want anyhow.  Note that the DockerHub image is no longer updated.
+
+For a full complement of Python support including PySpark use BASE_IMAGE=[quay.io/jupyter/pyspark-notebook:latest](https://quay.io/repository/jupyter/pyspark-notebook) image (source https://github.com/jupyter/docker-stacks/tree/main/images/pyspark-notebook)
 
 ## Moar Information
 

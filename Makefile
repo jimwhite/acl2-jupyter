@@ -5,6 +5,7 @@ all: build
 # TODO: Default/easy selection of released version.
 ACL2_COMMIT ?= $(shell curl --silent https://api.github.com/repos/acl2/acl2/commits/master | jq -r .sha)
 
+BASE_IMAGE ?= quay.io/jupyter/minimal-notebook:latest
 IMAGE_NAME ?= acl2-jupyter
 IMAGE_VERSION ?= latest
 
@@ -49,14 +50,17 @@ git-submodules:
 
 build-multiplatform:
 	$(DOCKER) buildx build --platform=$(PLATFORM) $(BUILD_CACHE) -t $(DOCKERHUB_IMAGE_NAME):$(IMAGE_VERSION) context \
+		--build-arg BASE_IMAGE=$(BASE_IMAGE) \
 		--build-arg ACL2_COMMIT=$(ACL2_COMMIT) --build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" -f $(DOCKERFILE) --push
 
 build-multiplatform-ghcr:
 	$(DOCKER) buildx build --platform=$(PLATFORM) $(BUILD_CACHE) -t $(GHCR_IMAGE_NAME):$(IMAGE_VERSION) context \
+		--build-arg BASE_IMAGE=$(BASE_IMAGE) \
 		--build-arg ACL2_COMMIT=$(ACL2_COMMIT) --build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" -f $(DOCKERFILE) --push
 
 build:
 	$(DOCKER) buildx build context $(BUILD_CACHE) -t $(IMAGE_NAME):$(IMAGE_VERSION) \
+		--build-arg BASE_IMAGE=$(BASE_IMAGE) \
 		--build-arg ACL2_COMMIT=$(ACL2_COMMIT) --build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" -f $(DOCKERFILE)
 
 push:

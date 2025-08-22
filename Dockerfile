@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=quay.io/jupyter/pyspark-notebook:latest
+ARG BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest
 
 FROM ${BASE_IMAGE}
 LABEL org.opencontainers.image.source="https://github.com/jimwhite/acl2-jupyter"
@@ -108,13 +108,10 @@ RUN unzip -qq /tmp/acl2.zip -d /tmp/acl2_extract \
     && chmod -R g+rwx ${ACL2_HOME} \
     && chmod g+s ${ACL2_HOME} \
     && chown -R ${USER}:acl2 ${ACL2_HOME} \
-    && find ${ACL2_HOME} -type d -print0 | xargs -0 chmod g+s
+    && find ${ACL2_HOME} -type d -print0 | xargs -0 chmod g+s \
+    && rm /tmp/acl2.zip
 
-# Don't remove the acl2 zipball.
-# This guards against future inaccessibility and speeds up Docker rebuilds
-# && rm /tmp/acl2.zip
-
-# # Needed for books/oslib/tests/copy to certify
+# Needed for books/oslib/tests/copy to certify
 RUN touch ${ACL2_HOME}/../foo && chmod a-w ${ACL2_HOME}/../foo && chown ${USER}:acl2 ${ACL2_HOME}/../foo
 
 RUN mkdir -p /opt/acl2/bin \

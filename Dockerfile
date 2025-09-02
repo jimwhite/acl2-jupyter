@@ -35,6 +35,9 @@ RUN echo 'jovyan ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers \
 
 # pipx is for poetry install for acl2-kernel
 
+# nodejs and npm for Claude Code
+# TODO: Switch to Deno.
+
 # retry might be used to retry book certification makefiles that are flaky.
 
 RUN apt-get update && \
@@ -55,6 +58,7 @@ RUN apt-get update && \
         libczmq-dev \
         curl \
         unzip \
+        nodejs npm \
         pipx \
         rlwrap \
         retry \
@@ -77,6 +81,18 @@ RUN mkdir /root/sbcl \
     && cd /root \
     && rm -R /root/sbcl
 
+# Include Z3
+# Do we get everything with pip? pip install z3-solver
+RUN mkdir /root/z3 \
+    && cd /root/z3 \
+    && wget "https://github.com/Z3Prover/z3/archive/refs/tags/z3-4.8.12.tar.gz" -O z3.tar.gz -q \
+    && tar -xzf z3.tar.gz --strip-components=1 \
+    && ./configure \
+    && cd build \
+    && make -j$(nproc) \
+    && make install \
+    && cd /root \
+    && rm -R /root/z3
 
 COPY archlinux-cl/asdf-add /usr/local/bin/asdf-add
 COPY archlinux-cl/make-rc /usr/local/bin/make-rc

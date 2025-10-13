@@ -120,8 +120,8 @@ RUN unzip -qq /tmp/acl2.zip -d /tmp/acl2_extract \
 
 # ACL2 build step - make.log will be created in ${ACL2_HOME}/make.log
 # Use a subshell to ensure make.log is preserved even on failure
-RUN cd ${ACL2_HOME} && \
-    (make LISP="sbcl" $ACL2_BUILD_OPTS 2>&1 | tee make.log; exit ${PIPESTATUS[0]})
+# Explicitly use bash for PIPESTATUS support
+RUN bash -c 'cd ${ACL2_HOME} && (make LISP="sbcl" $ACL2_BUILD_OPTS 2>&1 | tee make.log; exit ${PIPESTATUS[0]})'
 
 # Create an intermediate stage for potential log export
 # This stage exists so we can export logs even if later steps fail

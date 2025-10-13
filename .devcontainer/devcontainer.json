@@ -9,5 +9,9 @@
             "label": "Jupyter",
             "requireLocalPort": true
         }
+    },
+    "containerEnv": {
+        "JUPYTER_PORT": "8888",
+        "RESTARTABLE": "yes"
     }
 }

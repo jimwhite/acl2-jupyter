@@ -78,12 +78,14 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'release' }}
             type=sha,prefix={{branch}}-
 
-      - name: Build and push Docker image
+      - name: Build and push Docker image for amd64
+        id: build-amd64
         uses: docker/build-push-action@v5
+        continue-on-error: true
         with:
           context: context
           file: Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.docker-meta.outputs.tags }}
           labels: ${{ steps.docker-meta.outputs.labels }}
@@ -94,6 +96,170 @@ jobs:
             ACL2_CERTIFY_TARGETS=basic
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Extract build logs on amd64 failure
+        if: steps.build-amd64.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          echo "amd64 build failed, attempting to extract make.log..."
+          mkdir -p ./build-logs/amd64
+          
+          # Try to extract make.log from the acl2-logs stage
+          # This stage exists even if later stages fail
+          set +e
+          docker buildx build context --file Dockerfile \
+            --platform linux/amd64 \
+            --build-arg BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest \
+            --build-arg ACL2_COMMIT=${{ steps.acl2-commit.outputs.commit }} \
+            --build-arg ACL2_CERTIFY_OPTS="-j 6" \
+            --build-arg ACL2_CERTIFY_TARGETS=basic \
+            --target acl2-logs \
+            --output type=local,dest=./build-logs/amd64 \
+            --cache-from type=gha \
+            2>&1
+          EXTRACT_EXIT_CODE=$?
+          set -e
+          
+          if [ $EXTRACT_EXIT_CODE -ne 0 ]; then
+            echo "Log extraction exited with code: $EXTRACT_EXIT_CODE"
+          fi
+          
+          # Check if we got the log file
+          if [ -f "./build-logs/amd64/make.log" ]; then
+            echo "Successfully extracted make.log for amd64"
+            ls -lh ./build-logs/amd64/make.log
+          else
+            echo "Could not extract make.log for amd64"
+            echo "Build may have failed before make.log was created." > ./build-logs/amd64/extraction-failed.txt
+            echo "Extraction exit code: $EXTRACT_EXIT_CODE" >> ./build-logs/amd64/extraction-failed.txt
+          fi
+          
+          # Create a failure report
+          {
+            echo "# ACL2 Docker Build Failure Report - amd64"
+            echo "Build failed at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+            echo ""
+            echo "## Build Information"
+            echo "- Platform: linux/amd64"
+            echo "- ACL2 Commit: ${{ steps.acl2-commit.outputs.commit }}"
+            echo "- Image Tag: ${{ steps.meta.outputs.tag }}"
+            echo ""
+            if [ -f "./build-logs/amd64/make.log" ]; then
+              echo "## Status"
+              echo "✓ make.log successfully extracted and included in this artifact"
+            else
+              echo "## Status"  
+              echo "✗ make.log could not be extracted (build may have failed before ACL2 compilation)"
+              echo "✗ Log extraction exit code: $EXTRACT_EXIT_CODE"
+              echo ""
+              echo "Check the GitHub Actions build logs for detailed error messages."
+            fi
+          } > ./build-logs/amd64/README.md
+
+      - name: Upload amd64 build logs
+        if: steps.build-amd64.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: acl2-build-logs-amd64
+          path: ./build-logs/amd64/
+          if-no-files-found: ignore
+
+      - name: Build and push Docker image for arm64
+        id: build-arm64
+        uses: docker/build-push-action@v5
+        continue-on-error: true
+        with:
+          context: context
+          file: Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.docker-meta.outputs.tags }}
+          labels: ${{ steps.docker-meta.outputs.labels }}
+          build-args: |
+            BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest
+            ACL2_COMMIT=${{ steps.acl2-commit.outputs.commit }}
+            ACL2_CERTIFY_OPTS=-j 6
+            ACL2_CERTIFY_TARGETS=basic
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Extract build logs on arm64 failure
+        if: steps.build-arm64.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          echo "arm64 build failed, attempting to extract make.log..."
+          mkdir -p ./build-logs/arm64
+          
+          # Try to extract make.log from the acl2-logs stage
+          # This stage exists even if later stages fail
+          set +e
+          docker buildx build context --file Dockerfile \
+            --platform linux/arm64 \
+            --build-arg BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest \
+            --build-arg ACL2_COMMIT=${{ steps.acl2-commit.outputs.commit }} \
+            --build-arg ACL2_CERTIFY_OPTS="-j 6" \
+            --build-arg ACL2_CERTIFY_TARGETS=basic \
+            --target acl2-logs \
+            --output type=local,dest=./build-logs/arm64 \
+            --cache-from type=gha \
+            2>&1
+          EXTRACT_EXIT_CODE=$?
+          set -e
+          
+          if [ $EXTRACT_EXIT_CODE -ne 0 ]; then
+            echo "Log extraction exited with code: $EXTRACT_EXIT_CODE"
+          fi
+          
+          # Check if we got the log file
+          if [ -f "./build-logs/arm64/make.log" ]; then
+            echo "Successfully extracted make.log for arm64"
+            ls -lh ./build-logs/arm64/make.log
+          else
+            echo "Could not extract make.log for arm64"
+            echo "Build may have failed before make.log was created." > ./build-logs/arm64/extraction-failed.txt
+            echo "Extraction exit code: $EXTRACT_EXIT_CODE" >> ./build-logs/arm64/extraction-failed.txt
+          fi
+          
+          # Create a failure report
+          {
+            echo "# ACL2 Docker Build Failure Report - arm64"
+            echo "Build failed at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+            echo ""
+            echo "## Build Information"
+            echo "- Platform: linux/arm64"
+            echo "- ACL2 Commit: ${{ steps.acl2-commit.outputs.commit }}"
+            echo "- Image Tag: ${{ steps.meta.outputs.tag }}"
+            echo ""
+            if [ -f "./build-logs/arm64/make.log" ]; then
+              echo "## Status"
+              echo "✓ make.log successfully extracted and included in this artifact"
+            else
+              echo "## Status"
+              echo "✗ make.log could not be extracted (build may have failed before ACL2 compilation)"
+              echo "✗ Log extraction exit code: $EXTRACT_EXIT_CODE"
+              echo ""
+              echo "Check the GitHub Actions build logs for detailed error messages."
+            fi
+          } > ./build-logs/arm64/README.md
+
+      - name: Upload arm64 build logs
+        if: steps.build-arm64.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: acl2-build-logs-arm64
+          path: ./build-logs/arm64/
+          if-no-files-found: ignore
+
+      - name: Check build results
+        run: |
+          if [[ "${{ steps.build-amd64.outcome }}" == "failure" || "${{ steps.build-arm64.outcome }}" == "failure" ]]; then
+            echo "One or more builds failed!"
+            echo "amd64 build: ${{ steps.build-amd64.outcome }}"
+            echo "arm64 build: ${{ steps.build-arm64.outcome }}"
+            exit 1
+          fi
 
       - name: Generate build summary
         run: |

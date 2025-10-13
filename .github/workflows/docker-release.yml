@@ -107,6 +107,7 @@ jobs:
           
           # Try to extract make.log from the acl2-logs stage
           # This stage exists even if later stages fail
+          set +e
           docker buildx build context --file Dockerfile \
             --platform linux/amd64 \
             --build-arg BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest \
@@ -116,7 +117,13 @@ jobs:
             --target acl2-logs \
             --output type=local,dest=./build-logs/amd64 \
             --cache-from type=gha \
-            2>&1 || true
+            2>&1
+          EXTRACT_EXIT_CODE=$?
+          set -e
+          
+          if [ $EXTRACT_EXIT_CODE -ne 0 ]; then
+            echo "Log extraction exited with code: $EXTRACT_EXIT_CODE"
+          fi
           
           # Check if we got the log file
           if [ -f "./build-logs/amd64/make.log" ]; then
@@ -125,6 +132,7 @@ jobs:
           else
             echo "Could not extract make.log for amd64"
             echo "Build may have failed before make.log was created." > ./build-logs/amd64/extraction-failed.txt
+            echo "Extraction exit code: $EXTRACT_EXIT_CODE" >> ./build-logs/amd64/extraction-failed.txt
           fi
           
           # Create a failure report
@@ -143,6 +151,7 @@ jobs:
             else
               echo "## Status"  
               echo "✗ make.log could not be extracted (build may have failed before ACL2 compilation)"
+              echo "✗ Log extraction exit code: $EXTRACT_EXIT_CODE"
               echo ""
               echo "Check the GitHub Actions build logs for detailed error messages."
             fi
@@ -185,6 +194,7 @@ jobs:
           
           # Try to extract make.log from the acl2-logs stage
           # This stage exists even if later stages fail
+          set +e
           docker buildx build context --file Dockerfile \
             --platform linux/arm64 \
             --build-arg BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest \
@@ -194,7 +204,13 @@ jobs:
             --target acl2-logs \
             --output type=local,dest=./build-logs/arm64 \
             --cache-from type=gha \
-            2>&1 || true
+            2>&1
+          EXTRACT_EXIT_CODE=$?
+          set -e
+          
+          if [ $EXTRACT_EXIT_CODE -ne 0 ]; then
+            echo "Log extraction exited with code: $EXTRACT_EXIT_CODE"
+          fi
           
           # Check if we got the log file
           if [ -f "./build-logs/arm64/make.log" ]; then
@@ -203,6 +219,7 @@ jobs:
           else
             echo "Could not extract make.log for arm64"
             echo "Build may have failed before make.log was created." > ./build-logs/arm64/extraction-failed.txt
+            echo "Extraction exit code: $EXTRACT_EXIT_CODE" >> ./build-logs/arm64/extraction-failed.txt
           fi
           
           # Create a failure report
@@ -221,6 +238,7 @@ jobs:
             else
               echo "## Status"
               echo "✗ make.log could not be extracted (build may have failed before ACL2 compilation)"
+              echo "✗ Log extraction exit code: $EXTRACT_EXIT_CODE"
               echo ""
               echo "Check the GitHub Actions build logs for detailed error messages."
             fi

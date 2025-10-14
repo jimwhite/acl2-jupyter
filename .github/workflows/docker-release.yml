@@ -96,6 +96,7 @@ jobs:
             ACL2_CERTIFY_TARGETS=basic
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: false
 
       - name: Extract make.log on build failure
         if: steps.docker-build.outcome == 'failure'

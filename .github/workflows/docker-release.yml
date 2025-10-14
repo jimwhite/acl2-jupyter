@@ -79,9 +79,7 @@ jobs:
             type=sha,prefix={{branch}}-
 
       - name: Build and push Docker image
-        id: docker-build
         uses: docker/build-push-action@v5
-        continue-on-error: true
         with:
           context: context
           file: Dockerfile
@@ -96,50 +94,6 @@ jobs:
             ACL2_CERTIFY_TARGETS=basic
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          provenance: false
-
-      - name: Extract make.log on build failure
-        if: steps.docker-build.outcome == 'failure'
-        continue-on-error: true
-        run: |
-          echo "Build failed, attempting to extract make.log..."
-          mkdir -p ./build-logs
-          
-          # Try to extract make.log from the failed build
-          # Build without push to get the container locally
-          docker buildx build context --file Dockerfile \
-            --platform linux/amd64 \
-            --build-arg BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest \
-            --build-arg ACL2_COMMIT=${{ steps.acl2-commit.outputs.commit }} \
-            --build-arg ACL2_CERTIFY_OPTS="-j 6" \
-            --build-arg ACL2_CERTIFY_TARGETS=basic \
-            --load \
-            -t acl2-build-test 2>&1 || true
-          
-          # Try to copy make.log from the container if it exists
-          CONTAINER_ID=$(docker create acl2-build-test 2>/dev/null || echo "")
-          if [ -n "$CONTAINER_ID" ]; then
-            docker cp $CONTAINER_ID:/home/acl2/make.log ./build-logs/make.log 2>/dev/null || \
-              echo "Could not extract make.log - file may not exist" > ./build-logs/extraction-failed.txt
-            docker rm $CONTAINER_ID
-          else
-            echo "Could not create container from failed build" > ./build-logs/extraction-failed.txt
-          fi
-
-      - name: Upload build logs
-        if: steps.docker-build.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: acl2-build-logs
-          path: ./build-logs/
-          if-no-files-found: ignore
-
-      - name: Check build result
-        run: |
-          if [[ "${{ steps.docker-build.outcome }}" == "failure" ]]; then
-            echo "Docker build failed!"
-            exit 1
-          fi
 
       - name: Generate build summary
         run: |

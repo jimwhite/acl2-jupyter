@@ -117,7 +117,7 @@ RUN unzip -qq /tmp/acl2.zip -d /tmp/acl2_extract \
     && mv -T /tmp/acl2 ${ACL2_HOME} \
     && cd ${ACL2_HOME} \
     && rmdir /tmp/acl2_extract \
-    && (set -o pipefail && make LISP="sbcl" $ACL2_BUILD_OPTS 2>&1 | tee make.log) \
+    && make LISP="sbcl" $ACL2_BUILD_OPTS \
     && cd ${ACL2_HOME}/books \
     && make ACL2=${ACL2_HOME}/saved_acl2 ${ACL2_CERTIFY_OPTS} ${ACL2_CERTIFY_TARGETS} \
     && chmod go+rx /home \
@@ -125,7 +125,7 @@ RUN unzip -qq /tmp/acl2.zip -d /tmp/acl2_extract \
     && chmod g+s ${ACL2_HOME} \
     && chown -R ${USER}:acl2 ${ACL2_HOME} \
     && find ${ACL2_HOME} -type d -print0 | xargs -0 chmod g+s \
-    && rm -f /tmp/acl2.zip
+    && rm /tmp/acl2.zip
 
 # Needed for books/oslib/tests/copy to certify
 RUN touch ${ACL2_HOME}/../foo && chmod a-w ${ACL2_HOME}/../foo && chown ${USER}:acl2 ${ACL2_HOME}/../foo

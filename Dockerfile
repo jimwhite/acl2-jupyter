@@ -117,7 +117,7 @@ RUN unzip -qq /tmp/acl2.zip -d /tmp/acl2_extract \
     && mv -T /tmp/acl2 ${ACL2_HOME} \
     && cd ${ACL2_HOME} \
     && rmdir /tmp/acl2_extract \
-    && make LISP="sbcl" $ACL2_BUILD_OPTS \
+    && (make LISP="sbcl" $ACL2_BUILD_OPTS || (tail -500 make.log && false)) \
     && cd ${ACL2_HOME}/books \
     && make ACL2=${ACL2_HOME}/saved_acl2 ${ACL2_CERTIFY_OPTS} ${ACL2_CERTIFY_TARGETS} \
     && chmod go+rx /home \

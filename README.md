@@ -98,7 +98,7 @@ To enable reproducible builds and reduce image size, image build time, and downl
 
 ### Multi-Platform Building
 
-This image is built and distributed as a multi-platform Docker image. This means that both a `linux/amd64` and `linux/arm64` version of the image are built, and Docker should automatically use the appropriate version for your computer's architecture.
+This image is distributed as a multi-platform Docker image with both `linux/amd64` and `linux/arm64` versions available. Docker will automatically use the appropriate version for your computer's architecture.
 
 Due to ACL2's requirement for real FPU exception handling, which QEMU doesn't fully support, the build process is split:
 

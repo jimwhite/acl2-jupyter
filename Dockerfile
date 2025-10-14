@@ -1,6 +1,6 @@
 ARG BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest
 
-FROM ${BASE_IMAGE} AS builder
+FROM ${BASE_IMAGE}
 LABEL org.opencontainers.image.source="https://github.com/jimwhite/acl2-jupyter"
 
 ARG SBCL_VERSION=2.5.7
@@ -116,27 +116,11 @@ RUN unzip -qq /tmp/acl2.zip -d /tmp/acl2_extract \
     && mv -T /tmp/acl2_extract/$(ls /tmp/acl2_extract) /tmp/acl2 \
     && mv -T /tmp/acl2 ${ACL2_HOME} \
     && cd ${ACL2_HOME} \
-    && rmdir /tmp/acl2_extract
-
-# ACL2 build step - make.log will be created in ${ACL2_HOME}/make.log
-# Use a subshell to ensure make.log is preserved even on failure
-# Explicitly use bash for PIPESTATUS support
-RUN bash -c 'cd ${ACL2_HOME} && (make LISP="sbcl" $ACL2_BUILD_OPTS 2>&1 | tee make.log; exit ${PIPESTATUS[0]})'
-
-# Create an intermediate stage for potential log export
-# This stage exists so we can export logs even if later steps fail
-FROM scratch AS acl2-logs
-COPY --from=builder /home/acl2/make.log /make.log
-
-# Continue building from the builder stage
-FROM builder AS final
-
-# Books certification step
-RUN cd ${ACL2_HOME}/books \
-    && make ACL2=${ACL2_HOME}/saved_acl2 ${ACL2_CERTIFY_OPTS} ${ACL2_CERTIFY_TARGETS}
-
-# Set permissions and cleanup
-RUN chmod go+rx /home \
+    && rmdir /tmp/acl2_extract \
+    && (set -o pipefail && make LISP="sbcl" $ACL2_BUILD_OPTS 2>&1 | tee make.log) \
+    && cd ${ACL2_HOME}/books \
+    && make ACL2=${ACL2_HOME}/saved_acl2 ${ACL2_CERTIFY_OPTS} ${ACL2_CERTIFY_TARGETS} \
+    && chmod go+rx /home \
     && chmod -R g+rwx ${ACL2_HOME} \
     && chmod g+s ${ACL2_HOME} \
     && chown -R ${USER}:acl2 ${ACL2_HOME} \

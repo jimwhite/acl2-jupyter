@@ -6,7 +6,7 @@ LABEL org.opencontainers.image.description="A Docker image for running the ACL2 
 LABEL org.opencontainers.image.licenses=MIT
 
 ARG SBCL_VERSION=2.5.9
-ARG SBCL_SHA256=b1e060d5781380ed6b5c8749abcd5ade839f8cfbff0bd5c2adf0c2c313c6af7f
+ARG SBCL_SHA256=d1b19022d43dc493edc972b6e59c93ae6684c963fdd2b413b0965e18cd6bd1e2
 
 ARG USER=jovyan
 ENV HOME=/home/${USER}

@@ -2,9 +2,11 @@ ARG BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest
 
 FROM ${BASE_IMAGE}
 LABEL org.opencontainers.image.source="https://github.com/jimwhite/acl2-jupyter"
+LABEL org.opencontainers.image.description="A Docker image for running the ACL2 theorem proving system and books in JupyterLab"
+LABEL org.opencontainers.image.licenses=MIT
 
-ARG SBCL_VERSION=2.5.7
-ARG SBCL_SHA256=c4fafeb795699d5bcff9085091acc762dcf5e55f85235625f3d7aef12c89d1d3
+ARG SBCL_VERSION=2.5.9
+ARG SBCL_SHA256=b1e060d5781380ed6b5c8749abcd5ade839f8cfbff0bd5c2adf0c2c313c6af7f
 
 ARG USER=jovyan
 ENV HOME=/home/${USER}

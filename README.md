@@ -138,10 +138,11 @@ The workflow automatically:
 - Creates a multiarch manifest combining both platform images
 - Tags images appropriately (latest, version tags, semver patterns)
 
-The build process consists of three jobs:
+The build process consists of four jobs:
 1. **Prepare**: Gets ACL2 commit hash and determines image tags
-2. **Build AMD64/ARM64**: Parallel builds on native runners for each platform
-3. **Create Manifest**: Combines both platform images into a multiarch manifest
+2. **Build AMD64**: Builds on native x86-64 runner
+3. **Build ARM64**: Builds on native arm64 runner (parallel with AMD64)
+4. **Create Manifest**: Combines both platform images into a multiarch manifest
 
 To manually trigger a build, go to the Actions tab, select "Build and Push Docker Image to GHCR", and click "Run workflow".
 

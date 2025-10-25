@@ -100,47 +100,50 @@ To enable reproducible builds and reduce image size, image build time, and downl
 
 This image is distributed as a multi-platform Docker image with both `linux/amd64` and `linux/arm64` versions available. Docker will automatically use the appropriate version for your computer's architecture.
 
-Due to ACL2's requirement for real FPU exception handling, which QEMU doesn't fully support, the build process is split:
+As of the latest update, both architectures are now built automatically using GitHub Actions with native runners:
 
-- **amd64 images**: Built automatically by GitHub Actions (see below)
-- **arm64 images**: Must be built locally on Apple Silicon Mac hardware
+- **amd64 images**: Built on standard `ubuntu-latest` runners
+- **arm64 images**: Built on GitHub's new `ubuntu-24.04-arm64` native arm64 runners
 
-#### Building arm64 Images Locally on Mac
+This approach avoids the limitations of QEMU emulation, which doesn't support the full FPU exception handling required by ACL2.
 
-To build and push arm64 images on your Mac, use these make targets:
+#### Building Locally
+
+You can still build images locally if needed. The Makefile supports building for your native architecture:
 
 ```bash
-# For Docker Hub
-make build-arm64 IMAGE_VERSION=your-tag
+# Build for your native architecture
+make build IMAGE_VERSION=your-tag
 
 # For GitHub Container Registry
-make build-arm64-ghcr IMAGE_VERSION=your-tag
+make build-ghcr IMAGE_VERSION=your-tag
 ```
 
-These targets will build only the `linux/arm64` platform and push directly to the registry.
-
-#### Building Both Platforms
-
-The `build-multiplatform` and `build-multiplatform-ghcr` make targets can still be used if you have a Docker builder that consists of two nodes (an Apple Silicon machine and an x86-64 machine). The best information on how to set this up is in [this Medium post](https://medium.com/@spurin/using-docker-and-multiple-buildx-nodes-for-simultaneous-cross-platform-builds-cee0f797d939).
+For multiarch builds, you would need a Docker builder with multiple native nodes.
 
 ### Automated Releases via GitHub Actions
 
-This repository includes a GitHub Actions workflow that automatically builds and publishes Docker images to the GitHub Container Registry (ghcr.io). The workflow is triggered by:
+This repository includes a GitHub Actions workflow that automatically builds and publishes multiarch Docker images to the GitHub Container Registry (ghcr.io). The workflow is triggered by:
 
 - **Release publications**: When a new release/tag is published, the image is built and tagged with the release version
 - **Pushes to main**: When changes to the Dockerfile, context files, or the workflow itself are pushed to the main branch
 - **Manual trigger**: The workflow can be manually triggered from the Actions tab with a custom tag
 
 The workflow automatically:
-- Builds for `linux/amd64` platform only (arm64 must be built locally on Mac hardware)
+- Builds for both `linux/amd64` and `linux/arm64` platforms using native runners
+- Uses GitHub's `ubuntu-24.04-arm64` runners for arm64 builds (no QEMU emulation)
 - Retrieves the latest ACL2 commit hash from the upstream repository
 - Authenticates with ghcr.io using GitHub's built-in `GITHUB_TOKEN`
-- Uses GitHub Actions cache to speed up subsequent builds
-- Tags images appropriately (latest, version tags, commit SHAs)
+- Uses GitHub Actions cache to speed up subsequent builds (separate caches per architecture)
+- Creates a multiarch manifest combining both platform images
+- Tags images appropriately (latest, version tags, semver patterns)
+
+The build process consists of three jobs:
+1. **Prepare**: Gets ACL2 commit hash and determines image tags
+2. **Build AMD64/ARM64**: Parallel builds on native runners for each platform
+3. **Create Manifest**: Combines both platform images into a multiarch manifest
 
 To manually trigger a build, go to the Actions tab, select "Build and Push Docker Image to GHCR", and click "Run workflow".
-
-**Note**: Due to ACL2's FPU requirements, arm64 images cannot be built using QEMU emulation in GitHub Actions. They must be built locally on Apple Silicon Mac hardware using the `build-arm64` or `build-arm64-ghcr` make targets.
 
 ## Notes
 

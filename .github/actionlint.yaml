@@ -1,0 +1,6 @@
+self-hosted-runner:
+  # GitHub's new arm64 hosted runners (announced Jan 16, 2025)
+  # https://github.blog/changelog/2025-01-16-linux-arm64-hosted-runners-now-available-for-free-in-public-repositories-public-preview/
+  labels:
+    - ubuntu-24.04-arm64
+    - ubuntu-latest-arm64

@@ -10,9 +10,9 @@ on:
         required: false
         default: 'latest'
       acl2_tag:
-        description: 'ACL2 release tag (e.g., v8.6) or empty for master'
+        description: 'ACL2 release tag (e.g., v8.6) or latest for master'
         required: false
-        default: ''
+        default: 'latest'
   push:
     branches:
       - main
@@ -41,31 +41,34 @@ jobs:
       - name: Get ACL2 commit hash
         id: acl2-commit
         run: |
-          if [[ -n "${{ github.event.inputs.acl2_tag }}" ]]; then
-            ACL2_REF="${{ github.event.inputs.acl2_tag }}"
-            echo "Using ACL2 tag: ${ACL2_REF}"
+          ACL2_REF="${{ github.event.inputs.acl2_tag }}"
+          
+          if [[ "$ACL2_REF" == "latest" ]]; then
+            # Get the latest commit from master branch
+            echo "Using ACL2 latest (master branch)"
+            HTTP_RESPONSE=$(curl --silent --write-out "\n%{http_code}" https://api.github.com/repos/acl2/acl2/commits/master)
+            HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -n1)
+            RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
+            
+            if [[ "$HTTP_CODE" != "200" ]]; then
+              echo "Error: GitHub API request failed with HTTP status $HTTP_CODE"
+              exit 1
+            fi
+            
+            ACL2_COMMIT=$(echo "$RESPONSE_BODY" | jq -r .sha)
           else
-            ACL2_REF="master"
-            echo "Using ACL2 ref: ${ACL2_REF}"
-          fi
-          
-          # Fetch commit hash for the specified ref (tag or branch)
-          HTTP_RESPONSE=$(curl --silent --write-out "\n%{http_code}" https://api.github.com/repos/acl2/acl2/commits/${ACL2_REF})
-          HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -n1)
-          RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
-          
-          if [[ "$HTTP_CODE" != "200" ]]; then
-            echo "Error: GitHub API request failed with HTTP status $HTTP_CODE for ref '${ACL2_REF}'"
-            exit 1
-          fi
-          
-          ACL2_COMMIT=$(echo "$RESPONSE_BODY" | jq -r .sha)
-          
-          # Validate that we got a valid SHA-1 commit hash (40 hexadecimal characters)
-          if [[ ! "$ACL2_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "Error: Failed to fetch valid commit hash for ACL2 ref '${ACL2_REF}'"
-            echo "This may indicate the tag/branch doesn't exist or there was an API error."
-            exit 1
+            # Get the commit for the specified release tag
+            echo "Using ACL2 release tag: ${ACL2_REF}"
+            HTTP_RESPONSE=$(curl --silent --write-out "\n%{http_code}" https://api.github.com/repos/acl2/acl2/releases/tags/${ACL2_REF})
+            HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -n1)
+            RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
+            
+            if [[ "$HTTP_CODE" != "200" ]]; then
+              echo "Error: GitHub API request failed with HTTP status $HTTP_CODE for release tag '${ACL2_REF}'"
+              exit 1
+            fi
+            
+            ACL2_COMMIT=$(echo "$RESPONSE_BODY" | jq -r .target_commitish)
           fi
           
           echo "commit=$ACL2_COMMIT" >> $GITHUB_OUTPUT
@@ -78,9 +81,10 @@ jobs:
           if [[ "${{ github.event_name }}" == "release" ]]; then
             TAG="${{ github.event.release.tag_name }}"
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            if [[ -n "${{ github.event.inputs.acl2_tag }}" ]]; then
-              # Use ACL2 tag as the Docker image tag when specified
-              TAG="${{ github.event.inputs.acl2_tag }}"
+            ACL2_TAG="${{ github.event.inputs.acl2_tag }}"
+            if [[ "$ACL2_TAG" != "latest" ]]; then
+              # Use ACL2 release tag as the Docker image tag
+              TAG="$ACL2_TAG"
             else
               TAG="${{ github.event.inputs.tag }}"
             fi

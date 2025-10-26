@@ -43,16 +43,10 @@ jobs:
         run: |
           if [[ -n "${{ github.event.inputs.acl2_tag }}" ]]; then
             ACL2_REF="${{ github.event.inputs.acl2_tag }}"
-            # Validate tag format: alphanumeric segments separated by dots, hyphens, or underscores
-            if [[ ! "$ACL2_REF" =~ ^[a-zA-Z0-9]+([._-][a-zA-Z0-9]+)*$ ]]; then
-              echo "Error: Invalid ACL2 tag format. Must start and end with alphanumeric characters."
-              echo "Special characters (._-) can only be used as separators between alphanumeric segments."
-              exit 1
-            fi
             echo "Using ACL2 tag: ${ACL2_REF}"
           else
             ACL2_REF="master"
-            echo "Using ACL2 branch: ${ACL2_REF}"
+            echo "Using ACL2 ref: ${ACL2_REF}"
           fi
           
           # Fetch commit hash for the specified ref (tag or branch)
@@ -84,7 +78,12 @@ jobs:
           if [[ "${{ github.event_name }}" == "release" ]]; then
             TAG="${{ github.event.release.tag_name }}"
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            TAG="${{ github.event.inputs.tag }}"
+            if [[ -n "${{ github.event.inputs.acl2_tag }}" ]]; then
+              # Use ACL2 tag as the Docker image tag when specified
+              TAG="${{ github.event.inputs.acl2_tag }}"
+            else
+              TAG="${{ github.event.inputs.tag }}"
+            fi
           else
             TAG="latest"
           fi

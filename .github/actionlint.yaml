@@ -4,3 +4,7 @@ self-hosted-runner:
   labels:
     - ubuntu-24.04-arm64
     - ubuntu-latest-arm64
+    # Self-hosted Mac Studio M3 runner for ARM64 builds
+    - self-hosted
+    - ARM64
+    - macOS

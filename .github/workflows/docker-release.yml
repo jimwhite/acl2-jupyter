@@ -100,7 +100,7 @@ jobs:
   # Build ARM64 image on native arm64 runner
   build-arm64:
     needs: prepare
-    runs-on: macos-latest
+    runs-on: [self-hosted, ARM64, macOS]
     permissions:
       contents: read
       packages: write

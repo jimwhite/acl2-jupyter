@@ -43,6 +43,11 @@ jobs:
         run: |
           if [[ -n "${{ github.event.inputs.acl2_tag }}" ]]; then
             ACL2_REF="${{ github.event.inputs.acl2_tag }}"
+            # Validate tag format (alphanumeric, dots, hyphens, and underscores)
+            if [[ ! "$ACL2_REF" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+              echo "Error: Invalid ACL2 tag format. Use only letters, numbers, dots, hyphens, and underscores."
+              exit 1
+            fi
             echo "Using ACL2 tag: ${ACL2_REF}"
           else
             ACL2_REF="master"
@@ -52,9 +57,10 @@ jobs:
           # Fetch commit hash for the specified ref (tag or branch)
           ACL2_COMMIT=$(curl --silent https://api.github.com/repos/acl2/acl2/commits/${ACL2_REF} | jq -r .sha)
           
-          # Validate that we got a valid commit hash
-          if [[ -z "$ACL2_COMMIT" || "$ACL2_COMMIT" == "null" ]]; then
-            echo "Error: Failed to fetch commit hash for ACL2 ref '${ACL2_REF}'"
+          # Validate that we got a valid SHA-1 commit hash (40 hexadecimal characters)
+          if [[ ! "$ACL2_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Error: Failed to fetch valid commit hash for ACL2 ref '${ACL2_REF}'"
+            echo "This may indicate the tag/branch doesn't exist or there was an API error."
             exit 1
           fi
           

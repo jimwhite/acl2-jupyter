@@ -55,7 +55,7 @@ jobs:
           else
             # Get the commit for the specified release tag
             echo "Using ACL2 release tag: ${ACL2_REF}"
-            HTTP_RESPONSE=$(curl --silent --write-out "\n%{http_code}" https://api.github.com/repos/acl2/acl2/releases/tags/${ACL2_REF})
+            HTTP_RESPONSE=$(curl --silent --write-out "\n%{http_code}" https://api.github.com/repos/acl2/acl2/tags)
             HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -n1)
             RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
             
@@ -63,8 +63,7 @@ jobs:
               echo "Error: GitHub API request failed with HTTP status $HTTP_CODE for release tag '${ACL2_REF}'"
               exit 1
             fi
-            
-            ACL2_COMMIT=$(echo "$RESPONSE_BODY" | jq -r .target_commitish)
+            ACL2_COMMIT=$(echo "$RESPONSE_BODY" | jq -r --arg ref "$ACL2_REF" '.[] | select(.name==$ref) | .commit.sha')
           fi
           
           echo "commit=$ACL2_COMMIT" >> $GITHUB_OUTPUT

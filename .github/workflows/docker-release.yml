@@ -9,6 +9,10 @@ on:
         description: 'Image tag (default: latest)'
         required: false
         default: 'latest'
+      acl2_tag:
+        description: 'ACL2 release tag (e.g., v8.6) or latest for master'
+        required: false
+        default: 'latest'
   push:
     branches:
       - main
@@ -31,13 +35,44 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       acl2-commit: ${{ steps.acl2-commit.outputs.commit }}
+      acl2-ref: ${{ steps.acl2-commit.outputs.ref }}
       image-tag: ${{ steps.meta.outputs.tag }}
     steps:
       - name: Get ACL2 commit hash
         id: acl2-commit
         run: |
-          ACL2_COMMIT=$(curl --silent https://api.github.com/repos/acl2/acl2/commits/master | jq -r .sha)
+          ACL2_REF="${{ github.event.inputs.acl2_tag }}"
+          
+          if [[ "$ACL2_REF" == "latest" ]]; then
+            # Get the latest commit from master branch
+            echo "Using ACL2 latest (master branch)"
+            HTTP_RESPONSE=$(curl --silent --write-out "\n%{http_code}" https://api.github.com/repos/acl2/acl2/commits/master)
+            HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -n1)
+            RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
+            
+            if [[ "$HTTP_CODE" != "200" ]]; then
+              echo "Error: GitHub API request failed with HTTP status $HTTP_CODE"
+              exit 1
+            fi
+            
+            ACL2_COMMIT=$(echo "$RESPONSE_BODY" | jq -r .sha)
+          else
+            # Get the commit for the specified release tag
+            echo "Using ACL2 release tag: ${ACL2_REF}"
+            HTTP_RESPONSE=$(curl --silent --write-out "\n%{http_code}" https://api.github.com/repos/acl2/acl2/releases/tags/${ACL2_REF})
+            HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -n1)
+            RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
+            
+            if [[ "$HTTP_CODE" != "200" ]]; then
+              echo "Error: GitHub API request failed with HTTP status $HTTP_CODE for release tag '${ACL2_REF}'"
+              exit 1
+            fi
+            
+            ACL2_COMMIT=$(echo "$RESPONSE_BODY" | jq -r .target_commitish)
+          fi
+          
           echo "commit=$ACL2_COMMIT" >> $GITHUB_OUTPUT
+          echo "ref=$ACL2_REF" >> $GITHUB_OUTPUT
           echo "ACL2 commit: $ACL2_COMMIT"
 
       - name: Determine image tag
@@ -46,7 +81,13 @@ jobs:
           if [[ "${{ github.event_name }}" == "release" ]]; then
             TAG="${{ github.event.release.tag_name }}"
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            TAG="${{ github.event.inputs.tag }}"
+            ACL2_TAG="${{ github.event.inputs.acl2_tag }}"
+            if [[ "$ACL2_TAG" != "latest" ]]; then
+              # Use ACL2 release tag as the Docker image tag
+              TAG="$ACL2_TAG"
+            else
+              TAG="${{ github.event.inputs.tag }}"
+            fi
           else
             TAG="latest"
           fi
@@ -188,6 +229,7 @@ jobs:
           echo "## Docker Multiarch Image Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Image Tag:** ${{ needs.prepare.outputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "**ACL2 Version:** ${{ needs.prepare.outputs.acl2-ref }}" >> $GITHUB_STEP_SUMMARY
           echo "**ACL2 Commit:** ${{ needs.prepare.outputs.acl2-commit }}" >> $GITHUB_STEP_SUMMARY
           echo "**Platforms:** linux/amd64, linux/arm64" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

@@ -13,16 +13,21 @@ This project is built from:
 
 * https://github.com/mister-walter/acl2-docker by [Andrew Walter](https://www.atwalter.com/)
 * https://github.com/yitzchak/common-lisp-jupyter along with several other repos by [Tarn Burton](https://github.com/yitzchak)
-* https://github.com/tani/acl2-kernel by [Masaya Taniguchi](https://tani.cc/).
+* https://github.com/jimwhite/acl2-kernel forked from https://github.com/tani/acl2-kernel by [Masaya Taniguchi](https://tani.cc/).
 * https://github.com/rubengamboa/acl2-docker-images by [Ruben Gamoa](https://www.uwyo.edu/eecs/faculty-staff/faculty/ruben-gamboa/index.html)
 
 ## Using a prebuilt image locally
 
-By default, running this Docker image will launch the JupyterLab server on port 8888.  
+By default, running this Docker image will launch the JupyterLab server on port `8888`.  JupyterLab will open with `/home/jovyan/work` as the current dir.  The `-v $(PWD):/home/jovyan/work` arg maps your current dir to share files so your notebooks persistent.
 
 ```bash
-docker pull ghcr.io/jimwhite/acl2-jupyter:latest
-docker run -it --rm -p 8888:8888 -v $(PWD):/home/jovyan/work acl2-jupyter
+docker run -it --rm -p 8888:8888 -v $(PWD):/home/jovyan/work ghcr.io/jimwhite/acl2-jupyter:latest
+```
+
+An alternative way to run is to make the container persistent by omitting the `--rm` arg.  You can use JupyterLab's upload/download commands to share files.
+
+```bash
+docker run -it --name my-acl2-jupyter -p 8888:8888 ghcr.io/jimwhite/acl2-jupyter:latest
 ```
 
 To get the CLI just supply the command.  For SBCL and ACL2 in a terminal you'll want `rlwrap`.
@@ -63,10 +68,10 @@ But GitHub recently deployed budgets for all billed services with $0 allocation 
 
 ## Old Usage
 
-By default, running this Docker image will drop you into the ACL2 REPL. The "basic" selection of books (per the ACL2 Makefile) has been certified, but you may want to certify additional books. One way to do this is to start a Docker container with a shell rather than ACL2; one can do that with a command like `docker run -it atwalter/acl2 /bin/bash`. Then, one can use [cert.pl](https://www.cs.utexas.edu/~moore/acl2/manuals/current/manual/?topic=BUILD____CERT.PL) to certify some books before starting ACL2. A full example is shown below, where lines prefixed by `$` indicate commands executed outside of Docker and `#` indicate commands executed inside of the Docker container.
+By default, running this Docker image will run the JupyterLab service. The "basic" selection of books (per the ACL2 Makefile) has been certified, but you may want to certify additional books. One way to do this is to start a Docker container with a shell rather than ACL2; one can do that with a command like `docker run -it ghcr.io/jimwhite/acl2-jupyter:latest /bin/bash`. Then, one can use [cert.pl](https://www.cs.utexas.edu/~moore/acl2/manuals/current/manual/?topic=BUILD____CERT.PL) to certify some books before starting ACL2. A full example is shown below, where lines prefixed by `$` indicate commands executed outside of Docker and `#` indicate commands executed inside of the Docker container.
 
 ```
-$ docker run -it atwalter/acl2 /bin/bash
+$ docker run -it ghcr.io/jimwhite/acl2-jupyter:latest /bin/bash
 # cert.pl ~/acl2/books/sorting/isort
 # acl2
 # ACL2 !> (include-book "sorting/isort" :dir :system)
@@ -75,6 +80,8 @@ $ docker run -it atwalter/acl2 /bin/bash
 ```
 
 Note that when the Docker container exits, the certificates for any books certified since the container was started will be lost. If you find yourself repeatedly needing to certify the same set of books, you can create a new Docker image based on this one. You can find an example Dockerfile in `examples/certified-books/Dockerfile`.
+
+Also note that you can run `cert.pl` in a JupyterLab terminal.
 
 ## Building
 
@@ -103,9 +110,9 @@ This image is distributed as a multi-platform Docker image with both `linux/amd6
 As of the latest update, both architectures are now built automatically using GitHub Actions with native runners:
 
 - **amd64 images**: Built on standard `ubuntu-latest` runners
-- **arm64 images**: Built on GitHub's new `ubuntu-24.04-arm64` native arm64 runners
+- **arm64 images**: Built on a self-hosted M-series Mac (Apple Silicon/ARM64)
 
-This approach avoids the limitations of QEMU emulation, which doesn't support the full FPU exception handling required by ACL2.
+This approach avoids the limitations of QEMU emulation, which doesn't support the full FPU exception handling required by ACL2.  We also can't use GitHub hosted ARM64 runners because they don't handle FP traps the way SBCL expects.
 
 #### Building Locally
 
@@ -121,7 +128,7 @@ make build-ghcr IMAGE_VERSION=your-tag
 
 For multiarch builds, you would need a Docker builder with multiple native nodes.
 
-### Automated Releases via GitHub Actions
+### Package builds via GitHub Actions
 
 This repository includes a GitHub Actions workflow that automatically builds and publishes multiarch Docker images to the GitHub Container Registry (ghcr.io). The workflow is triggered by:
 
@@ -131,8 +138,8 @@ This repository includes a GitHub Actions workflow that automatically builds and
 
 The workflow automatically:
 - Builds for both `linux/amd64` and `linux/arm64` platforms using native runners
-- Uses GitHub's `ubuntu-24.04-arm64` runners for arm64 builds (no QEMU emulation)
-- Retrieves the latest ACL2 commit hash from the upstream repository
+- Uses self-hosted runner for ARM64 builds (no QEMU emulation)
+- Retrieves the latest ACL2 commit hash from the upstream repository for "latest" tag or a given ACL2 release tag (e.g. 8.6).
 - Authenticates with ghcr.io using GitHub's built-in `GITHUB_TOKEN`
 - Uses GitHub Actions cache to speed up subsequent builds (separate caches per architecture)
 - Creates a multiarch manifest combining both platform images
@@ -143,7 +150,7 @@ The build process consists of three jobs:
 2. **Build AMD64/ARM64**: Parallel builds on native runners for each platform
 3. **Create Manifest**: Combines both platform images into a multiarch manifest
 
-To manually trigger a build, go to the Actions tab, select "Build and Push Docker Image to GHCR", and click "Run workflow".
+To manually trigger a build, go to the Actions tab, select "Build and Push Docker Image to GHCR", configure the acl2_tag (default "latest"), and click "Run workflow".
 
 ## Notes
 
@@ -177,10 +184,16 @@ ACL2-Jupyter uses the [quay.io/jupyter/minimal-notebook:latest](https://quay.io/
 
 For a full complement of Python support including PySpark use BASE_IMAGE=[quay.io/jupyter/pyspark-notebook:latest](https://quay.io/repository/jupyter/pyspark-notebook) image (source https://github.com/jupyter/docker-stacks/tree/main/images/pyspark-notebook)
 
+## Examples
+
+* https://github.com/jimwhite/acl2-notebooks - a few example notebooks
+* https://github.com/jimwhite/acl2-swf-experiments forked from [Mike Dodd's ACL2/Claude Code experiment](https://github.com/septract/acl2-swf-experiments).
+* https://github.com/jimwhite/agent-client-kernel - extending ACL2-Jupyter with Zed's Agent Client Protocol for coding agent integration
+
 ## Moar Information
 
 * *ACL2* home page at UT Austin https://www.cs.utexas.edu/~moore/acl2/acl2-doc.html
-* *ACL2 GitHub project https://github.com/acl2/acl2
+* *ACL2 GitHub project* https://github.com/acl2/acl2
 * *Hyper-Card for ACL2 Programming* https://www.cs.utexas.edu/~moore/publications/hyper-card.html
 * *ACL2 versions of (some of) the Top 100 Theorems List* https://acl2.org/doc/?topic=ACL2____100-THEOREMS
 * *ACL2 Documentation* https://acl2.org/doc

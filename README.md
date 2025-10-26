@@ -180,6 +180,7 @@ For a full complement of Python support including PySpark use BASE_IMAGE=[quay.i
 ## Moar Information
 
 * *ACL2* home page at UT Austin https://www.cs.utexas.edu/~moore/acl2/acl2-doc.html
+* *ACL2 GitHub project https://github.com/acl2/acl2
 * *Hyper-Card for ACL2 Programming* https://www.cs.utexas.edu/~moore/publications/hyper-card.html
 * *ACL2 versions of (some of) the Top 100 Theorems List* https://acl2.org/doc/?topic=ACL2____100-THEOREMS
 * *ACL2 Documentation* https://acl2.org/doc

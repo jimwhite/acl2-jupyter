@@ -5,10 +5,6 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Image tag (default: latest)'
-        required: false
-        default: 'latest'
       acl2_tag:
         description: 'ACL2 release tag (e.g., v8.6) or latest for master'
         required: false
@@ -81,13 +77,7 @@ jobs:
           if [[ "${{ github.event_name }}" == "release" ]]; then
             TAG="${{ github.event.release.tag_name }}"
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            ACL2_TAG="${{ github.event.inputs.acl2_tag }}"
-            if [[ "$ACL2_TAG" != "latest" ]]; then
-              # Use ACL2 release tag as the Docker image tag
-              TAG="$ACL2_TAG"
-            else
-              TAG="${{ github.event.inputs.tag }}"
-            fi
+            TAG="${{ github.event.inputs.acl2_tag }}"
           else
             TAG="latest"
           fi

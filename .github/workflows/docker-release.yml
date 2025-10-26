@@ -9,6 +9,10 @@ on:
         description: 'Image tag (default: latest)'
         required: false
         default: 'latest'
+      acl2_tag:
+        description: 'ACL2 release tag (e.g., v8.6) or empty for master'
+        required: false
+        default: ''
   push:
     branches:
       - main
@@ -31,13 +35,25 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       acl2-commit: ${{ steps.acl2-commit.outputs.commit }}
+      acl2-ref: ${{ steps.acl2-commit.outputs.ref }}
       image-tag: ${{ steps.meta.outputs.tag }}
     steps:
       - name: Get ACL2 commit hash
         id: acl2-commit
         run: |
-          ACL2_COMMIT=$(curl --silent https://api.github.com/repos/acl2/acl2/commits/master | jq -r .sha)
+          if [[ -n "${{ github.event.inputs.acl2_tag }}" ]]; then
+            # Get commit hash for the specified ACL2 release tag
+            ACL2_REF="${{ github.event.inputs.acl2_tag }}"
+            ACL2_COMMIT=$(curl --silent https://api.github.com/repos/acl2/acl2/commits/${ACL2_REF} | jq -r .sha)
+            echo "Using ACL2 tag: ${ACL2_REF}"
+          else
+            # Default to master branch
+            ACL2_REF="master"
+            ACL2_COMMIT=$(curl --silent https://api.github.com/repos/acl2/acl2/commits/master | jq -r .sha)
+            echo "Using ACL2 branch: ${ACL2_REF}"
+          fi
           echo "commit=$ACL2_COMMIT" >> $GITHUB_OUTPUT
+          echo "ref=$ACL2_REF" >> $GITHUB_OUTPUT
           echo "ACL2 commit: $ACL2_COMMIT"
 
       - name: Determine image tag
@@ -188,6 +204,7 @@ jobs:
           echo "## Docker Multiarch Image Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Image Tag:** ${{ needs.prepare.outputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "**ACL2 Version:** ${{ needs.prepare.outputs.acl2-ref }}" >> $GITHUB_STEP_SUMMARY
           echo "**ACL2 Commit:** ${{ needs.prepare.outputs.acl2-commit }}" >> $GITHUB_STEP_SUMMARY
           echo "**Platforms:** linux/amd64, linux/arm64" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

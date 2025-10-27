@@ -38,7 +38,7 @@ Running hooks in: /usr/local/bin/start-notebook.d as uid: 1000 gid: 100
         http://127.0.0.1:8888/lab?token=89af207743181314d392f106d1a7b1c80e1738b92ebf03ee
 ```
 
-An alternative way to run is to make the container persistent by omitting the `--rm` arg.  You can use JupyterLab's upload/download commands to share files.
+An alternative way to run without file sharing is to make the container persistent by omitting the `--rm` arg.  You can use JupyterLab's upload/download commands to share files.
 
 ```bash
 docker run -it --name my-acl2-jupyter -p 8888:8888 ghcr.io/jimwhite/acl2-jupyter:latest
@@ -48,6 +48,42 @@ To get the CLI just supply the command.  For SBCL and ACL2 in a terminal you'll 
 
 ```bash
 docker run -it --rm -v $(PWD):/home/jovyan/work ghcr.io/jimwhite/acl2-jupyter:latest rlwrap acl2
+```
+```
+Entered start.sh with args: rlwrap acl2
+Running hooks in: /usr/local/bin/start-notebook.d as uid: 1000 gid: 100
+Done running hooks in: /usr/local/bin/start-notebook.d
+Running hooks in: /usr/local/bin/before-notebook.d as uid: 1000 gid: 100
+Sourcing shell script: /usr/local/bin/before-notebook.d/10activate-conda-env.sh
+Done running hooks in: /usr/local/bin/before-notebook.d
+Executing the command: rlwrap acl2
+This is SBCL 2.5.9, an implementation of ANSI Common Lisp.
+More information about SBCL is available at <http://www.sbcl.org/>.
+
+SBCL is free software, provided as is, with absolutely no warranty.
+It is mostly in the public domain; some portions are provided under
+BSD-style licenses.  See the CREDITS and COPYING files in the
+distribution for more information.
+
+ ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ + ACL2 Version 8.6+ (a development snapshot based on ACL2 Version 8.6) +
+ +   built October 26, 2025  03:26:12.                                  +
+ +   (Note from the environment when this executable was saved:         +
+ +    Git commit hash: f616797704e17ffce6a0d5e38fc09713bad26572)        +
+ + Copyright (C) 2025, Regents of the University of Texas.              +
+ + ACL2 comes with ABSOLUTELY NO WARRANTY.  This is free software and   +
+ + you are welcome to redistribute it under certain conditions.  For    +
+ + details, see the LICENSE file distributed with ACL2.                 +
+ ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Project-dir-alist:
+((:SYSTEM . "/home/acl2/books/")).
+Type :help for help.
+Type (quit) to quit completely out of ACL2.
+
+ACL2 !>(* 1 2 3 4 5)
+120
+ACL2 !>
 ```
 
 ### Passwordless `sudo`

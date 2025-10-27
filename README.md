@@ -24,6 +24,20 @@ By default, running this Docker image will launch the JupyterLab server on port 
 docker run -it --rm -p 8888:8888 -v $(PWD):/home/jovyan/work ghcr.io/jimwhite/acl2-jupyter:latest
 ```
 
+When that starts up (which will can take a few minutes the first time; the image is about 6GB) you should then see the stdout which will end with the URL to open in your browser:
+```
+Entered start.sh with args: start-notebook.py
+Running hooks in: /usr/local/bin/start-notebook.d as uid: 1000 gid: 100
+...
+[C 2025-10-27 18:47:01.032 ServerApp] 
+    
+    To access the server, open this file in a browser:
+        file:///home/jovyan/.local/share/jupyter/runtime/jpserver-7-open.html
+    Or copy and paste one of these URLs:
+        http://localhost:8888/lab?token=89af207743181314d392f106d1a7b1c80e1738b92ebf03ee
+        http://127.0.0.1:8888/lab?token=89af207743181314d392f106d1a7b1c80e1738b92ebf03ee
+```
+
 An alternative way to run is to make the container persistent by omitting the `--rm` arg.  You can use JupyterLab's upload/download commands to share files.
 
 ```bash
@@ -33,10 +47,18 @@ docker run -it --name my-acl2-jupyter -p 8888:8888 ghcr.io/jimwhite/acl2-jupyter
 To get the CLI just supply the command.  For SBCL and ACL2 in a terminal you'll want `rlwrap`.
 
 ```bash
-docker run -it --rm -v $(PWD):/home/jovyan/work acl2-jupyter rlwrap acl2
+docker run -it --rm -v $(PWD):/home/jovyan/work ghcr.io/jimwhite/acl2-jupyter:latest rlwrap acl2
 ```
 
+### Passwordless `sudo`
 Using `sudo` within the container does not require a password.
+
+### Using a specific ACL2 version
+You can replace `latest` with an ACL2 release tag in the commands above.  The most recent ACL2 release is `8.6`.  For example:
+
+```bash
+docker run -it --rm -p 8888:8888 -v $(PWD):/home/jovyan/work ghcr.io/jimwhite/acl2-jupyter:8.6
+```
 
 ## Using a prebuilt image in a GitHub Codespace (free!)
 

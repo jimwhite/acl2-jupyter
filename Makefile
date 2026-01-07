@@ -46,7 +46,7 @@ ACL2_CERTIFY_OPTS ?= "-j $(ACL2_CERT_JOBS)"
 # git submodule add https://github.com/yitzchak/ngl-clj.git context/quicklisp/local-projects/ngl-clj
 
 git-submodules:
-	git submodule update --init --recursive
+	git submodule update --init --recursive --remote
 
 build-multiplatform:
 	$(DOCKER) buildx build --platform=$(PLATFORM) $(BUILD_CACHE) -t $(DOCKERHUB_IMAGE_NAME):$(IMAGE_VERSION) context \

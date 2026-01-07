@@ -1,18 +1,24 @@
 [submodule "context/quicklisp/local-projects/common-lisp-jupyter"]
 	path = context/quicklisp/local-projects/common-lisp-jupyter
 	url = https://github.com/yitzchak/common-lisp-jupyter.git
+	branch = master
 [submodule "context/quicklisp/local-projects/delta-vega"]
-	path = context/quicklisp/local-projects/delta-vega
-	url = https://github.com/yitzchak/delta-vega.git
+        path = context/quicklisp/local-projects/delta-vega
+        url = https://github.com/yitzchak/delta-vega.git
+        branch = main
 [submodule "context/quicklisp/local-projects/resizable-box-clj"]
-	path = context/quicklisp/local-projects/resizable-box-clj
-	url = https://github.com/yitzchak/resizable-box-clj.git
+        path = context/quicklisp/local-projects/resizable-box-clj
+        url = https://github.com/yitzchak/resizable-box-clj.git
+        branch = main
 [submodule "context/quicklisp/local-projects/ngl-clj"]
-	path = context/quicklisp/local-projects/ngl-clj
-	url = https://github.com/yitzchak/ngl-clj.git
+        path = context/quicklisp/local-projects/ngl-clj
+        url = https://github.com/yitzchak/ngl-clj.git
+        branch = main
 [submodule "context/archlinux-cl"]
-	path = context/archlinux-cl
-	url = https://github.com/yitzchak/archlinux-cl.git
+        path = context/archlinux-cl
+        url = https://github.com/yitzchak/archlinux-cl.git
+        branch = main
 [submodule "context/acl2-kernel"]
-	path = context/acl2-kernel
-	url = https://github.com/jimwhite/acl2-kernel.git
+        path = context/acl2-kernel
+        url = https://github.com/jimwhite/acl2-kernel.git
+        branch = main

@@ -5,8 +5,10 @@ LABEL org.opencontainers.image.source="https://github.com/jimwhite/acl2-jupyter"
 LABEL org.opencontainers.image.description="A Docker image for running the ACL2 theorem proving system and books in JupyterLab"
 LABEL org.opencontainers.image.licenses=MIT
 
-ARG SBCL_VERSION=2.5.9
-ARG SBCL_SHA256=d1b19022d43dc493edc972b6e59c93ae6684c963fdd2b413b0965e18cd6bd1e2
+ARG SBCL_VERSION=2.5.11
+ARG SBCL_SHA256=a06ad98fb59611e5d66539bdc6c31fae7d9cf72b5039a23d7e2adc955f0b615e
+
+ARG Z3_VERSION=4.15.4
 
 ARG USER=jovyan
 ENV HOME=/home/${USER}
@@ -70,12 +72,12 @@ RUN apt-get update && \
 # This /root/sbcl dir seems to be a tmp so why in /root?
 RUN mkdir /root/sbcl \
     && cd /root/sbcl \
-    && wget "http://prdownloads.sourceforge.net/sbcl/sbcl-${SBCL_VERSION}-source.tar.bz2?download" -O sbcl.tar.bz2 -q \
-    && echo "${SBCL_SHA256} sbcl.tar.bz2" > sbcl.tar.bz2.sha256 \
-    && sha256sum -c sbcl.tar.bz2.sha256 \
-    && rm sbcl.tar.bz2.sha256 \
-    && tar -xjf sbcl.tar.bz2 \
-    && rm sbcl.tar.bz2 \
+    && wget "https://github.com/sbcl/sbcl/archive/refs/tags/sbcl-${SBCL_VERSION}.tar.gz" -O sbcl.tar.gz -q \
+    && echo "${SBCL_SHA256} sbcl.tar.gz" > sbcl.tar.gz.sha256 \
+    && sha256sum -c sbcl.tar.gz.sha256 \
+    && rm sbcl.tar.gz.sha256 \
+    && tar -xzf sbcl.tar.gz \
+    && rm sbcl.tar.gz \
     && cd sbcl-* \
     && sh make.sh --without-immobile-space --without-immobile-code --without-compact-instance-header --fancy --dynamic-space-size=4Gb \
     && apt-get remove -y sbcl \
@@ -87,7 +89,7 @@ RUN mkdir /root/sbcl \
 # Do we get everything with pip? pip install z3-solver
 RUN mkdir /root/z3 \
     && cd /root/z3 \
-    && wget "https://github.com/Z3Prover/z3/archive/refs/tags/z3-4.8.12.tar.gz" -O z3.tar.gz -q \
+    && wget "https://github.com/Z3Prover/z3/archive/refs/tags/z3-${Z3_VERSION}.tar.gz" -O z3.tar.gz -q \
     && tar -xzf z3.tar.gz --strip-components=1 \
     && ./configure \
     && cd build \

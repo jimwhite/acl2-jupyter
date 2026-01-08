@@ -17,6 +17,10 @@ DOCKER ?= docker
 DOCKERFILE ?= Dockerfile
 PLATFORM ?= linux/amd64,linux/arm64
 BUILD_CACHE ?=
+
+ACL2_SAFETY ?= ""
+ACL2_BUILD_OPTS ?= "ACL2_SAFETY=$(ACL2_SAFETY)"
+
 # ACL2_CERT_JOBS ?= 1
 # Some books like acl2s and centaur will sometimes fail certification when using multiple jobs.
 # Make sure Docker has enough memory allocated if using max jobs.
@@ -26,8 +30,8 @@ ACL2_CERT_JOBS ?= $(shell nproc)
 # ACL2_CERTIFY_TARGETS="basic"
 # ACL2 Bridge is CCL-only so we don't really need anything other than basic.
 # ACL2_CERTIFY_TARGETS ?= regression acl2s centaur/bridge
-ACL2_CERTIFY_TARGETS ?= basic
-ACL2_CERTIFY_OPTS ?= "-j $(ACL2_CERT_JOBS)"
+ACL2_CERTIFY_TARGETS ?= all
+ACL2_CERTIFY_OPTS ?= "-k -j $(ACL2_CERT_JOBS)"
 
 # https://github.com/yitzchak/archlinux-cl/blob/main/Dockerfile
 # https://yitzchak.github.io/common-lisp-jupyter/install
@@ -50,27 +54,27 @@ git-submodules:
 
 build-multiplatform:
 	$(DOCKER) buildx build --platform=$(PLATFORM) $(BUILD_CACHE) -t $(DOCKERHUB_IMAGE_NAME):$(IMAGE_VERSION) context \
-		--build-arg BASE_IMAGE=$(BASE_IMAGE) \
+		--build-arg BASE_IMAGE=$(BASE_IMAGE) --build-arg ACL2_BUILD_OPTS=$(ACL2_BUILD_OPTS) \
 		--build-arg ACL2_COMMIT=$(ACL2_COMMIT) --build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" -f $(DOCKERFILE) --push
 
 build-multiplatform-ghcr:
 	$(DOCKER) buildx build --platform=$(PLATFORM) $(BUILD_CACHE) -t $(GHCR_IMAGE_NAME):$(IMAGE_VERSION) context \
-		--build-arg BASE_IMAGE=$(BASE_IMAGE) \
+		--build-arg BASE_IMAGE=$(BASE_IMAGE) --build-arg ACL2_BUILD_OPTS=$(ACL2_BUILD_OPTS) \
 		--build-arg ACL2_COMMIT=$(ACL2_COMMIT) --build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" -f $(DOCKERFILE) --push
 
 build-arm64:
 	$(DOCKER) buildx build --platform=linux/arm64 $(BUILD_CACHE) -t $(DOCKERHUB_IMAGE_NAME):$(IMAGE_VERSION) context \
-		--build-arg BASE_IMAGE=$(BASE_IMAGE) \
+		--build-arg BASE_IMAGE=$(BASE_IMAGE) --build-arg ACL2_BUILD_OPTS=$(ACL2_BUILD_OPTS) \
 		--build-arg ACL2_COMMIT=$(ACL2_COMMIT) --build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" -f $(DOCKERFILE) --push
 
 build-arm64-ghcr:
 	$(DOCKER) buildx build --platform=linux/arm64 $(BUILD_CACHE) -t $(GHCR_IMAGE_NAME):$(IMAGE_VERSION) context \
-		--build-arg BASE_IMAGE=$(BASE_IMAGE) \
+		--build-arg BASE_IMAGE=$(BASE_IMAGE) --build-arg ACL2_BUILD_OPTS=$(ACL2_BUILD_OPTS) \
 		--build-arg ACL2_COMMIT=$(ACL2_COMMIT) --build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" -f $(DOCKERFILE) --push
 
 build:
 	$(DOCKER) buildx build context $(BUILD_CACHE) -t $(IMAGE_NAME):$(IMAGE_VERSION) \
-		--build-arg BASE_IMAGE=$(BASE_IMAGE) \
+		--build-arg BASE_IMAGE=$(BASE_IMAGE) --build-arg ACL2_BUILD_OPTS=$(ACL2_BUILD_OPTS) \
 		--build-arg ACL2_COMMIT=$(ACL2_COMMIT) --build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" -f $(DOCKERFILE)
 
 push:

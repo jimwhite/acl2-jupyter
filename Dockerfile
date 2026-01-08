@@ -102,14 +102,15 @@ COPY archlinux-cl/asdf-add /usr/local/bin/asdf-add
 COPY archlinux-cl/make-rc /usr/local/bin/make-rc
 COPY archlinux-cl/lisp /usr/local/bin/lisp
 
-
 ARG ACL2_COMMIT=0
 ENV ACL2_SNAPSHOT_INFO="Git commit hash: ${ACL2_COMMIT}"
 ARG ACL2_BUILD_OPTS=""
-ARG ACL2_CERTIFY_OPTS="-j 6"
+ARG ACL2_CERTIFY_OPTS="-k -j 6"
 ARG ACL2_CERTIFY_TARGETS="basic"
 # The ACL2 Bridge and such for Jupyter need everything.
 # ARG ACL2_CERTIFY_TARGETS="all acl2s centaur/bridge"
+
+# We want the .cert.out file so we know which books failed to certify.
 ENV CERT_PL_RM_OUTFILES="1"
 
 ENV ACL2_HOME=/home/acl2
@@ -121,10 +122,15 @@ RUN unzip -qq /tmp/acl2.zip -d /tmp/acl2_extract \
     && mv -T /tmp/acl2 ${ACL2_HOME} \
     && cd ${ACL2_HOME} \
     && rmdir /tmp/acl2_extract \
-    && (make LISP="sbcl" $ACL2_BUILD_OPTS || (tail -500 make.log && false)) \
-    && cd ${ACL2_HOME}/books \
-    && make ACL2=${ACL2_HOME}/saved_acl2 ${ACL2_CERTIFY_OPTS} ${ACL2_CERTIFY_TARGETS} \
-    && chmod go+rx /home \
+    && (make LISP="sbcl" $ACL2_BUILD_OPTS || (tail -500 make.log && false))
+
+RUN cd ${ACL2_HOME}/books \
+    && make ACL2=${ACL2_HOME}/saved_acl2 ${ACL2_CERTIFY_OPTS} ${ACL2_CERTIFY_TARGETS}
+
+RUN cd ${ACL2_HOME}/books \
+    && find * -type f -name "*.cert.out" | tar -czvf make-books-err-cert-out.tar.gz -T -
+
+RUN chmod go+rx /home \
     && chmod -R g+rwx ${ACL2_HOME} \
     && chmod g+s ${ACL2_HOME} \
     && chown -R ${USER}:acl2 ${ACL2_HOME} \

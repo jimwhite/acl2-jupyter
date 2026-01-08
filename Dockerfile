@@ -125,7 +125,8 @@ RUN unzip -qq /tmp/acl2.zip -d /tmp/acl2_extract \
     && (make LISP="sbcl" $ACL2_BUILD_OPTS || (tail -500 make.log && false))
 
 RUN cd ${ACL2_HOME}/books \
-    && make ACL2=${ACL2_HOME}/saved_acl2 ${ACL2_CERTIFY_OPTS} ${ACL2_CERTIFY_TARGETS} ; \
+    && make ACL2=${ACL2_HOME}/saved_acl2 ${ACL2_CERTIFY_OPTS} ${ACL2_CERTIFY_TARGETS} \
+       >make-books.stdout.log 2> >(tee make-books.stderr.log >&2) ; \
     find * -type f -name "*.cert.out" | tar -czvf make-books-cert-out.tar.gz -T -
 
 RUN chmod go+rx /home \

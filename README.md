@@ -8,6 +8,27 @@ This image is available on the GitHub Container Registry at [`jimwhite/acl2-jupy
 
 The project source is at https://github.com/jimwhite/acl2-jupyter.
 
+## Examples
+
+* https://github.com/jimwhite/acl2-notebooks - a few example notebooks
+* https://github.com/jimwhite/acl2-swf-experiments forked from [Mike Dodd's ACL2/Claude Code experiment](https://github.com/septract/acl2-swf-experiments).
+* https://github.com/jimwhite/agent-client-kernel - extending ACL2-Jupyter with Zed's Agent Client Protocol for coding agent integration
+
+## Moar Information
+
+* *ACL2* home page at UT Austin https://www.cs.utexas.edu/~moore/acl2/acl2-doc.html
+* *ACL2 GitHub project* https://github.com/acl2/acl2
+* *Hyper-Card for ACL2 Programming* https://www.cs.utexas.edu/~moore/publications/hyper-card.html
+* *ACL2 versions of (some of) the Top 100 Theorems List* https://acl2.org/doc/?topic=ACL2____100-THEOREMS
+* *ACL2 Documentation* https://acl2.org/doc
+* *ACL2 Community* https://acl2.org/doc/?topic=ACL2____COMMUNITY
+* *ACL2 Workshops*  https://acl2.org/doc/?topic=ACL2____WORKSHOPS
+* *An ACL2(s) Interface to Z3* by Walter and Manolios, ACL2 2025 https://cgi.cse.unsw.edu.au/~eptcs/paper.cgi?ACL2in2025.10
+* *Advances in ACL2 Proof Debugging Tools* by Kaufman and Moore, ACL2 2023 https://cgi.cse.unsw.edu.au/~eptcs/paper.cgi?ACL22023.7
+* *Using ACL2 To Teach Students About Software Testing* by Gamboa and Thoney ACL2 2022 https://arxiv.org/abs/2205.11695
+* *ACL2(ml): Machine-Learning for ACL2* by Heras and Komendantskaya ACL2 2014 https://arxiv.org/abs/1404.3034
+* https://github.com/s-expressionists - active community developing kewl new CL packages
+
 ## Credits
 This project is built from:
 
@@ -241,25 +262,3 @@ git submodule add https://github.com/yitzchak/ngl-clj.git context/quicklisp/loca
 ACL2-Jupyter uses the [quay.io/jupyter/minimal-notebook:latest](https://quay.io/repository/jupyter/minimal-notebook) image (source https://github.com/jupyter/docker-stacks/tree/main/images/minimal-notebook) because we want the JupyterLab stuff to work and we're gonna build SBCL and ACL2 the way we want anyhow.  Note that the DockerHub image is no longer updated.
 
 For a full complement of Python support including PySpark use BASE_IMAGE=[quay.io/jupyter/pyspark-notebook:latest](https://quay.io/repository/jupyter/pyspark-notebook) image (source https://github.com/jupyter/docker-stacks/tree/main/images/pyspark-notebook)
-
-## Examples
-
-* https://github.com/jimwhite/acl2-notebooks - a few example notebooks
-* https://github.com/jimwhite/acl2-swf-experiments forked from [Mike Dodd's ACL2/Claude Code experiment](https://github.com/septract/acl2-swf-experiments).
-* https://github.com/jimwhite/agent-client-kernel - extending ACL2-Jupyter with Zed's Agent Client Protocol for coding agent integration
-
-## Moar Information
-
-* *ACL2* home page at UT Austin https://www.cs.utexas.edu/~moore/acl2/acl2-doc.html
-* *ACL2 GitHub project* https://github.com/acl2/acl2
-* *Hyper-Card for ACL2 Programming* https://www.cs.utexas.edu/~moore/publications/hyper-card.html
-* *ACL2 versions of (some of) the Top 100 Theorems List* https://acl2.org/doc/?topic=ACL2____100-THEOREMS
-* *ACL2 Documentation* https://acl2.org/doc
-* *ACL2 Community* https://acl2.org/doc/?topic=ACL2____COMMUNITY
-* *ACL2 Workshops*  https://acl2.org/doc/?topic=ACL2____WORKSHOPS
-* *An ACL2(s) Interface to Z3* by Walter and Manolios, ACL2 2025 https://cgi.cse.unsw.edu.au/~eptcs/paper.cgi?ACL2in2025.10
-* *Advances in ACL2 Proof Debugging Tools* by Kaufman and Moore, ACL2 2023 https://cgi.cse.unsw.edu.au/~eptcs/paper.cgi?ACL22023.7
-* *Using ACL2 To Teach Students About Software Testing* by Gamboa and Thoney ACL2 2022 https://arxiv.org/abs/2205.11695
-* *ACL2(ml): Machine-Learning for ACL2* by Heras and Komendantskaya ACL2 2014 https://arxiv.org/abs/1404.3034
-* https://github.com/s-expressionists - active community developing kewl new CL packages
-

@@ -3,10 +3,9 @@ ARG BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest
 FROM ${BASE_IMAGE}
 LABEL org.opencontainers.image.source="https://github.com/jimwhite/acl2-jupyter"
 LABEL org.opencontainers.image.description="A Docker image for running the ACL2 theorem proving system and books in JupyterLab"
-LABEL org.opencontainers.image.licenses=MIT
+LABEL org.opencontainers.image.licenses=BSD-3-Clause
 
 ARG SBCL_VERSION=2.5.11
-ARG SBCL_SHA256=a06ad98fb59611e5d66539bdc6c31fae7d9cf72b5039a23d7e2adc955f0b615e
 
 ARG Z3_VERSION=4.15.4
 
@@ -73,9 +72,6 @@ RUN apt-get update && \
 RUN mkdir /root/sbcl \
     && cd /root/sbcl \
     && wget "https://github.com/sbcl/sbcl/archive/refs/tags/sbcl-${SBCL_VERSION}.tar.gz" -O sbcl.tar.gz -q \
-    && echo "${SBCL_SHA256} sbcl.tar.gz" > sbcl.tar.gz.sha256 \
-    && sha256sum -c sbcl.tar.gz.sha256 \
-    && rm sbcl.tar.gz.sha256 \
     && tar -xzf sbcl.tar.gz \
     && rm sbcl.tar.gz \
     && cd sbcl-* \

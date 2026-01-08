@@ -7,6 +7,18 @@ on:
         description: 'ACL2 release tag (e.g., 8.6) or latest commit on master branch'
         required: false
         default: 'latest'
+      books_target:
+        description: 'Books certification target (e.g., all, basic, centaur)'
+        required: false
+        default: 'all'
+      sbcl_version:
+        description: 'SBCL version'
+        required: false
+        default: '2.5.11'
+      z3_version:
+        description: 'Z3 version'
+        required: false
+        default: '4.15.4'
 
 env:
   REGISTRY: ghcr.io
@@ -103,12 +115,13 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.description=A Docker image for running the ACL2 theorem proving system and books in JupyterLab
-            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.licenses=BSD-3-Clause
           build-args: |
             BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest
             ACL2_COMMIT=${{ needs.prepare.outputs.acl2-commit }}
-            ACL2_CERTIFY_OPTS=-j 6
-            ACL2_CERTIFY_TARGETS=basic
+            ACL2_CERTIFY_TARGETS=${{ github.event.inputs.books_target }}
+            SBCL_VERSION=${{ github.event.inputs.sbcl_version }}
+            Z3_VERSION=${{ github.event.inputs.z3_version }}
           cache-from: type=gha,scope=amd64
           cache-to: type=gha,mode=max,scope=amd64
 
@@ -147,12 +160,13 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.description=A Docker image for running the ACL2 theorem proving system and books in JupyterLab
-            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.licenses=BSD-3-Clause
           build-args: |
             BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest
             ACL2_COMMIT=${{ needs.prepare.outputs.acl2-commit }}
-            ACL2_CERTIFY_OPTS=-j 6
-            ACL2_CERTIFY_TARGETS=basic
+            ACL2_CERTIFY_TARGETS=${{ github.event.inputs.books_target }}
+            SBCL_VERSION=${{ github.event.inputs.sbcl_version }}
+            Z3_VERSION=${{ github.event.inputs.z3_version }}
           cache-from: type=gha,scope=arm64
           cache-to: type=gha,mode=max,scope=arm64
 

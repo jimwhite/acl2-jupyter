@@ -125,10 +125,8 @@ RUN unzip -qq /tmp/acl2.zip -d /tmp/acl2_extract \
     && (make LISP="sbcl" $ACL2_BUILD_OPTS || (tail -500 make.log && false))
 
 RUN cd ${ACL2_HOME}/books \
-    && make ACL2=${ACL2_HOME}/saved_acl2 ${ACL2_CERTIFY_OPTS} ${ACL2_CERTIFY_TARGETS}
-
-RUN cd ${ACL2_HOME}/books \
-    && find * -type f -name "*.cert.out" | tar -czvf make-books-err-cert-out.tar.gz -T -
+    && make ACL2=${ACL2_HOME}/saved_acl2 ${ACL2_CERTIFY_OPTS} ${ACL2_CERTIFY_TARGETS} ; \
+    find * -type f -name "*.cert.out" | tar -czvf make-books-cert-out.tar.gz -T -
 
 RUN chmod go+rx /home \
     && chmod -R g+rwx ${ACL2_HOME} \

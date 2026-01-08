@@ -24,9 +24,9 @@ ACL2_BUILD_OPTS ?= "ACL2_SAFETY=$(ACL2_SAFETY)"
 # ACL2_CERT_JOBS ?= 1
 # Some books like acl2s and centaur will sometimes fail certification when using multiple jobs.
 # Make sure Docker has enough memory allocated if using max jobs.
-ACL2_CERT_JOBS ?= $(shell nproc)
+# ACL2_CERT_JOBS ?= $(shell nproc)
 # `shell nproc` didn't work for multiplatform on MacOS.
-# ACL2_CERT_JOBS ?= 12
+ACL2_CERT_JOBS ?= 6
 # ACL2_CERTIFY_TARGETS="basic"
 # ACL2 Bridge is CCL-only so we don't really need anything other than basic.
 # ACL2_CERTIFY_TARGETS ?= regression acl2s centaur/bridge

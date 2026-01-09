@@ -27,10 +27,10 @@ ACL2_BUILD_OPTS ?= "ACL2_SAFETY=$(ACL2_SAFETY)"
 # ACL2_CERT_JOBS ?= $(shell nproc)
 # `shell nproc` didn't work for multiplatform on MacOS.
 ACL2_CERT_JOBS ?= 6
-# ACL2_CERTIFY_TARGETS="basic"
+ACL2_CERTIFY_TARGETS ?= "basic"
 # ACL2 Bridge is CCL-only so we don't really need anything other than basic.
 # ACL2_CERTIFY_TARGETS ?= regression acl2s centaur/bridge
-ACL2_CERTIFY_TARGETS ?= all
+# ACL2_CERTIFY_TARGETS ?= all
 ACL2_CERTIFY_OPTS ?= "-k -j $(ACL2_CERT_JOBS)"
 
 # https://github.com/yitzchak/archlinux-cl/blob/main/Dockerfile

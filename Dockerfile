@@ -106,9 +106,6 @@ ARG ACL2_CERTIFY_TARGETS="basic"
 # The ACL2 Bridge and such for Jupyter need everything.
 # ARG ACL2_CERTIFY_TARGETS="all acl2s centaur/bridge"
 
-# We want the .cert.out file so we know which books failed to certify.
-ENV CERT_PL_RM_OUTFILES="1"
-
 ENV ACL2_HOME=/home/acl2
 
 RUN wget "https://api.github.com/repos/acl2/acl2/zipball/${ACL2_COMMIT}" -O /tmp/acl2.zip -q

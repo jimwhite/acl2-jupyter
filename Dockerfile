@@ -93,6 +93,7 @@ RUN mkdir /root/z3 \
     && make install \
     && cd /root \
     && rm -R /root/z3
+    && conda install z3-solver
 
 COPY archlinux-cl/asdf-add /usr/local/bin/asdf-add
 COPY archlinux-cl/make-rc /usr/local/bin/make-rc

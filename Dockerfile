@@ -92,7 +92,7 @@ RUN mkdir /root/z3 \
     && make -j$(nproc) \
     && make install \
     && cd /root \
-    && rm -R /root/z3
+    && rm -R /root/z3 \
     && conda install z3-solver
 
 COPY archlinux-cl/asdf-add /usr/local/bin/asdf-add

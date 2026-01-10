@@ -103,10 +103,6 @@ RUN mkdir /root/z3 \
     && rm -R /root/z3 \
     && conda install z3-solver
 
-COPY archlinux-cl/asdf-add /usr/local/bin/asdf-add
-COPY archlinux-cl/make-rc /usr/local/bin/make-rc
-COPY archlinux-cl/lisp /usr/local/bin/lisp
-
 COPY quicklisp.lisp quicklisp.lisp
 COPY quicklisp quicklisp/
 
@@ -153,17 +149,6 @@ RUN cd ${ACL2_HOME}/books \
     && make ACL2=${ACL2_HOME}/saved_acl2 ${ACL2_CERTIFY_OPTS} ${ACL2_CERTIFY_TARGETS} \
        >make-books.stdout.log 2> >(tee make-books.stderr.log >&2) ; \
     find * -type f -name "*.cert.out" | tar -czvf make-books-cert-out.tar.gz -T -
-
-# # Setup tutorial notebooks (if they exist)
-# RUN mkdir -p ${HOME}/programming-tutorial
-# COPY acl2-notebooks/programming-tutorial/* ${HOME}/programming-tutorial/
-
-# Do we need these XDG vars?
-# Yes: https://github.com/yitzchak/common-lisp-jupyter/blob/2df55291592943851d013c66af920e7c150b1de2/src/lab-extension/asdf.lisp#L12
-# ... #-(or darwin windows) (uiop:xdg-data-home)))
-# ENV XDG_CONFIG_HOME=/root/.config
-# ENV XDG_DATA_HOME=/root/.local/share
-# ENV XDG_CACHE_HOME=/root/.cache
 
 RUN cd acl2-kernel \
     && pipx install poetry \

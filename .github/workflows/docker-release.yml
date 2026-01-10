@@ -10,7 +10,7 @@ on:
       books_target:
         description: 'Books certification target (e.g., all, basic, centaur)'
         required: false
-        default: 'all'
+        default: 'basic'
       sbcl_version:
         description: 'SBCL version'
         required: false

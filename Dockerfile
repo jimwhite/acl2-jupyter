@@ -114,13 +114,15 @@ COPY acl2-kernel acl2-kernel
 
 ENV ACL2_HOME=/home/acl2
 ENV ACL2_SYSTEM_BOOKS="${ACL2_HOME}/books"
+ENV QUICKLISP=1
 
 RUN wget "https://api.github.com/repos/acl2/acl2/zipball/${ACL2_COMMIT}" -O /tmp/acl2.zip -q
 
 RUN unzip -qq /tmp/acl2.zip -d /tmp/acl2_extract \
     && mv -T /tmp/acl2_extract/$(ls /tmp/acl2_extract) /tmp/acl2 \
     && mv -T /tmp/acl2 ${ACL2_HOME} \
-    && rmdir /tmp/acl2_extract
+    && rmdir /tmp/acl2_extract \
+    && rm /tmp/acl2.zip
 
 RUN chown -R ${USER}:users ${HOME} ${ACL2_HOME}
 

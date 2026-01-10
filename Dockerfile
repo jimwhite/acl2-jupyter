@@ -114,7 +114,6 @@ COPY acl2-kernel acl2-kernel
 
 ENV ACL2_HOME=/home/acl2
 ENV ACL2_SYSTEM_BOOKS="${ACL2_HOME}/books"
-ENV QUICKLISP=1
 
 RUN wget "https://api.github.com/repos/acl2/acl2/zipball/${ACL2_COMMIT}" -O /tmp/acl2.zip -q
 
@@ -145,6 +144,8 @@ RUN sbcl --non-interactive --load quicklisp.lisp \
       --eval "(quicklisp-quickstart:install)" --eval "(ql-util:without-prompting (ql:add-to-init-file))" \
       --eval "(ql:quickload '(:common-lisp-jupyter :cytoscape-clj :kekule-clj :resizable-box-clj :ngl-clj :delta-vega))" \
       --eval "(clj:install :implementation t)"
+
+ENV QUICKLISP=1
 
 RUN cd ${ACL2_HOME} && (make LISP="sbcl" $ACL2_BUILD_OPTS || (tail -500 make.log && false))
 

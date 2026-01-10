@@ -12,6 +12,14 @@ ARG Z3_VERSION=4.15.4
 ARG USER=jovyan
 ENV HOME=/home/${USER}
 
+ARG ACL2_COMMIT=0
+ENV ACL2_SNAPSHOT_INFO="Git commit hash: ${ACL2_COMMIT}"
+ARG ACL2_BUILD_OPTS=""
+ARG ACL2_CERTIFY_OPTS="-k -j 6"
+ARG ACL2_CERTIFY_TARGETS="basic"
+# The ACL2 Bridge and such for Jupyter need everything.
+# ARG ACL2_CERTIFY_TARGETS="all acl2s centaur/bridge"
+
 USER root
 
 # This will have RW permission for the ACL2 directory.
@@ -99,39 +107,28 @@ COPY archlinux-cl/asdf-add /usr/local/bin/asdf-add
 COPY archlinux-cl/make-rc /usr/local/bin/make-rc
 COPY archlinux-cl/lisp /usr/local/bin/lisp
 
-ARG ACL2_COMMIT=0
-ENV ACL2_SNAPSHOT_INFO="Git commit hash: ${ACL2_COMMIT}"
-ARG ACL2_BUILD_OPTS=""
-ARG ACL2_CERTIFY_OPTS="-k -j 6"
-ARG ACL2_CERTIFY_TARGETS="basic"
-# The ACL2 Bridge and such for Jupyter need everything.
-# ARG ACL2_CERTIFY_TARGETS="all acl2s centaur/bridge"
+COPY quicklisp.lisp quicklisp.lisp
+COPY quicklisp quicklisp/
+
+COPY acl2-kernel acl2-kernel
 
 ENV ACL2_HOME=/home/acl2
+ENV ACL2_SYSTEM_BOOKS="${ACL2_HOME}/books"
 
 RUN wget "https://api.github.com/repos/acl2/acl2/zipball/${ACL2_COMMIT}" -O /tmp/acl2.zip -q
 
 RUN unzip -qq /tmp/acl2.zip -d /tmp/acl2_extract \
     && mv -T /tmp/acl2_extract/$(ls /tmp/acl2_extract) /tmp/acl2 \
     && mv -T /tmp/acl2 ${ACL2_HOME} \
-    && cd ${ACL2_HOME} \
-    && rmdir /tmp/acl2_extract \
-    && (make LISP="sbcl" $ACL2_BUILD_OPTS || (tail -500 make.log && false))
+    && rmdir /tmp/acl2_extract
 
-RUN cd ${ACL2_HOME}/books \
-    && make ACL2=${ACL2_HOME}/saved_acl2 ${ACL2_CERTIFY_OPTS} ${ACL2_CERTIFY_TARGETS} \
-       >make-books.stdout.log 2> >(tee make-books.stderr.log >&2) ; \
-    find * -type f -name "*.cert.out" | tar -czvf make-books-cert-out.tar.gz -T -
-
-RUN chmod go+rx /home \
-    && chmod -R g+rwx ${ACL2_HOME} \
-    && chmod g+s ${ACL2_HOME} \
-    && chown -R ${USER}:acl2 ${ACL2_HOME} \
-    && find ${ACL2_HOME} -type d -print0 | xargs -0 chmod g+s \
-    && rm /tmp/acl2.zip
+RUN chown -R ${USER}:users ${HOME} ${ACL2_HOME}
 
 # Needed for books/oslib/tests/copy to certify
-RUN touch ${ACL2_HOME}/../foo && chmod a-w ${ACL2_HOME}/../foo && chown ${USER}:acl2 ${ACL2_HOME}/../foo
+RUN touch ${ACL2_HOME}/../foo && chmod a-w ${ACL2_HOME}/../foo && chown ${USER}:users ${ACL2_HOME}/../foo
+
+ENV PATH="/opt/acl2/bin:${PATH}"
+ENV ACL2="/opt/acl2/bin/saved_acl2"
 
 RUN mkdir -p /opt/acl2/bin \
     && ln -s ${ACL2_HOME}/saved_acl2 /opt/acl2/bin/acl2 \
@@ -140,18 +137,23 @@ RUN mkdir -p /opt/acl2/bin \
     && ln -s ${ACL2_HOME}/books/build/clean.pl /opt/acl2/bin/clean.pl \
     && ln -s ${ACL2_HOME}/books/build/critpath.pl /opt/acl2/bin/critpath.pl
 
+USER ${USER}
+
+RUN sbcl --non-interactive --load quicklisp.lisp \
+      --eval "(quicklisp-quickstart:install)" --eval "(ql-util:without-prompting (ql:add-to-init-file))" \
+      --eval "(ql:quickload '(:common-lisp-jupyter :cytoscape-clj :kekule-clj :resizable-box-clj :ngl-clj :delta-vega))" \
+      --eval "(clj:install :implementation t)"
+
+RUN cd ${ACL2_HOME} && (make LISP="sbcl" $ACL2_BUILD_OPTS || (tail -500 make.log && false))
+
+RUN cd ${ACL2_HOME}/books \
+    && make ACL2=${ACL2_HOME}/saved_acl2 ${ACL2_CERTIFY_OPTS} ${ACL2_CERTIFY_TARGETS} \
+       >make-books.stdout.log 2> >(tee make-books.stderr.log >&2) ; \
+    find * -type f -name "*.cert.out" | tar -czvf make-books-cert-out.tar.gz -T -
+
 # # Setup tutorial notebooks (if they exist)
 # RUN mkdir -p ${HOME}/programming-tutorial
 # COPY acl2-notebooks/programming-tutorial/* ${HOME}/programming-tutorial/
-
-COPY quicklisp.lisp quicklisp.lisp
-COPY quicklisp quicklisp/
-
-COPY acl2-kernel acl2-kernel
-
-RUN chown -R ${USER}:users ${HOME}
-
-USER ${USER}
 
 # Do we need these XDG vars?
 # Yes: https://github.com/yitzchak/common-lisp-jupyter/blob/2df55291592943851d013c66af920e7c150b1de2/src/lab-extension/asdf.lisp#L12
@@ -159,17 +161,6 @@ USER ${USER}
 # ENV XDG_CONFIG_HOME=/root/.config
 # ENV XDG_DATA_HOME=/root/.local/share
 # ENV XDG_CACHE_HOME=/root/.cache
-
-# Definitely need this stuff:
-
-ENV PATH="/opt/acl2/bin:${PATH}"
-ENV ACL2_SYSTEM_BOOKS="${ACL2_HOME}/books"
-ENV ACL2="/opt/acl2/bin/saved_acl2"
-
-RUN sbcl --non-interactive --load quicklisp.lisp \
-      --eval "(quicklisp-quickstart:install)" --eval "(ql-util:without-prompting (ql:add-to-init-file))" \
-      --eval "(ql:quickload '(:common-lisp-jupyter :cytoscape-clj :kekule-clj :resizable-box-clj :ngl-clj :delta-vega))" \
-      --eval "(clj:install :implementation t)"
 
 RUN cd acl2-kernel \
     && pipx install poetry \

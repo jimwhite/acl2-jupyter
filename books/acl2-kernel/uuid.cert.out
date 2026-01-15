@@ -1,0 +1,356 @@
+"-*- Mode: auto-revert -*-"
+/workspaces/acl2-jupyter/books/acl2-kernel
+HOST: 685e4b1a4e86
+
+Environment variables:
+ACL2_CUSTOMIZATION=NONE
+ACL2_SYSTEM_BOOKS=/home/acl2/books
+ACL2=/home/acl2/saved_acl2
+ACL2_USELESS_RUNES=-25
+
+Temp lisp file:
+(acl2::value :q)
+(acl2::in-package "ACL2")
+; see github issue #638 (waterfall-parallelism and profiling): 
+#+(and hons (not acl2-par)) (profile-fn 'prove)
+#+(and hons (not acl2-par)) (profile-fn 'certify-book-fn)
+#+(and hons (not acl2-par)) (profile-fn 'include-book-fn)
+(acl2::lp)
+(set-debugger-enable :bt)
+(acl2::in-package "ACL2")
+
+(set-ld-error-action (quote (:exit 1)) state)
+(set-inhibit-output-lst (list (quote prove) (quote proof-tree) (quote warning) (quote observation) (quote event) (quote history)))
+
+(acl2::assign acl2::get-internal-time-as-realtime acl2::t)
+#-cmucl (acl2::gc-verbose t)
+; instructions from .acl2 file cert.acl2:
+; ACL2 Jupyter Kernel
+; Copyright (C) 2026
+;
+; License: MIT
+
+(include-book "portcullis")
+; cert-flags: ? t :ttags :all
+
+
+; Prevent reset-prehistory while loading .port files
+(acl2::assign acl2::skip-reset-prehistory acl2::t)
+; portculli for included books:
+(acl2::ld "std/strings/top.port" :dir :SYSTEM :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
+(acl2::ld "std/util/define.port" :dir :SYSTEM :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
+(acl2::ld "tools/include-raw.port" :dir :SYSTEM :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
+#!ACL2 (set-ld-error-action (quote :continue) state)
+
+; certify-book command flags: ? t :ttags :all
+#!ACL2 (er-progn (time$ (certify-book "uuid" ? t :ttags :all  ))
+                                 (value (prog2$ #+hons (memsum)
+                                                 #-hons nil
+                                                 (exit 43))))
+--- End temp lisp file ---
+
+TARGET: uuid
+STEP: certify
+Start of output:
+
+This is SBCL 2.5.11, an implementation of ANSI Common Lisp.
+More information about SBCL is available at <http://www.sbcl.org/>.
+
+SBCL is free software, provided as is, with absolutely no warranty.
+It is mostly in the public domain; some portions are provided under
+BSD-style licenses.  See the CREDITS and COPYING files in the
+distribution for more information.
+
+ ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ + ACL2 Version 8.6+ (a development snapshot based on ACL2 Version 8.6) +
+ +   built January 15, 2026  05:18:19.                                  +
+ +   (Note from the environment when this executable was saved:         +
+ +    jimwhite/acl2 git commit hash: e1e49a9082e4cbbb9667a065762dea73c03f904d) +
+ + Copyright (C) 2026, Regents of the University of Texas.              +
+ + ACL2 comes with ABSOLUTELY NO WARRANTY.  This is free software and   +
+ + you are welcome to redistribute it under certain conditions.  For    +
+ + details, see the LICENSE file distributed with ACL2.                 +
+ ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Project-dir-alist:
+((:SYSTEM . "/home/acl2/books/")).
+Type :help for help.
+Type (quit) to quit completely out of ACL2.
+
+ACL2 !>
+Exiting the ACL2 read-eval-print loop.  To re-enter, execute (LP).
+* #<PACKAGE "ACL2">
+* 
+Project-dir-alist:
+((:SYSTEM . "/home/acl2/books/")).
+Type :help for help.
+Type (quit) to quit completely out of ACL2.
+
+ACL2 !><state>
+ACL2 !> "ACL2"
+ACL2 !> (:EXIT 1)
+ACL2 !> (PROVE PROOF-TREE
+        WARNING OBSERVATION EVENT HISTORY)
+ACL2 !> T
+ACL2 !>GC-VERBOSE is not supported in this Common Lisp.
+Contact the ACL2 developers if you would like to help add such support.
+NIL
+ACL2 !>
+Summary
+Form:  ( INCLUDE-BOOK "portcullis" ...)
+Rules: NIL
+Time:  0.03 seconds (prove: 0.00, print: 0.00, other: 0.03)
+ "/workspaces/acl2-jupyter/books/acl2-kernel/portcullis.lisp"
+ACL2 !> T
+ACL2 !>
+Project-dir-alist:
+((:SYSTEM . "/home/acl2/books/")).
+Type :help for help.
+Type (quit) to quit completely out of ACL2.
+
+ACL2 !>> "ACL2"
+ACL2 !>>
+The event ( INCLUDE-BOOK "std/portcullis" ...) is redundant.  See :DOC
+redundant-events.
+
+Summary
+Form:  ( INCLUDE-BOOK "std/portcullis" ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ :REDUNDANT
+ACL2 !>>
+Summary
+Form:  ( INCLUDE-BOOK "cowles/portcullis" ...)
+Rules: NIL
+Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
+ "/home/acl2/books/cowles/portcullis.lisp"
+ACL2 !>>
+Summary
+Form:  ( INCLUDE-BOOK "data-structures/portcullis" ...)
+Rules: NIL
+Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
+ "/home/acl2/books/data-structures/portcullis.lisp"
+ACL2 !>>
+Summary
+Form:  ( INCLUDE-BOOK "centaur/fty/portcullis" ...)
+Rules: NIL
+Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
+ "/home/acl2/books/centaur/fty/portcullis.lisp"
+ACL2 !>>
+Summary
+Form:  ( INCLUDE-BOOK "std/typed-lists/portcullis" ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ "/home/acl2/books/std/typed-lists/portcullis.lisp"
+ACL2 !>>Bye.
+ :EOF
+ACL2 !>
+Project-dir-alist:
+((:SYSTEM . "/home/acl2/books/")).
+Type :help for help.
+Type (quit) to quit completely out of ACL2.
+
+ACL2 !>> "ACL2"
+ACL2 !>>
+The event ( INCLUDE-BOOK "../portcullis" ...) is redundant.  See :DOC
+redundant-events.
+
+Summary
+Form:  ( INCLUDE-BOOK "../portcullis" ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ :REDUNDANT
+ACL2 !>>Bye.
+ :EOF
+ACL2 !>
+Project-dir-alist:
+((:SYSTEM . "/home/acl2/books/")).
+Type :help for help.
+Type (quit) to quit completely out of ACL2.
+
+ACL2 !>> "ACL2"
+ACL2 !>>
+The event ( INCLUDE-BOOK "std/portcullis" ...) is redundant.  See :DOC
+redundant-events.
+
+Summary
+Form:  ( INCLUDE-BOOK "std/portcullis" ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ :REDUNDANT
+ACL2 !>>Bye.
+ :EOF
+ACL2 !> :CONTINUE
+ACL2 !>
+Summary
+Form:  ( ACL2::INCLUDE-BOOK "std/strings/top" ...)
+Rules: NIL
+Time:  0.31 seconds (prove: 0.00, print: 0.00, other: 0.31)
+"/home/acl2/books/std/strings/top.lisp"
+
+The event ( ACL2::INCLUDE-BOOK "std/util/define" ...) is redundant.
+See :DOC redundant-events.
+
+Summary
+Form:  ( ACL2::INCLUDE-BOOK "std/util/define" ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+:REDUNDANT
+
+Summary
+Form:  ( ACL2::INCLUDE-BOOK "tools/include-raw" ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+"/home/acl2/books/tools/include-raw.lisp"
+
+Summary
+Form:  ( DEFUN HEX-CHAR-P ...)
+Rules: ((:FAKE-RUNE-FOR-TYPE-SET NIL))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+
+Summary
+Form:  ( DEFTHM BOOLEANP-OF-HEX-CHAR-P ...)
+Rules: ((:COMPOUND-RECOGNIZER BOOLEANP-COMPOUND-RECOGNIZER)
+        (:TYPE-PRESCRIPTION HEX-CHAR-P))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+BOOLEANP-OF-HEX-CHAR-P
+
+Summary
+Form:  ( PROGN (DEFTHM BOOLEANP-OF-HEX-CHAR-P ...) ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+HEX-CHAR-P
+Goal'
+
+Summary
+Form:  ( DEFUN HEX-CHAR-LIST-P ...)
+Rules: ((:DEFINITION CHARACTER-LISTP)
+        (:DEFINITION NOT)
+        (:EXECUTABLE-COUNTERPART ATOM)
+        (:EXECUTABLE-COUNTERPART CAR)
+        (:EXECUTABLE-COUNTERPART CDR)
+        (:EXECUTABLE-COUNTERPART CHARACTER-LISTP)
+        (:EXECUTABLE-COUNTERPART CHARACTERP)
+        (:EXECUTABLE-COUNTERPART CONSP)
+        (:EXECUTABLE-COUNTERPART EQUAL)
+        (:EXECUTABLE-COUNTERPART HEX-CHAR-P)
+        (:EXECUTABLE-COUNTERPART NOT)
+        (:FAKE-RUNE-FOR-TYPE-SET NIL)
+        (:TYPE-PRESCRIPTION CHARACTER-LISTP))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  197
+Subgoal *1/3
+Subgoal *1/2
+Subgoal *1/1
+
+Summary
+Form:  ( DEFTHM BOOLEANP-OF-HEX-CHAR-LIST-P ...)
+Rules: ((:COMPOUND-RECOGNIZER BOOLEANP-COMPOUND-RECOGNIZER)
+        (:INDUCTION HEX-CHAR-LIST-P)
+        (:TYPE-PRESCRIPTION HEX-CHAR-LIST-P))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+BOOLEANP-OF-HEX-CHAR-LIST-P
+
+Summary
+Form:  ( PROGN (DEFTHM BOOLEANP-OF-HEX-CHAR-LIST-P ...) ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+HEX-CHAR-LIST-P
+Goal'
+Subgoal 5
+Subgoal 4
+Subgoal 3
+Subgoal 2
+Subgoal 1
+
+
+ACL2 Error in ( DEFUN UUID-FORMAT-P ...):  The proof of the guard conjecture
+for UUID-FORMAT-P has failed.  You may wish to avoid specifying a guard,
+or to supply option :VERIFY-GUARDS NIL with the :GUARD.  Otherwise,
+you may wish to specify :GUARD-DEBUG T; see :DOC verify-guards.
+
+
+
+Summary
+Form:  ( DEFUN UUID-FORMAT-P ...)
+Rules: ((:DEFINITION LENGTH)
+        (:DEFINITION NOT)
+        (:REWRITE STR::COERCE-TO-LIST-REMOVAL)
+        (:TYPE-PRESCRIPTION ACL2::TRUE-LISTP-NTHCDR-TYPE-PRESCRIPTION)
+        (:TYPE-PRESCRIPTION STR::TRUE-LISTP-OF-EXPLODE))
+Time:  0.03 seconds (prove: 0.02, print: 0.00, other: 0.00)
+Prover steps counted:  12883
+
+---
+The key checkpoint goals, below, may help you to debug this failure.
+See :DOC failure and see :DOC set-checkpoint-summary-limit.
+---
+
+*** Key checkpoints at the top level: ***
+
+Subgoal 5
+(IMPLIES (AND (STRINGP S)
+              (EQUAL (LEN (EXPLODE S)) 36))
+         (CHARACTER-LISTP (TAKE 8 (EXPLODE S))))
+
+Subgoal 4
+(IMPLIES (AND (STRINGP S)
+              (EQUAL (LEN (EXPLODE S)) 36)
+              (HEX-CHAR-LIST-P (TAKE 8 (EXPLODE S)))
+              (EQUAL (NTH 8 (EXPLODE S)) #\-))
+         (CHARACTER-LISTP (TAKE 4 (NTHCDR 9 (EXPLODE S)))))
+
+Subgoal 3
+(IMPLIES (AND (STRINGP S)
+              (EQUAL (LEN (EXPLODE S)) 36)
+              (HEX-CHAR-LIST-P (TAKE 8 (EXPLODE S)))
+              (EQUAL (NTH 8 (EXPLODE S)) #\-)
+              (HEX-CHAR-LIST-P (TAKE 4 (NTHCDR 9 (EXPLODE S))))
+              (EQUAL (NTH 13 (EXPLODE S)) #\-))
+         (CHARACTER-LISTP (TAKE 4 (NTHCDR 14 (EXPLODE S)))))
+
+Subgoal 2
+(IMPLIES (AND (STRINGP S)
+              (EQUAL (LEN (EXPLODE S)) 36)
+              (HEX-CHAR-LIST-P (TAKE 8 (EXPLODE S)))
+              (EQUAL (NTH 8 (EXPLODE S)) #\-)
+              (HEX-CHAR-LIST-P (TAKE 4 (NTHCDR 9 (EXPLODE S))))
+              (EQUAL (NTH 13 (EXPLODE S)) #\-)
+              (HEX-CHAR-LIST-P (TAKE 4 (NTHCDR 14 (EXPLODE S))))
+              (EQUAL (NTH 18 (EXPLODE S)) #\-))
+         (CHARACTER-LISTP (TAKE 4 (NTHCDR 19 (EXPLODE S)))))
+
+Subgoal 1
+(IMPLIES (AND (STRINGP S)
+              (EQUAL (LEN (EXPLODE S)) 36)
+              (HEX-CHAR-LIST-P (TAKE 8 (EXPLODE S)))
+              (EQUAL (NTH 8 (EXPLODE S)) #\-)
+              (HEX-CHAR-LIST-P (TAKE 4 (NTHCDR 9 (EXPLODE S))))
+              (EQUAL (NTH 13 (EXPLODE S)) #\-)
+              (HEX-CHAR-LIST-P (TAKE 4 (NTHCDR 14 (EXPLODE S))))
+              (EQUAL (NTH 18 (EXPLODE S)) #\-)
+              (HEX-CHAR-LIST-P (TAKE 4 (NTHCDR 19 (EXPLODE S))))
+              (EQUAL (NTH 23 (EXPLODE S)) #\-))
+         (CHARACTER-LISTP (NTHCDR 24 (EXPLODE S))))
+
+ACL2 Error [Failure] in ( DEFUN UUID-FORMAT-P ...):  The proof of the
+guard conjecture for UUID-FORMAT-P has failed; see the discussion above
+about :VERIFY-GUARDS and :GUARD-DEBUG.  See :DOC failure.
+
+******** FAILED ********
+
+Summary
+Form:  (CERTIFY-BOOK "uuid" ...)
+Rules: NIL
+Time:  0.37 seconds (prove: 0.03, print: 0.00, other: 0.34)
+Prover steps counted:  13080
+
+ACL2 Error [Failure] in (CERTIFY-BOOK "uuid" ...):  See :DOC failure.
+
+******** FAILED ********
+; (EV-REC *RETURN-LAST-ARG3* ...) took 
+; 0.37 seconds realtime, 0.36 seconds runtime
+; (185,305,920 bytes allocated).
+ACL2 !>Bye.
+Exit code from ACL2 is 0
+uuid.cert seems to be missing

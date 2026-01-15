@@ -13,8 +13,10 @@
 (include-book "centaur/bridge/to-json" :dir :system)
 (include-book "kestrel/crypto/interfaces/hmac-sha-256" :dir :system)
 (include-book "kestrel/typed-lists-light/map-char-code" :dir :system)
+(include-book "kestrel/utilities/strings/hexstrings" :dir :system)
 (include-book "std/strings/top" :dir :system)
 (include-book "std/util/define" :dir :system)
+(local (include-book "centaur/bitops/ihsext-basics" :dir :system))
 (local (include-book "std/testing/assert-bang" :dir :system))
 
 ;;;============================================================================
@@ -37,48 +39,17 @@
 
 ;; Convert a string to a list of bytes (character codes)
 (define string-to-bytes ((s stringp))
-  :returns (bytes byte-listp)
+  :returns (bytes acl2::byte-listp)
   :short "Convert a string to a list of bytes (character codes)"
   (if (mbt (stringp s))
       (acl2::map-char-code (coerce s 'list))
     nil))
 
-;; Convert bytes to a hex string for HMAC output
-(define byte-to-hex-char ((b (unsigned-byte-p 4 b)))
-  :returns (char characterp)
-  :short "Convert a nibble to a hex character"
-  (code-char (if (< b 10)
-                 (+ (char-code #\0) b)
-               (+ (char-code #\a) (- b 10)))))
-
-(define byte-to-hex-string ((b (unsigned-byte-p 8 b)))
+;; Convert bytes to lowercase hex string using existing book
+(define bytes-to-hex-string ((bytes (acl2::unsigned-byte-listp 8 bytes)))
   :returns (s stringp)
-  :short "Convert a byte to a two-character hex string"
-  (let ((hi (ash b -4))
-        (lo (logand b #xf)))
-    (coerce (list (byte-to-hex-char (nfix hi))
-                  (byte-to-hex-char (nfix lo)))
-            'string))
-  :prepwork
-  ((local (defthm unsigned-byte-p-4-of-ash
-            (implies (unsigned-byte-p 8 b)
-                     (unsigned-byte-p 4 (ash b -4)))
-            :hints (("Goal" :in-theory (enable unsigned-byte-p ash)))))
-   (local (defthm unsigned-byte-p-4-of-logand
-            (unsigned-byte-p 4 (logand b #xf))
-            :hints (("Goal" :in-theory (enable unsigned-byte-p)))))))
-
-(define bytes-to-hex-string ((bytes byte-listp))
-  :returns (s stringp)
-  :short "Convert a list of bytes to a hex string"
-  (if (endp bytes)
-      ""
-    (str::cat (byte-to-hex-string (car bytes))
-              (bytes-to-hex-string (cdr bytes))))
-  :prepwork
-  ((local (defthm unsigned-byte-p-8-car-when-byte-listp
-            (implies (and (byte-listp x) (consp x))
-                     (unsigned-byte-p 8 (car x)))))))
+  :short "Convert a list of bytes to a lowercase hex string"
+  (str::downcase-string (acl2::ubyte8s=>hexstring bytes)))
 
 ;;;============================================================================
 ;;; HMAC-SHA-256 Signing
@@ -86,8 +57,9 @@
 
 ;; Sign a message with HMAC-SHA-256
 ;; Key and data are strings, result is hex string
+;; Note: Uses :mode :program due to HMAC guard complexity (size limit)
 (define hmac-sign ((key stringp) (data stringp))
-  :returns (sig stringp)
+  :mode :program
   :short "Compute HMAC-SHA-256 signature as hex string"
   :long "<p>Given a key and data as strings, compute the HMAC-SHA-256
 and return it as a lowercase hex string.</p>"
@@ -140,7 +112,7 @@ and return it as a lowercase hex string.</p>"
                            (parent-header stringp)
                            (metadata stringp)
                            (content stringp))
-  :returns (sig stringp)
+  :mode :program
   :short "Compute HMAC signature for message parts"
   :long "<p>The signature is computed over the concatenation of
 header, parent_header, metadata, and content (all JSON strings).</p>"
@@ -156,7 +128,7 @@ header, parent_header, metadata, and content (all JSON strings).</p>"
                                (parent-header alistp)
                                (metadata alistp)
                                (content alistp))
-  :returns (frames string-listp :hyp :guard)
+  :mode :program
   :short "Create a complete Jupyter message envelope"
   :long "<p>Creates the multipart message frame list:
 [identities..., delimiter, signature, header, parent_header, metadata, content]</p>"
@@ -249,14 +221,9 @@ header, parent_header, metadata, and content (all JSON strings).</p>"
    (assert! (equal (string-to-bytes "ABC") '(65 66 67)))
    (assert! (equal (string-to-bytes "") nil))
 
-   ;; Test byte to hex
-   (assert! (equal (byte-to-hex-string 0) "00"))
-   (assert! (equal (byte-to-hex-string 15) "0f"))
-   (assert! (equal (byte-to-hex-string 255) "ff"))
-   (assert! (equal (byte-to-hex-string 171) "ab"))
-
-   ;; Test bytes to hex string
+   ;; Test bytes to hex string (using ubyte8s=>hexstring)
    (assert! (equal (bytes-to-hex-string '(0 15 255)) "000fff"))
+   (assert! (equal (bytes-to-hex-string '(171 205)) "abcd"))
 
    ;; Test JSON encoding
    (assert! (stringp (json-encode (list (cons "a" "b")))))

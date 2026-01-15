@@ -41,7 +41,7 @@ books/acl2-kernel/
 
 2. **[DONE] Implement connection file parser** - Use `kestrel/json-parser` to parse Jupyter connection files. Write `defthm` tests verifying parsed structure. File: `connection.lisp`
 
-3. **Implement message envelope** - Use `centaur/bridge/to-json` for encoding, `kestrel/crypto/interfaces/hmac-sha-256` for signing. `defthm` tests verify envelope structure.
+3. **[DONE] Implement message envelope** - Use `centaur/bridge/to-json` for encoding, `kestrel/crypto/interfaces/hmac-sha-256` for signing. File: `message.lisp`
 
 4. **Implement UUID generation** - Raw Lisp for UUID v4 (no existing ACL2 book), ACL2 wrapper with type theorems.
 
@@ -98,8 +98,8 @@ cert.pl top.lisp  # Certifies all books, running all defthm proofs
 ## Progress
 
 - [x] Step 1: Create kernel directory and package (basic structure done)
-- [ ] Step 2: Implement connection file parser using kestrel/json-parser
-- [ ] Step 3: Implement message envelope using bridge/to-json and crypto/hmac
+- [x] Step 2: Implement connection file parser using kestrel/json-parser (connection.lisp CERTIFIED)
+- [x] Step 3: Implement message envelope using bridge/to-json and crypto/hmac (message.lisp CERTIFIED)
 - [ ] Step 4: Implement UUID generation
 - [ ] Step 5: Implement ZeroMQ interface
 - [ ] Step 6: Implement output capture

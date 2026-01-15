@@ -15,7 +15,7 @@
 
 ;; Include kernel component books (to be added as implemented)
 (include-book "connection")
-;; (include-book "message")
+(include-book "message")
 ;; (include-book "channel")
 ;; (include-book "kernel")
 

@@ -44,6 +44,7 @@ Temp lisp file:
 (acl2::ld "centaur/bridge/to-json.port" :dir :SYSTEM :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
 (acl2::ld "kestrel/crypto/interfaces/hmac-sha-256.port" :dir :SYSTEM :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
 (acl2::ld "connection.port" :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
+(acl2::ld "message.port" :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
 #!ACL2 (set-ld-error-action (quote :continue) state)
 
 ; certify-book command flags: ? t :ttags :all
@@ -373,6 +374,87 @@ Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
  :REDUNDANT
 ACL2 !>>Bye.
  :EOF
+ACL2 !>
+Project-dir-alist:
+((:SYSTEM . "/home/acl2/books/")).
+Type :help for help.
+Type (quit) to quit completely out of ACL2.
+
+ACL2 !>> "ACL2"
+ACL2 !>>
+The event ( INCLUDE-BOOK "portcullis" ...) is redundant.  See :DOC
+redundant-events.
+
+Summary
+Form:  ( INCLUDE-BOOK "portcullis" ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ :REDUNDANT
+ACL2 !>>
+The event ( INCLUDE-BOOK "centaur/bridge/portcullis" ...) is redundant.
+See :DOC redundant-events.
+
+Summary
+Form:  ( INCLUDE-BOOK "centaur/bridge/portcullis" ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ :REDUNDANT
+ACL2 !>>
+The event ( INCLUDE-BOOK "cowles/portcullis" ...) is redundant.  See
+:DOC redundant-events.
+
+Summary
+Form:  ( INCLUDE-BOOK "cowles/portcullis" ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ :REDUNDANT
+ACL2 !>>
+The event ( INCLUDE-BOOK "data-structures/portcullis" ...) is redundant.
+See :DOC redundant-events.
+
+Summary
+Form:  ( INCLUDE-BOOK "data-structures/portcullis" ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ :REDUNDANT
+ACL2 !>>
+The event ( INCLUDE-BOOK "centaur/fty/portcullis" ...) is redundant.
+See :DOC redundant-events.
+
+Summary
+Form:  ( INCLUDE-BOOK "centaur/fty/portcullis" ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ :REDUNDANT
+ACL2 !>>
+The event ( INCLUDE-BOOK "std/typed-lists/portcullis" ...) is redundant.
+See :DOC redundant-events.
+
+Summary
+Form:  ( INCLUDE-BOOK "std/typed-lists/portcullis" ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ :REDUNDANT
+ACL2 !>>
+The event ( INCLUDE-BOOK "kestrel/crypto/portcullis" ...) is redundant.
+See :DOC redundant-events.
+
+Summary
+Form:  ( INCLUDE-BOOK "kestrel/crypto/portcullis" ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ :REDUNDANT
+ACL2 !>>
+The event ( INCLUDE-BOOK "std/omaps/portcullis" ...) is redundant.
+See :DOC redundant-events.
+
+Summary
+Form:  ( INCLUDE-BOOK "std/omaps/portcullis" ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ :REDUNDANT
+ACL2 !>>Bye.
+ :EOF
 ACL2 !> :CONTINUE
 ACL2 !>
 Summary
@@ -390,13 +472,13 @@ Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "std/strings/top" ...)
 Rules: NIL
-Time:  0.31 seconds (prove: 0.00, print: 0.00, other: 0.31)
+Time:  0.37 seconds (prove: 0.00, print: 0.00, other: 0.37)
 "/home/acl2/books/std/strings/top.lisp"
 
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "kestrel/json-parser/parse-json" ...)
 Rules: NIL
-Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
+Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
 "/home/acl2/books/kestrel/json-parser/parse-json.lisp"
 
 Summary
@@ -417,6 +499,12 @@ Form:  ( ACL2::INCLUDE-BOOK "connection" ...)
 Rules: NIL
 Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
 "/workspaces/acl2-jupyter/books/acl2-kernel/connection.lisp"
+
+Summary
+Form:  ( ACL2::INCLUDE-BOOK "message" ...)
+Rules: NIL
+Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
+"/workspaces/acl2-jupyter/books/acl2-kernel/message.lisp"
 (DEFXDOC ACL2-KERNEL)
 
 
@@ -424,9 +512,9 @@ Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
 Summary
 Form:  (CERTIFY-BOOK "top" ...)
 Rules: NIL
-Time:  0.56 seconds (prove: 0.00, print: 0.00, other: 0.56)
+Time:  0.65 seconds (prove: 0.00, print: 0.00, other: 0.65)
 ; (EV-REC *RETURN-LAST-ARG3* ...) took 
-; 0.56 seconds realtime, 0.56 seconds runtime
-; (309,370,464 bytes allocated).
+; 0.65 seconds realtime, 0.62 seconds runtime
+; (317,895,024 bytes allocated).
 Exit code from ACL2 is 43
--rw-r--r-- 1 jovyan users 48386 Jan 15 22:16 top.cert
+-rw-r--r-- 1 jovyan users 57974 Jan 15 22:30 top.cert

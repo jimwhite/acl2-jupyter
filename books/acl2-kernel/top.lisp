@@ -16,8 +16,7 @@
 ;; Include kernel component books (to be added as implemented)
 (include-book "connection")
 (include-book "message")
-;; (include-book "channel")
-;; (include-book "kernel")
+(include-book "kernel")
 
 (defxdoc acl2-kernel
   :parents (acl2::interfacing-tools)

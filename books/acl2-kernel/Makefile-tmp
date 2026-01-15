@@ -275,7 +275,13 @@ CERT_PL_CERTS := \
      ../../../../home/acl2/books/misc/total-order.cert \
      ../../../../home/acl2/books/misc/without-waterfall-parallelism.cert \
      ../../../../home/acl2/books/std/alists/abstract.cert \
+     ../../../../home/acl2/books/std/alists/alist-defuns.cert \
+     ../../../../home/acl2/books/std/alists/alist-equiv.cert \
      ../../../../home/acl2/books/std/alists/alist-keys.cert \
+     ../../../../home/acl2/books/std/alists/alist-vals.cert \
+     ../../../../home/acl2/books/std/alists/append-alist-keys.cert \
+     ../../../../home/acl2/books/std/alists/append-alist-vals.cert \
+     ../../../../home/acl2/books/std/alists/put-assoc-equal.cert \
      ../../../../home/acl2/books/std/basic/arith-equiv-defs.cert \
      ../../../../home/acl2/books/std/basic/arith-equivs.cert \
      ../../../../home/acl2/books/std/basic/bytep.cert \
@@ -450,6 +456,7 @@ CERT_PL_CERTS := \
      ../../../../home/acl2/books/xdoc/str.cert \
      ../../../../home/acl2/books/xdoc/top.cert \
      connection.cert \
+     kernel.cert \
      message.cert \
      portcullis.cert \
      top.cert
@@ -752,7 +759,13 @@ CERT_PL_SOURCES := \
      ../../../../home/acl2/books/misc/total-order.lisp \
      ../../../../home/acl2/books/misc/without-waterfall-parallelism.lisp \
      ../../../../home/acl2/books/std/alists/abstract.lisp \
+     ../../../../home/acl2/books/std/alists/alist-defuns.lisp \
+     ../../../../home/acl2/books/std/alists/alist-equiv.lisp \
      ../../../../home/acl2/books/std/alists/alist-keys.lisp \
+     ../../../../home/acl2/books/std/alists/alist-vals.lisp \
+     ../../../../home/acl2/books/std/alists/append-alist-keys.lisp \
+     ../../../../home/acl2/books/std/alists/append-alist-vals.lisp \
+     ../../../../home/acl2/books/std/alists/put-assoc-equal.lisp \
      ../../../../home/acl2/books/std/basic/arith-equiv-defs.lisp \
      ../../../../home/acl2/books/std/basic/arith-equivs.lisp \
      ../../../../home/acl2/books/std/basic/bytep.lisp \
@@ -948,33 +961,30 @@ CERT_PL_SOURCES := \
      ../../../../home/acl2/books/xdoc/top.lisp \
      ./cert.acl2 \
      connection.lisp \
+     kernel.lisp \
      message.lisp \
      package.lsp \
      portcullis.acl2 \
      portcullis.lisp \
      top.lisp
 
-CERT_PL_NON_LISPWORKS :=
-
-CERT_PL_USES_ACL2R :=
-
-CERT_PL_NON_ALLEGRO :=
-
-CERT_PL_USES_CPP :=
+CERT_PL_USES_SMTLINK :=
 
 CERT_PL_USES_ABC :=
 
 CERT_PL_USES_QUICKLISP :=
 
-CERT_PL_USES_GLUCOSE :=
-
-CERT_PL_NON_SBCL :=
-
-CERT_PL_NON_CMUCL :=
+CERT_PL_NON_LISPWORKS :=
 
 CERT_PL_ANSI_ONLY :=
 
-CERT_PL_USES_IPASIR :=
+CERT_PL_USES_ACL2R :=
+
+CERT_PL_NON_CMUCL :=
+
+CERT_PL_USES_STP :=
+
+CERT_PL_NON_ACL2P :=
 
 CERT_PL_NON_ACL2R :=  \
      ../../../../home/acl2/books/kestrel/arithmetic-light/ash.cert  \
@@ -1005,18 +1015,23 @@ CERT_PL_NON_ACL2R :=  \
      ../../../../home/acl2/books/kestrel/unicode-light/hex-digit-chars-to-code-point.cert  \
      ../../../../home/acl2/books/kestrel/unicode-light/surrogates.cert  \
      connection.cert  \
+     kernel.cert  \
      message.cert  \
      top.cert
 
-CERT_PL_CCL_ONLY :=
-
 CERT_PL_NON_GCL :=
 
-CERT_PL_USES_STP :=
+CERT_PL_CCL_ONLY :=
 
-CERT_PL_USES_SMTLINK :=
+CERT_PL_USES_IPASIR :=
 
-CERT_PL_NON_ACL2P :=
+CERT_PL_USES_GLUCOSE :=
+
+CERT_PL_USES_CPP :=
+
+CERT_PL_NON_ALLEGRO :=
+
+CERT_PL_NON_SBCL :=
 
 ../../../../home/acl2/books/arithmetic-3/bind-free/arithmetic-theory.cert : acl2x = 0
 ../../../../home/acl2/books/arithmetic-3/bind-free/arithmetic-theory.cert : pcert = 0
@@ -3722,6 +3737,29 @@ CERT_PL_NON_ACL2P :=
      ../../../../home/acl2/books/std/lists/abstract.cert
 
 
+../../../../home/acl2/books/std/alists/alist-defuns.cert : acl2x = 0
+../../../../home/acl2/books/std/alists/alist-defuns.cert : pcert = 0
+
+../../../../home/acl2/books/std/alists/alist-defuns.cert : \
+     ../../../../home/acl2/books/std/alists/alist-defuns.lisp \
+     ../../../../home/acl2/books/std/util/define.cert \
+     ../../../../home/acl2/books/std/util/bstar.cert \
+     ../../../../home/acl2/books/std/lists/list-defuns.cert \
+     ../../../../home/acl2/books/std/alists/alist-equiv.cert \
+     ../../../../home/acl2/books/std/alists/append-alist-keys.cert \
+     ../../../../home/acl2/books/std/alists/append-alist-vals.cert
+
+
+../../../../home/acl2/books/std/alists/alist-equiv.cert : acl2x = 0
+../../../../home/acl2/books/std/alists/alist-equiv.cert : pcert = 0
+
+../../../../home/acl2/books/std/alists/alist-equiv.cert : \
+     ../../../../home/acl2/books/std/alists/alist-equiv.lisp \
+     ../../../../home/acl2/books/xdoc/top.cert \
+     ../../../../home/acl2/books/std/alists/alist-keys.cert \
+     ../../../../home/acl2/books/std/alists/alist-vals.cert
+
+
 ../../../../home/acl2/books/std/alists/alist-keys.cert : acl2x = 0
 ../../../../home/acl2/books/std/alists/alist-keys.cert : pcert = 0
 
@@ -3729,6 +3767,40 @@ CERT_PL_NON_ACL2P :=
      ../../../../home/acl2/books/std/alists/alist-keys.lisp \
      ../../../../home/acl2/books/xdoc/top.cert \
      ../../../../home/acl2/books/std/lists/list-defuns.cert
+
+
+../../../../home/acl2/books/std/alists/alist-vals.cert : acl2x = 0
+../../../../home/acl2/books/std/alists/alist-vals.cert : pcert = 0
+
+../../../../home/acl2/books/std/alists/alist-vals.cert : \
+     ../../../../home/acl2/books/std/alists/alist-vals.lisp \
+     ../../../../home/acl2/books/std/alists/alist-keys.cert
+
+
+../../../../home/acl2/books/std/alists/append-alist-keys.cert : acl2x = 0
+../../../../home/acl2/books/std/alists/append-alist-keys.cert : pcert = 0
+
+../../../../home/acl2/books/std/alists/append-alist-keys.cert : \
+     ../../../../home/acl2/books/std/alists/append-alist-keys.lisp \
+     ../../../../home/acl2/books/xdoc/top.cert \
+     ../../../../home/acl2/books/std/lists/list-defuns.cert
+
+
+../../../../home/acl2/books/std/alists/append-alist-vals.cert : acl2x = 0
+../../../../home/acl2/books/std/alists/append-alist-vals.cert : pcert = 0
+
+../../../../home/acl2/books/std/alists/append-alist-vals.cert : \
+     ../../../../home/acl2/books/std/alists/append-alist-vals.lisp \
+     ../../../../home/acl2/books/xdoc/top.cert \
+     ../../../../home/acl2/books/std/lists/list-defuns.cert
+
+
+../../../../home/acl2/books/std/alists/put-assoc-equal.cert : acl2x = 0
+../../../../home/acl2/books/std/alists/put-assoc-equal.cert : pcert = 0
+
+../../../../home/acl2/books/std/alists/put-assoc-equal.cert : \
+     ../../../../home/acl2/books/std/alists/put-assoc-equal.lisp \
+     ../../../../home/acl2/books/std/alists/alist-defuns.cert
 
 
 ../../../../home/acl2/books/std/basic/arith-equiv-defs.cert : acl2x = 0
@@ -6292,6 +6364,20 @@ connection.cert : \
      portcullis.cert
 
 
+kernel.cert : acl2x = 0
+kernel.cert : pcert = 0
+
+kernel.cert : \
+     kernel.lisp \
+     ./cert.acl2 \
+     connection.cert \
+     message.cert \
+     ../../../../home/acl2/books/std/util/define.cert \
+     ../../../../home/acl2/books/std/alists/put-assoc-equal.cert \
+     ../../../../home/acl2/books/std/testing/assert-bang.cert \
+     portcullis.cert
+
+
 message.cert : acl2x = 0
 message.cert : pcert = 0
 
@@ -6333,6 +6419,7 @@ top.cert : \
      ../../../../home/acl2/books/kestrel/crypto/interfaces/hmac-sha-256.cert \
      connection.cert \
      message.cert \
+     kernel.cert \
      portcullis.cert
 
 

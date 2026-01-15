@@ -1,0 +1,7 @@
+; ACL2 Jupyter Kernel
+; Copyright (C) 2026
+;
+; License: MIT
+
+(include-book "portcullis")
+; cert-flags: ? t :ttags :all

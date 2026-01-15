@@ -1,0 +1,8 @@
+; ACL2 Jupyter Kernel
+; Copyright (C) 2026
+;
+; License: MIT
+
+(in-package "ACL2")
+(ld "package.lsp")
+; cert-flags: ? t :ttags :all

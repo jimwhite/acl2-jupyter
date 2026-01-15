@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../../home/acl2"
+		}
+	],
+	"settings": {
+		"github-actions.workflows.pinned.workflows": [
+			"acl2-jupyter/.github/workflows/docker-release.yml"
+		]
+	}
+}

@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "/workspaces/acl2-jupyter/books/acl2-kernel/install/acl2-kernel",
+    "{connection_file}"
+  ],
+  "display_name": "ACL2",
+  "language": "acl2",
+  "interrupt_mode": "message",
+  "metadata": {
+    "debugger": false
+  }
+}

@@ -1,0 +1,19 @@
+#!/bin/bash
+# ACL2 Jupyter Kernel launcher
+# This script starts ACL2 with the kernel loaded and running
+
+CONNECTION_FILE="$1"
+
+if [ -z "$CONNECTION_FILE" ]; then
+    echo "Usage: $0 <connection-file>" >&2
+    exit 1
+fi
+
+KERNEL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+cd "$KERNEL_DIR"
+exec /home/acl2/saved_acl2 << EOF
+(include-book "top")
+:q
+(acl2-kernel::start-kernel "$CONNECTION_FILE")
+EOF

@@ -4,42 +4,46 @@ Implement a native ACL2 Jupyter kernel as ACL2 books, using raw Lisp only where 
 
 ## Architecture
 
+The kernel reuses existing ACL2 community books wherever possible:
+
+### Existing Books to Include
+- **JSON parsing**: `kestrel/json-parser/parse-json.lisp` - full JSON parser
+- **JSON encoding**: `centaur/bridge/to-json.lisp` - JSON encoder for ACL2 objects  
+- **HMAC-SHA-256**: `kestrel/crypto/interfaces/hmac-sha-256.lisp` - message signing
+- **SHA-256**: `kestrel/crypto/interfaces/sha-256.lisp` - hashing
+- **Strings**: `std/strings/top.lisp` - string utilities
+- **Bridge patterns**: `centaur/bridge/top.lisp` - TCP/Unix socket I/O, threading
+
+### New Kernel-Specific Books
 ```
 books/acl2-kernel/
-├── package.lsp              # Raw: DEFPACKAGE for ACL2-KERNEL
-├── package.lisp             # ACL2 book loading package.lsp
-├── json.lisp                # ACL2: JSON encoding/decoding (pure functions)
-├── json-tests.lisp          # ACL2: defthm tests for JSON
-├── hmac.lisp                # ACL2: HMAC-SHA256 wrapper
-├── hmac-raw.lsp             # Raw: ironclad FFI for HMAC
-├── message.lisp             # ACL2: Message envelope construction
-├── message-tests.lisp       # ACL2: defthm tests for messages
-├── uuid.lisp                # ACL2: UUID generation wrapper
-├── uuid-raw.lsp             # Raw: UUID v4 generation
-├── zmq-raw.lsp              # Raw: ZeroMQ socket operations (pzmq)
-├── zmq.lisp                 # ACL2: ZeroMQ wrapper book
-├── channel.lisp             # ACL2: Channel abstraction
-├── heartbeat.lisp           # ACL2: Heartbeat responder
-├── iopub.lisp               # ACL2: IOPub output channel
-├── shell.lisp               # ACL2: Shell request handlers
-├── eval.lisp                # ACL2: ACL2 code evaluation
+├── package.lsp              # DEFPACKAGE for ACL2-KERNEL
+├── portcullis.lisp          # Package loading book
+├── cert.acl2                # Certification config
+├── connection.lisp          # Parse Jupyter connection files (uses kestrel/json-parser)
+├── message.lisp             # Jupyter protocol message envelopes (uses bridge/to-json, crypto/hmac)
+├── uuid-raw.lsp             # Raw: UUID v4 generation (no ACL2 book exists)
+├── uuid.lisp                # ACL2 wrapper for UUID
+├── channel.lisp             # ZeroMQ channel abstraction
+├── zmq-raw.lsp              # Raw: pzmq FFI (ZeroMQ bindings)
+├── handlers.lisp            # Request handlers (kernel_info, execute, etc.)
+├── eval.lisp                # ACL2 code evaluation wrapper
 ├── eval-raw.lsp             # Raw: Output capture, ACL2 channel binding
-├── kernel.lisp              # ACL2: Main kernel orchestration
-├── kernel-raw.lsp           # Raw: Threading, main loop
-├── top.lisp                 # ACL2: Top-level book (includes all)
-├── cert.acl2                # Certification instructions
-└── Makefile                 # Runs cert.pl for all books
+├── kernel.lisp              # Main kernel state and dispatch
+├── kernel-raw.lsp           # Raw: Threading, main event loop
+├── top.lisp                 # Top-level book
+└── Makefile                 # Runs cert.pl
 ```
 
 ## Steps
 
-1. **Create kernel directory and package** - Set up `books/acl2-kernel/` with package definition and top-level book structure. Create `cert.acl2` for certification.
+1. **[DONE] Create kernel directory and package** - Set up `books/acl2-kernel/` with package definition and top-level book structure. Include existing books for JSON, crypto.
 
-2. **Implement JSON encoding/decoding** - Pure ACL2 functions for JSON serialization with `defthm` tests proving correctness properties (e.g., round-trip, valid output format).
+2. **[DONE] Implement connection file parser** - Use `kestrel/json-parser` to parse Jupyter connection files. Write `defthm` tests verifying parsed structure. File: `connection.lisp`
 
-3. **Implement HMAC-SHA256** - ACL2 wrapper book with raw Lisp FFI to ironclad. Tests verify signature computation matches known test vectors.
+3. **Implement message envelope** - Use `centaur/bridge/to-json` for encoding, `kestrel/crypto/interfaces/hmac-sha-256` for signing. `defthm` tests verify envelope structure.
 
-4. **Implement message envelope** - ACL2 functions for Jupyter protocol message construction. `defthm` tests verify envelope structure and HMAC integration.
+4. **Implement UUID generation** - Raw Lisp for UUID v4 (no existing ACL2 book), ACL2 wrapper with type theorems.
 
 5. **Implement ZeroMQ interface** - Raw Lisp for pzmq socket operations, ACL2 wrapper for channel abstraction.
 
@@ -93,10 +97,10 @@ cert.pl top.lisp  # Certifies all books, running all defthm proofs
 
 ## Progress
 
-- [ ] Step 1: Create kernel directory and package
-- [ ] Step 2: Implement JSON encoding/decoding with defthm tests
-- [ ] Step 3: Implement HMAC-SHA256 with test vectors
-- [ ] Step 4: Implement message envelope with defthm tests
+- [x] Step 1: Create kernel directory and package (basic structure done)
+- [ ] Step 2: Implement connection file parser using kestrel/json-parser
+- [ ] Step 3: Implement message envelope using bridge/to-json and crypto/hmac
+- [ ] Step 4: Implement UUID generation
 - [ ] Step 5: Implement ZeroMQ interface
 - [ ] Step 6: Implement output capture
 - [ ] Step 7: Implement kernel orchestration

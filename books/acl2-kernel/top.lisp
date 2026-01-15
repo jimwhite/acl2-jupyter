@@ -8,9 +8,13 @@
 (include-book "tools/include-raw" :dir :system)
 (include-book "std/strings/top" :dir :system)
 
+;; Reuse existing community books
+(include-book "kestrel/json-parser/parse-json" :dir :system)     ; JSON parsing
+(include-book "centaur/bridge/to-json" :dir :system)             ; JSON encoding
+(include-book "kestrel/crypto/interfaces/hmac-sha-256" :dir :system) ; HMAC-SHA-256
+
 ;; Include kernel component books (to be added as implemented)
-;; (include-book "json")
-;; (include-book "hmac")
+(include-book "connection")
 ;; (include-book "message")
 ;; (include-book "channel")
 ;; (include-book "kernel")
@@ -30,7 +34,13 @@ Jupyter notebooks.</p>
 <li>ZeroMQ transport (TCP and Unix domain sockets)</li>
 </ul>
 
+<h3>Reused Community Books</h3>
+<ul>
+<li>@(see acl2::parse-json) - JSON parsing from kestrel/json-parser</li>
+<li>@(see bridge::json-encode) - JSON encoding from centaur/bridge</li>
+<li>@(see crypto::hmac-sha-256) - HMAC from kestrel/crypto</li>
+</ul>
+
 <h3>Architecture</h3>
 <p>The kernel is implemented as ACL2 books with raw Lisp extensions
-for FFI to ZeroMQ and cryptographic libraries. Tests are @(see defthm)
-forms proven during certification.</p>")
+for FFI to ZeroMQ. Tests are @(see defthm) forms proven during certification.</p>")

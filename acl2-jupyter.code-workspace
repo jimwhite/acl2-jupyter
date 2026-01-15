@@ -10,6 +10,9 @@
 	"settings": {
 		"github-actions.workflows.pinned.workflows": [
 			"acl2-jupyter/.github/workflows/docker-release.yml"
-		]
+		],
+		"chat.tools.terminal.autoApprove": {
+			"/home/acl2/books/build/cert.pl": true
+		}
 	}
 }

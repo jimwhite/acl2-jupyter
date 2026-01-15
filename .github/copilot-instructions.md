@@ -17,6 +17,18 @@ Read `/workspaces/acl2-jupyter/PLAN-acl2-kernel.md` for the current implementati
 - **Proofs MUST complete** - if a proof fails, fix the code or add proper lemmas
 - **cert.pl MUST succeed** - code is not complete until certification passes
 
+### MANDATORY: Reuse Existing Code
+- **ALWAYS search for existing implementations** before writing new code
+- **ACL2 community books are the first source** - search `/home/acl2/books/`
+- **Key existing books to use:**
+  - JSON parsing: `kestrel/json-parser/parse-json.lisp`
+  - JSON encoding: `centaur/bridge/to-json.lisp`
+  - HMAC-SHA-256: `kestrel/crypto/interfaces/hmac-sha-256.lisp`
+  - SHA-256: `kestrel/crypto/interfaces/sha-256.lisp`
+  - Strings: `std/strings/top.lisp`
+  - Utilities: `std/util/defines.lisp`, `std/basic/top.lisp`
+- **Never duplicate functionality** that exists in community books
+
 ### When Proofs Fail
 1. Analyze the checkpoint goals carefully
 2. Add necessary lemmas or include appropriate arithmetic/bitops books

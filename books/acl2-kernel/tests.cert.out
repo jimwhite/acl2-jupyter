@@ -1,0 +1,465 @@
+"-*- Mode: auto-revert -*-"
+/workspaces/acl2-jupyter/books/acl2-kernel
+HOST: 685e4b1a4e86
+
+Environment variables:
+ACL2_CUSTOMIZATION=NONE
+ACL2_SYSTEM_BOOKS=/home/acl2/books
+ACL2=/home/acl2/saved_acl2
+ACL2_USELESS_RUNES=-25
+
+Temp lisp file:
+(acl2::value :q)
+(acl2::in-package "ACL2")
+; see github issue #638 (waterfall-parallelism and profiling): 
+#+(and hons (not acl2-par)) (profile-fn 'prove)
+#+(and hons (not acl2-par)) (profile-fn 'certify-book-fn)
+#+(and hons (not acl2-par)) (profile-fn 'include-book-fn)
+(acl2::lp)
+(set-debugger-enable :bt)
+(acl2::in-package "ACL2")
+
+(set-ld-error-action (quote (:exit 1)) state)
+(set-inhibit-output-lst (list (quote prove) (quote proof-tree) (quote warning) (quote observation) (quote event) (quote history)))
+
+(acl2::assign acl2::get-internal-time-as-realtime acl2::t)
+#-cmucl (acl2::gc-verbose t)
+; instructions from .acl2 file cert.acl2:
+; ACL2 Jupyter Kernel
+; Copyright (C) 2026
+;
+; License: MIT
+
+(include-book "portcullis")
+; cert-flags: ? t :ttags :all
+
+
+; Prevent reset-prehistory while loading .port files
+(acl2::assign acl2::skip-reset-prehistory acl2::t)
+; portculli for included books:
+(acl2::ld "top.port" :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
+#!ACL2 (set-ld-error-action (quote :continue) state)
+
+; certify-book command flags: ? t :ttags :all
+#!ACL2 (er-progn (time$ (certify-book "tests" ? t :ttags :all  ))
+                                 (value (prog2$ #+hons (memsum)
+                                                 #-hons nil
+                                                 (exit 43))))
+--- End temp lisp file ---
+
+TARGET: tests
+STEP: certify
+Start of output:
+
+This is SBCL 2.5.11, an implementation of ANSI Common Lisp.
+More information about SBCL is available at <http://www.sbcl.org/>.
+
+SBCL is free software, provided as is, with absolutely no warranty.
+It is mostly in the public domain; some portions are provided under
+BSD-style licenses.  See the CREDITS and COPYING files in the
+distribution for more information.
+
+ ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ + ACL2 Version 8.6+ (a development snapshot based on ACL2 Version 8.6) +
+ +   built January 15, 2026  05:18:19.                                  +
+ +   (Note from the environment when this executable was saved:         +
+ +    jimwhite/acl2 git commit hash: e1e49a9082e4cbbb9667a065762dea73c03f904d) +
+ + Copyright (C) 2026, Regents of the University of Texas.              +
+ + ACL2 comes with ABSOLUTELY NO WARRANTY.  This is free software and   +
+ + you are welcome to redistribute it under certain conditions.  For    +
+ + details, see the LICENSE file distributed with ACL2.                 +
+ ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Project-dir-alist:
+((:SYSTEM . "/home/acl2/books/")).
+Type :help for help.
+Type (quit) to quit completely out of ACL2.
+
+ACL2 !>
+Exiting the ACL2 read-eval-print loop.  To re-enter, execute (LP).
+* #<PACKAGE "ACL2">
+* 
+Project-dir-alist:
+((:SYSTEM . "/home/acl2/books/")).
+Type :help for help.
+Type (quit) to quit completely out of ACL2.
+
+ACL2 !><state>
+ACL2 !> "ACL2"
+ACL2 !> (:EXIT 1)
+ACL2 !> (PROVE PROOF-TREE
+        WARNING OBSERVATION EVENT HISTORY)
+ACL2 !> T
+ACL2 !>GC-VERBOSE is not supported in this Common Lisp.
+Contact the ACL2 developers if you would like to help add such support.
+NIL
+ACL2 !>
+Summary
+Form:  ( INCLUDE-BOOK "portcullis" ...)
+Rules: NIL
+Time:  0.03 seconds (prove: 0.00, print: 0.00, other: 0.03)
+ "/workspaces/acl2-jupyter/books/acl2-kernel/portcullis.lisp"
+ACL2 !> T
+ACL2 !>
+Project-dir-alist:
+((:SYSTEM . "/home/acl2/books/")).
+Type :help for help.
+Type (quit) to quit completely out of ACL2.
+
+ACL2 !>> "ACL2"
+ACL2 !>>
+The event ( INCLUDE-BOOK "portcullis" ...) is redundant.  See :DOC
+redundant-events.
+
+Summary
+Form:  ( INCLUDE-BOOK "portcullis" ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ :REDUNDANT
+ACL2 !>>
+Summary
+Form:  ( INCLUDE-BOOK "cowles/portcullis" ...)
+Rules: NIL
+Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
+ "/home/acl2/books/cowles/portcullis.lisp"
+ACL2 !>>
+Summary
+Form:  ( INCLUDE-BOOK "data-structures/portcullis" ...)
+Rules: NIL
+Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
+ "/home/acl2/books/data-structures/portcullis.lisp"
+ACL2 !>>
+Summary
+Form:  ( INCLUDE-BOOK "centaur/fty/portcullis" ...)
+Rules: NIL
+Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
+ "/home/acl2/books/centaur/fty/portcullis.lisp"
+ACL2 !>>
+Summary
+Form:  ( INCLUDE-BOOK "std/typed-lists/portcullis" ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ "/home/acl2/books/std/typed-lists/portcullis.lisp"
+ACL2 !>>
+Summary
+Form:  ( INCLUDE-BOOK "centaur/bridge/portcullis" ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ "/home/acl2/books/centaur/bridge/portcullis.lisp"
+ACL2 !>>Bye.
+ :EOF
+ACL2 !> :CONTINUE
+ACL2 !>
+TTAG NOTE (for included book): Adding ttag :QUICKLISP from book /home/acl2/books/quicklisp/base.
+
+TTAG NOTE (for included book): Adding ttag :ACL2-KERNEL-PZMQ from book /workspaces/acl2-jupyter/books/acl2-kernel/pzmq.
+
+TTAG NOTE (for included book): Adding ttag :QUICKLISP.BORDEAUX from book /home/acl2/books/quicklisp/bordeaux.
+
+TTAG NOTE (for included book): Adding ttag :ACL2-KERNEL-RAW from book /workspaces/acl2-jupyter/books/acl2-kernel/top.
+
+Summary
+Form:  ( ACL2::INCLUDE-BOOK "top" ...)
+Rules: NIL
+Time:  0.56 seconds (prove: 0.00, print: 0.00, other: 0.56)
+"/workspaces/acl2-jupyter/books/acl2-kernel/top.lisp"
+
+Summary
+Form:  ( DEFTHM TEST-BUILD-TCP-ENDPOINT-FORMAT ...)
+Rules: ((:EXECUTABLE-COUNTERPART BUILD-TCP-ENDPOINT)
+        (:EXECUTABLE-COUNTERPART EQUAL))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  5
+TEST-BUILD-TCP-ENDPOINT-FORMAT
+
+Summary
+Form:  ( DEFTHM TEST-BUILD-TCP-ENDPOINT-LOCALHOST ...)
+Rules: ((:EXECUTABLE-COUNTERPART BUILD-TCP-ENDPOINT)
+        (:EXECUTABLE-COUNTERPART EQUAL))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  5
+TEST-BUILD-TCP-ENDPOINT-LOCALHOST
+
+Summary
+Form:  ( DEFTHM TEST-BUILD-IPC-ENDPOINT-FORMAT ...)
+Rules: ((:EXECUTABLE-COUNTERPART BUILD-IPC-ENDPOINT)
+        (:EXECUTABLE-COUNTERPART EQUAL))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  4
+TEST-BUILD-IPC-ENDPOINT-FORMAT
+
+Summary
+Form:  ( DEFTHM TEST-STRING-TO-BYTES-ABC ...)
+Rules: ((:EXECUTABLE-COUNTERPART EQUAL)
+        (:EXECUTABLE-COUNTERPART STRING-TO-BYTES))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  4
+TEST-STRING-TO-BYTES-ABC
+
+Summary
+Form:  ( DEFTHM TEST-STRING-TO-BYTES-EMPTY ...)
+Rules: ((:EXECUTABLE-COUNTERPART EQUAL)
+        (:EXECUTABLE-COUNTERPART STRING-TO-BYTES))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  4
+TEST-STRING-TO-BYTES-EMPTY
+
+Summary
+Form:  ( DEFTHM TEST-BYTES-TO-HEX-STRING-BASIC ...)
+Rules: ((:EXECUTABLE-COUNTERPART BYTES-TO-HEX-STRING)
+        (:EXECUTABLE-COUNTERPART EQUAL))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  4
+TEST-BYTES-TO-HEX-STRING-BASIC
+
+Summary
+Form:  ( DEFTHM TEST-BYTES-TO-HEX-STRING-ABCD ...)
+Rules: ((:EXECUTABLE-COUNTERPART BYTES-TO-HEX-STRING)
+        (:EXECUTABLE-COUNTERPART EQUAL))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  4
+TEST-BYTES-TO-HEX-STRING-ABCD
+
+Summary
+Form:  ( DEFTHM TEST-MAKE-HEADER-IS-ALIST ...)
+Rules: ((:EXECUTABLE-COUNTERPART ALISTP)
+        (:EXECUTABLE-COUNTERPART MAKE-HEADER)
+        (:TYPE-PRESCRIPTION ALISTP))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  7
+TEST-MAKE-HEADER-IS-ALIST
+
+Summary
+Form:  ( DEFTHM TEST-KERNEL-INFO-CONTENT-IS-ALIST ...)
+Rules: ((:EXECUTABLE-COUNTERPART ALISTP)
+        (:EXECUTABLE-COUNTERPART KERNEL-INFO-CONTENT)
+        (:TYPE-PRESCRIPTION ALISTP))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  2
+TEST-KERNEL-INFO-CONTENT-IS-ALIST
+
+Summary
+Form:  ( DEFTHM TEST-KERNEL-INFO-CONTENT-STATUS-OK ...)
+Rules: ((:EXECUTABLE-COUNTERPART ASSOC-EQUAL)
+        (:EXECUTABLE-COUNTERPART CDR)
+        (:EXECUTABLE-COUNTERPART EQUAL)
+        (:EXECUTABLE-COUNTERPART KERNEL-INFO-CONTENT))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  6
+TEST-KERNEL-INFO-CONTENT-STATUS-OK
+
+Summary
+Form:  ( DEFTHM TEST-EXECUTE-REPLY-OK-IS-ALIST ...)
+Rules: ((:EXECUTABLE-COUNTERPART ALISTP)
+        (:EXECUTABLE-COUNTERPART EXECUTE-REPLY-OK)
+        (:TYPE-PRESCRIPTION ALISTP))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  3
+TEST-EXECUTE-REPLY-OK-IS-ALIST
+
+Summary
+Form:  ( DEFTHM TEST-EXECUTE-REPLY-OK-STATUS ...)
+Rules: ((:EXECUTABLE-COUNTERPART ASSOC-EQUAL)
+        (:EXECUTABLE-COUNTERPART CDR)
+        (:EXECUTABLE-COUNTERPART EQUAL)
+        (:EXECUTABLE-COUNTERPART EXECUTE-REPLY-OK))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  7
+TEST-EXECUTE-REPLY-OK-STATUS
+
+Summary
+Form:  ( DEFTHM TEST-EXECUTE-REPLY-OK-COUNT ...)
+Rules: ((:EXECUTABLE-COUNTERPART ASSOC-EQUAL)
+        (:EXECUTABLE-COUNTERPART CDR)
+        (:EXECUTABLE-COUNTERPART EQUAL)
+        (:EXECUTABLE-COUNTERPART EXECUTE-REPLY-OK))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  7
+TEST-EXECUTE-REPLY-OK-COUNT
+
+Summary
+Form:  ( DEFTHM TEST-MAKE-KERNEL-STATE-IS-ALIST ...)
+Rules: ((:EXECUTABLE-COUNTERPART ALISTP)
+        (:EXECUTABLE-COUNTERPART MAKE-KERNEL-STATE)
+        (:TYPE-PRESCRIPTION ALISTP))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  5
+TEST-MAKE-KERNEL-STATE-IS-ALIST
+
+Summary
+Form:  ( DEFTHM TEST-KERNEL-STATE-SESSION-ACCESSOR ...)
+Rules: ((:EXECUTABLE-COUNTERPART EQUAL)
+        (:EXECUTABLE-COUNTERPART KERNEL-STATE-SESSION)
+        (:EXECUTABLE-COUNTERPART MAKE-KERNEL-STATE))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  7
+TEST-KERNEL-STATE-SESSION-ACCESSOR
+
+Summary
+Form:  ( DEFTHM TEST-KERNEL-STATE-INITIAL-EXECUTION-COUNT ...)
+Rules: ((:EXECUTABLE-COUNTERPART EQUAL)
+        (:EXECUTABLE-COUNTERPART KERNEL-STATE-EXECUTION-COUNT)
+        (:EXECUTABLE-COUNTERPART MAKE-KERNEL-STATE))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  7
+TEST-KERNEL-STATE-INITIAL-EXECUTION-COUNT
+
+Summary
+Form:  ( DEFTHM TEST-INCREMENT-EXECUTION-COUNT ...)
+Rules: ((:EXECUTABLE-COUNTERPART EQUAL)
+        (:EXECUTABLE-COUNTERPART INCREMENT-EXECUTION-COUNT)
+        (:EXECUTABLE-COUNTERPART KERNEL-STATE-EXECUTION-COUNT)
+        (:EXECUTABLE-COUNTERPART MAKE-KERNEL-STATE))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  8
+TEST-INCREMENT-EXECUTION-COUNT
+
+Summary
+Form:  ( DEFTHM TEST-SHELL-MESSAGE-TYPE-EXECUTE ...)
+Rules: ((:EXECUTABLE-COUNTERPART SHELL-MESSAGE-TYPE-P)
+        (:TYPE-PRESCRIPTION SHELL-MESSAGE-TYPE-P))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  2
+TEST-SHELL-MESSAGE-TYPE-EXECUTE
+
+Summary
+Form:  ( DEFTHM TEST-SHELL-MESSAGE-TYPE-KERNEL-INFO ...)
+Rules: ((:EXECUTABLE-COUNTERPART SHELL-MESSAGE-TYPE-P)
+        (:TYPE-PRESCRIPTION SHELL-MESSAGE-TYPE-P))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  2
+TEST-SHELL-MESSAGE-TYPE-KERNEL-INFO
+
+Summary
+Form:  ( DEFTHM TEST-SHELL-MESSAGE-TYPE-UNKNOWN ...)
+Rules: ((:EXECUTABLE-COUNTERPART NOT)
+        (:EXECUTABLE-COUNTERPART SHELL-MESSAGE-TYPE-P))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  3
+TEST-SHELL-MESSAGE-TYPE-UNKNOWN
+
+Summary
+Form:  ( DEFTHM TEST-CONTROL-MESSAGE-TYPE-SHUTDOWN ...)
+Rules: ((:EXECUTABLE-COUNTERPART CONTROL-MESSAGE-TYPE-P)
+        (:TYPE-PRESCRIPTION CONTROL-MESSAGE-TYPE-P))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  2
+TEST-CONTROL-MESSAGE-TYPE-SHUTDOWN
+
+Summary
+Form:  ( DEFTHM TEST-CONTROL-MESSAGE-TYPE-INTERRUPT ...)
+Rules: ((:EXECUTABLE-COUNTERPART CONTROL-MESSAGE-TYPE-P)
+        (:TYPE-PRESCRIPTION CONTROL-MESSAGE-TYPE-P))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  2
+TEST-CONTROL-MESSAGE-TYPE-INTERRUPT
+
+Summary
+Form:  ( DEFTHM TEST-EXECUTE-REQUEST-CODE ...)
+Rules: ((:EXECUTABLE-COUNTERPART EQUAL)
+        (:EXECUTABLE-COUNTERPART EXECUTE-REQUEST-CODE))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  4
+TEST-EXECUTE-REQUEST-CODE
+
+Summary
+Form:  ( DEFTHM TEST-EXECUTE-REQUEST-CODE-MISSING ...)
+Rules: ((:EXECUTABLE-COUNTERPART EQUAL)
+        (:EXECUTABLE-COUNTERPART EXECUTE-REQUEST-CODE))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  4
+TEST-EXECUTE-REQUEST-CODE-MISSING
+
+Summary
+Form:  ( DEFTHM TEST-EXECUTE-REQUEST-SILENT-TRUE ...)
+Rules: ((:EXECUTABLE-COUNTERPART EXECUTE-REQUEST-SILENT-P)
+        (:TYPE-PRESCRIPTION EXECUTE-REQUEST-SILENT-P))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  2
+TEST-EXECUTE-REQUEST-SILENT-TRUE
+
+Summary
+Form:  ( DEFTHM TEST-EXECUTE-REQUEST-SILENT-FALSE ...)
+Rules: ((:EXECUTABLE-COUNTERPART EXECUTE-REQUEST-SILENT-P)
+        (:EXECUTABLE-COUNTERPART NOT))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  3
+TEST-EXECUTE-REQUEST-SILENT-FALSE
+
+Summary
+Form:  ( DEFTHM TEST-MAKE-EXECUTE-REPLY-OK-STATUS ...)
+Rules: ((:EXECUTABLE-COUNTERPART ASSOC-EQUAL)
+        (:EXECUTABLE-COUNTERPART CDR)
+        (:EXECUTABLE-COUNTERPART EQUAL)
+        (:EXECUTABLE-COUNTERPART MAKE-EXECUTE-REPLY-OK))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  7
+TEST-MAKE-EXECUTE-REPLY-OK-STATUS
+
+Summary
+Form:  ( DEFTHM TEST-MAKE-EXECUTE-REPLY-OK-COUNT ...)
+Rules: ((:EXECUTABLE-COUNTERPART ASSOC-EQUAL)
+        (:EXECUTABLE-COUNTERPART CDR)
+        (:EXECUTABLE-COUNTERPART EQUAL)
+        (:EXECUTABLE-COUNTERPART MAKE-EXECUTE-REPLY-OK))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  7
+TEST-MAKE-EXECUTE-REPLY-OK-COUNT
+
+Summary
+Form:  ( DEFTHM TEST-MAKE-EXECUTE-REPLY-ERROR-STATUS ...)
+Rules: ((:EXECUTABLE-COUNTERPART ASSOC-EQUAL)
+        (:EXECUTABLE-COUNTERPART CDR)
+        (:EXECUTABLE-COUNTERPART EQUAL)
+        (:EXECUTABLE-COUNTERPART MAKE-EXECUTE-REPLY-ERROR))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  10
+TEST-MAKE-EXECUTE-REPLY-ERROR-STATUS
+
+Summary
+Form:  ( DEFTHM TEST-REPLY-MESSAGE-TYPE-KERNEL-INFO ...)
+Rules: ((:EXECUTABLE-COUNTERPART EQUAL)
+        (:EXECUTABLE-COUNTERPART REPLY-MESSAGE-TYPE))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  4
+TEST-REPLY-MESSAGE-TYPE-KERNEL-INFO
+
+Summary
+Form:  ( DEFTHM TEST-REPLY-MESSAGE-TYPE-EXECUTE ...)
+Rules: ((:EXECUTABLE-COUNTERPART EQUAL)
+        (:EXECUTABLE-COUNTERPART REPLY-MESSAGE-TYPE))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  4
+TEST-REPLY-MESSAGE-TYPE-EXECUTE
+
+Summary
+Form:  ( DEFTHM TEST-REPLY-MESSAGE-TYPE-SHUTDOWN ...)
+Rules: ((:EXECUTABLE-COUNTERPART EQUAL)
+        (:EXECUTABLE-COUNTERPART REPLY-MESSAGE-TYPE))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Prover steps counted:  4
+TEST-REPLY-MESSAGE-TYPE-SHUTDOWN
+
+TTAG NOTE: Adding ttag :ACL2-KERNEL-TESTS from book /workspaces/acl2-jupyter/books/acl2-kernel/tests.
+:ACL2-KERNEL-TESTS
+
+; All raw Lisp tests passed.
+
+Summary
+Form:  ( PROGN! (SET-RAW-MODE T) ...)
+Rules: NIL
+Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
+NIL
+
+
+
+Summary
+Form:  (CERTIFY-BOOK "tests" ...)
+Rules: NIL
+Time:  0.60 seconds (prove: 0.00, print: 0.00, other: 0.60)
+Prover steps counted:  149
+; (EV-REC *RETURN-LAST-ARG3* ...) took 
+; 0.61 seconds realtime, 0.59 seconds runtime
+; (378,960,688 bytes allocated).
+Exit code from ACL2 is 43
+-rw-r--r-- 1 jovyan users 54663 Jan 15 23:41 tests.cert

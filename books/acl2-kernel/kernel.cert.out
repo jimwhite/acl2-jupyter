@@ -101,7 +101,7 @@ ACL2 !>
 Summary
 Form:  ( INCLUDE-BOOK "portcullis" ...)
 Rules: NIL
-Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
+Time:  0.03 seconds (prove: 0.00, print: 0.00, other: 0.03)
  "/workspaces/acl2-jupyter/books/acl2-kernel/portcullis.lisp"
 ACL2 !> T
 ACL2 !>
@@ -195,18 +195,6 @@ Form:  ( INCLUDE-BOOK "std/typed-lists/portcullis" ...)
 Rules: NIL
 Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
  "/home/acl2/books/std/typed-lists/portcullis.lisp"
-ACL2 !>>
-Summary
-Form:  ( INCLUDE-BOOK "kestrel/crypto/portcullis" ...)
-Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
- "/home/acl2/books/kestrel/crypto/portcullis.lisp"
-ACL2 !>>
-Summary
-Form:  ( INCLUDE-BOOK "std/omaps/portcullis" ...)
-Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
- "/home/acl2/books/std/omaps/portcullis.lisp"
 ACL2 !>>Bye.
  :EOF
 ACL2 !>
@@ -283,7 +271,7 @@ Time:  0.13 seconds (prove: 0.00, print: 0.00, other: 0.13)
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "message" ...)
 Rules: NIL
-Time:  0.49 seconds (prove: 0.00, print: 0.00, other: 0.49)
+Time:  0.26 seconds (prove: 0.00, print: 0.00, other: 0.26)
 "/workspaces/acl2-jupyter/books/acl2-kernel/message.lisp"
 
 The event ( ACL2::INCLUDE-BOOK "std/util/define" ...) is redundant.
@@ -833,10 +821,10 @@ Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
 Summary
 Form:  (CERTIFY-BOOK "kernel" ...)
 Rules: NIL
-Time:  0.77 seconds (prove: 0.01, print: 0.00, other: 0.76)
+Time:  0.51 seconds (prove: 0.01, print: 0.00, other: 0.51)
 Prover steps counted:  3100
 ; (EV-REC *RETURN-LAST-ARG3* ...) took 
-; 0.77 seconds realtime, 0.75 seconds runtime
-; (374,342,928 bytes allocated).
+; 0.51 seconds realtime, 0.49 seconds runtime
+; (258,449,696 bytes allocated).
 Exit code from ACL2 is 43
--rw-r--r-- 1 jovyan users 106597 Jan 15 22:39 kernel.cert
+-rw-r--r-- 1 jovyan users 98149 Jan 15 23:35 kernel.cert

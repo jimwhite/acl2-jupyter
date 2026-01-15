@@ -132,7 +132,7 @@ ACL2 !>>
 Summary
 Form:  ( INCLUDE-BOOK "data-structures/portcullis" ...)
 Rules: NIL
-Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
+Time:  0.03 seconds (prove: 0.00, print: 0.00, other: 0.03)
  "/home/acl2/books/data-structures/portcullis.lisp"
 ACL2 !>>Bye.
  :EOF
@@ -309,7 +309,7 @@ ACL2 !>
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "kestrel/json-parser/parse-json" ...)
 Rules: NIL
-Time:  0.03 seconds (prove: 0.00, print: 0.00, other: 0.03)
+Time:  0.04 seconds (prove: 0.00, print: 0.00, other: 0.04)
 "/home/acl2/books/kestrel/json-parser/parse-json.lisp"
 
 Summary
@@ -330,7 +330,7 @@ Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "std/strings/cat" ...)
 Rules: NIL
-Time:  0.08 seconds (prove: 0.00, print: 0.00, other: 0.08)
+Time:  0.11 seconds (prove: 0.00, print: 0.00, other: 0.11)
 "/home/acl2/books/std/strings/cat.lisp"
 
 Summary
@@ -388,7 +388,7 @@ Summary
 Form:  ( ENCAPSULATE NIL (DEFTHM ALISTP-WHEN-PARSED-JSON-OBJECTP ...)
 ...)
 Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.00)
 Prover steps counted:  484
 T
 
@@ -607,10 +607,10 @@ Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
 Summary
 Form:  (CERTIFY-BOOK "connection" ...)
 Rules: NIL
-Time:  0.20 seconds (prove: 0.00, print: 0.00, other: 0.20)
+Time:  0.28 seconds (prove: 0.01, print: 0.00, other: 0.27)
 Prover steps counted:  2719
 ; (EV-REC *RETURN-LAST-ARG3* ...) took 
-; 0.20 seconds realtime, 0.19 seconds runtime
-; (109,211,968 bytes allocated).
+; 0.28 seconds realtime, 0.25 seconds runtime
+; (109,228,624 bytes allocated).
 Exit code from ACL2 is 43
--rw-r--r-- 1 jovyan users 46031 Jan 15 22:23 connection.cert
+-rw-r--r-- 1 jovyan users 46031 Jan 15 23:35 connection.cert

@@ -132,6 +132,6 @@ Rules: NIL
 Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
 ; (EV-REC *RETURN-LAST-ARG3* ...) took 
 ; 0.01 seconds realtime, 0.00 seconds runtime
-; (6,179,584 bytes allocated).
+; (6,179,984 bytes allocated).
 Exit code from ACL2 is 43
--rw-r--r-- 1 jovyan users 1578 Jan 15 22:10 portcullis.cert
+-rw-r--r-- 1 jovyan users 1578 Jan 15 23:35 portcullis.cert

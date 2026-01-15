@@ -38,7 +38,6 @@ Temp lisp file:
 (acl2::assign acl2::skip-reset-prehistory acl2::t)
 ; portculli for included books:
 (acl2::ld "centaur/bridge/to-json.port" :dir :SYSTEM :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
-(acl2::ld "kestrel/crypto/interfaces/hmac-sha-256.port" :dir :SYSTEM :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
 (acl2::ld "kestrel/typed-lists-light/map-char-code.port" :dir :SYSTEM :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
 (acl2::ld "kestrel/utilities/strings/hexstrings.port" :dir :SYSTEM :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
 (acl2::ld "std/strings/top.port" :dir :SYSTEM :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
@@ -130,7 +129,7 @@ ACL2 !>>
 Summary
 Form:  ( INCLUDE-BOOK "data-structures/portcullis" ...)
 Rules: NIL
-Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
+Time:  0.03 seconds (prove: 0.00, print: 0.00, other: 0.03)
  "/home/acl2/books/data-structures/portcullis.lisp"
 ACL2 !>>
 Summary
@@ -144,63 +143,6 @@ Form:  ( INCLUDE-BOOK "std/typed-lists/portcullis" ...)
 Rules: NIL
 Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
  "/home/acl2/books/std/typed-lists/portcullis.lisp"
-ACL2 !>>Bye.
- :EOF
-ACL2 !>
-Project-dir-alist:
-((:SYSTEM . "/home/acl2/books/")).
-Type :help for help.
-Type (quit) to quit completely out of ACL2.
-
-ACL2 !>> "ACL2"
-ACL2 !>>
-Summary
-Form:  ( INCLUDE-BOOK "../portcullis" ...)
-Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
- "/home/acl2/books/kestrel/crypto/portcullis.lisp"
-ACL2 !>>
-The event ( INCLUDE-BOOK "centaur/fty/portcullis" ...) is redundant.
-See :DOC redundant-events.
-
-Summary
-Form:  ( INCLUDE-BOOK "centaur/fty/portcullis" ...)
-Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
- :REDUNDANT
-ACL2 !>>
-The event ( INCLUDE-BOOK "cowles/portcullis" ...) is redundant.  See
-:DOC redundant-events.
-
-Summary
-Form:  ( INCLUDE-BOOK "cowles/portcullis" ...)
-Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
- :REDUNDANT
-ACL2 !>>
-The event ( INCLUDE-BOOK "data-structures/portcullis" ...) is redundant.
-See :DOC redundant-events.
-
-Summary
-Form:  ( INCLUDE-BOOK "data-structures/portcullis" ...)
-Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
- :REDUNDANT
-ACL2 !>>
-Summary
-Form:  ( INCLUDE-BOOK "std/omaps/portcullis" ...)
-Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
- "/home/acl2/books/std/omaps/portcullis.lisp"
-ACL2 !>>
-The event ( INCLUDE-BOOK "std/typed-lists/portcullis" ...) is redundant.
-See :DOC redundant-events.
-
-Summary
-Form:  ( INCLUDE-BOOK "std/typed-lists/portcullis" ...)
-Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
- :REDUNDANT
 ACL2 !>>Bye.
  :EOF
 ACL2 !>
@@ -424,15 +366,8 @@ ACL2 !>
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "centaur/bridge/to-json" ...)
 Rules: NIL
-Time:  0.12 seconds (prove: 0.00, print: 0.00, other: 0.12)
+Time:  0.16 seconds (prove: 0.00, print: 0.00, other: 0.16)
 "/home/acl2/books/centaur/bridge/to-json.lisp"
-
-Summary
-Form:  ( ACL2::INCLUDE-BOOK "kestrel/crypto/interfaces/hmac-sha-256"
-...)
-Rules: NIL
-Time:  0.30 seconds (prove: 0.00, print: 0.00, other: 0.30)
-"/home/acl2/books/kestrel/crypto/interfaces/hmac-sha-256.lisp"
 
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "kestrel/typed-lists-light/map-char-code"
@@ -445,13 +380,13 @@ Summary
 Form:  ( ACL2::INCLUDE-BOOK "kestrel/utilities/strings/hexstrings"
 ...)
 Rules: NIL
-Time:  0.05 seconds (prove: 0.00, print: 0.00, other: 0.05)
+Time:  0.13 seconds (prove: 0.00, print: 0.00, other: 0.13)
 "/home/acl2/books/kestrel/utilities/strings/hexstrings.lisp"
 
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "std/strings/top" ...)
 Rules: NIL
-Time:  0.10 seconds (prove: 0.00, print: 0.00, other: 0.10)
+Time:  0.14 seconds (prove: 0.00, print: 0.00, other: 0.14)
 "/home/acl2/books/std/strings/top.lisp"
 
 The event ( ACL2::INCLUDE-BOOK "std/util/define" ...) is redundant.
@@ -490,9 +425,7 @@ Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
 
 Summary
 Form:  ( DEFTHM BYTE-LISTP-OF-STRING-TO-BYTES ...)
-Rules: ((:COMPOUND-RECOGNIZER
-             ACL2::TRUE-LISTP-WHEN-BYTE-LISTP-COMPOUND-RECOGNIZER)
-        (:DEFINITION STRING-TO-BYTES)
+Rules: ((:DEFINITION STRING-TO-BYTES)
         (:EXECUTABLE-COUNTERPART TAU-SYSTEM)
         (:REWRITE STR::COERCE-TO-LIST-REMOVAL)
         (:TYPE-PRESCRIPTION ACL2::BYTE-LISTP))
@@ -528,6 +461,17 @@ BYTES-TO-HEX-STRING
 
 Summary
 Form:  ( DEFUN HMAC-SIGN ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+
+Summary
+Form:  ( DEFTHM STRINGP-OF-HMAC-SIGN ...)
+Rules: ((:TYPE-PRESCRIPTION HMAC-SIGN))
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+STRINGP-OF-HMAC-SIGN
+
+Summary
+Form:  ( PROGN (DEFTHM STRINGP-OF-HMAC-SIGN ...) ...)
 Rules: NIL
 Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
 HMAC-SIGN
@@ -773,10 +717,10 @@ Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
 Summary
 Form:  (CERTIFY-BOOK "message" ...)
 Rules: NIL
-Time:  0.69 seconds (prove: 0.00, print: 0.00, other: 0.69)
+Time:  0.57 seconds (prove: 0.00, print: 0.00, other: 0.56)
 Prover steps counted:  1616
 ; (EV-REC *RETURN-LAST-ARG3* ...) took 
-; 0.69 seconds realtime, 0.67 seconds runtime
-; (349,839,664 bytes allocated).
+; 0.57 seconds realtime, 0.54 seconds runtime
+; (234,289,120 bytes allocated).
 Exit code from ACL2 is 43
--rw-r--r-- 1 jovyan users 84110 Jan 15 22:30 message.cert
+-rw-r--r-- 1 jovyan users 76252 Jan 15 23:35 message.cert

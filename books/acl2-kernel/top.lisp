@@ -11,15 +11,17 @@
 ;; Reuse existing community books
 (include-book "kestrel/json-parser/parse-json" :dir :system)     ; JSON parsing
 (include-book "centaur/bridge/to-json" :dir :system)             ; JSON encoding
-(include-book "kestrel/crypto/interfaces/hmac-sha-256" :dir :system) ; HMAC-SHA-256
+;; Note: HMAC-SHA-256 is done via OpenSSL command in kernel-raw.lsp
 
-;; Include kernel component books (to be added as implemented)
+;; Include kernel component books
 (include-book "connection")
 (include-book "message")
 (include-book "kernel")
 
-;; Load ZeroMQ bindings and threading support via Quicklisp
+;; Load ZeroMQ bindings via our pzmq book (also loads bordeaux-threads)
 (include-book "pzmq")
+
+;; Load bordeaux-threads for threading support (following bridge pattern)
 (include-book "quicklisp/bordeaux" :dir :system)
 
 ;; Load raw Lisp runtime (main loop, message handling)
@@ -48,7 +50,7 @@ Jupyter notebooks.</p>
 <ul>
 <li>@(see acl2::parse-json) - JSON parsing from kestrel/json-parser</li>
 <li>@(see bridge::json-encode) - JSON encoding from centaur/bridge</li>
-<li>@(see crypto::hmac-sha-256) - HMAC from kestrel/crypto</li>
+<li>HMAC-SHA256 via OpenSSL command line</li>
 </ul>
 
 <h3>Architecture</h3>

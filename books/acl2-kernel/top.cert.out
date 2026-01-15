@@ -42,7 +42,6 @@ Temp lisp file:
 (acl2::ld "std/strings/top.port" :dir :SYSTEM :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
 (acl2::ld "kestrel/json-parser/parse-json.port" :dir :SYSTEM :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
 (acl2::ld "centaur/bridge/to-json.port" :dir :SYSTEM :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
-(acl2::ld "kestrel/crypto/interfaces/hmac-sha-256.port" :dir :SYSTEM :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
 (acl2::ld "connection.port" :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
 (acl2::ld "message.port" :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
 (acl2::ld "kernel.port" :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
@@ -172,7 +171,7 @@ ACL2 !>>
 Summary
 Form:  ( INCLUDE-BOOK "data-structures/portcullis" ...)
 Rules: NIL
-Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
+Time:  0.03 seconds (prove: 0.00, print: 0.00, other: 0.03)
  "/home/acl2/books/data-structures/portcullis.lisp"
 ACL2 !>>
 Summary
@@ -283,63 +282,6 @@ Type (quit) to quit completely out of ACL2.
 
 ACL2 !>> "ACL2"
 ACL2 !>>
-Summary
-Form:  ( INCLUDE-BOOK "../portcullis" ...)
-Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
- "/home/acl2/books/kestrel/crypto/portcullis.lisp"
-ACL2 !>>
-The event ( INCLUDE-BOOK "centaur/fty/portcullis" ...) is redundant.
-See :DOC redundant-events.
-
-Summary
-Form:  ( INCLUDE-BOOK "centaur/fty/portcullis" ...)
-Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
- :REDUNDANT
-ACL2 !>>
-The event ( INCLUDE-BOOK "cowles/portcullis" ...) is redundant.  See
-:DOC redundant-events.
-
-Summary
-Form:  ( INCLUDE-BOOK "cowles/portcullis" ...)
-Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
- :REDUNDANT
-ACL2 !>>
-The event ( INCLUDE-BOOK "data-structures/portcullis" ...) is redundant.
-See :DOC redundant-events.
-
-Summary
-Form:  ( INCLUDE-BOOK "data-structures/portcullis" ...)
-Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
- :REDUNDANT
-ACL2 !>>
-Summary
-Form:  ( INCLUDE-BOOK "std/omaps/portcullis" ...)
-Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
- "/home/acl2/books/std/omaps/portcullis.lisp"
-ACL2 !>>
-The event ( INCLUDE-BOOK "std/typed-lists/portcullis" ...) is redundant.
-See :DOC redundant-events.
-
-Summary
-Form:  ( INCLUDE-BOOK "std/typed-lists/portcullis" ...)
-Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
- :REDUNDANT
-ACL2 !>>Bye.
- :EOF
-ACL2 !>
-Project-dir-alist:
-((:SYSTEM . "/home/acl2/books/")).
-Type :help for help.
-Type (quit) to quit completely out of ACL2.
-
-ACL2 !>> "ACL2"
-ACL2 !>>
 The event ( INCLUDE-BOOK "portcullis" ...) is redundant.  See :DOC
 redundant-events.
 
@@ -364,7 +306,7 @@ See :DOC redundant-events.
 Summary
 Form:  ( INCLUDE-BOOK "data-structures/portcullis" ...)
 Rules: NIL
-Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
  :REDUNDANT
 ACL2 !>>
 The event ( INCLUDE-BOOK "centaur/fty/portcullis" ...) is redundant.
@@ -438,24 +380,6 @@ Form:  ( INCLUDE-BOOK "std/typed-lists/portcullis" ...)
 Rules: NIL
 Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
  :REDUNDANT
-ACL2 !>>
-The event ( INCLUDE-BOOK "kestrel/crypto/portcullis" ...) is redundant.
-See :DOC redundant-events.
-
-Summary
-Form:  ( INCLUDE-BOOK "kestrel/crypto/portcullis" ...)
-Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
- :REDUNDANT
-ACL2 !>>
-The event ( INCLUDE-BOOK "std/omaps/portcullis" ...) is redundant.
-See :DOC redundant-events.
-
-Summary
-Form:  ( INCLUDE-BOOK "std/omaps/portcullis" ...)
-Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
- :REDUNDANT
 ACL2 !>>Bye.
  :EOF
 ACL2 !>
@@ -516,24 +440,6 @@ See :DOC redundant-events.
 
 Summary
 Form:  ( INCLUDE-BOOK "std/typed-lists/portcullis" ...)
-Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
- :REDUNDANT
-ACL2 !>>
-The event ( INCLUDE-BOOK "kestrel/crypto/portcullis" ...) is redundant.
-See :DOC redundant-events.
-
-Summary
-Form:  ( INCLUDE-BOOK "kestrel/crypto/portcullis" ...)
-Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
- :REDUNDANT
-ACL2 !>>
-The event ( INCLUDE-BOOK "std/omaps/portcullis" ...) is redundant.
-See :DOC redundant-events.
-
-Summary
-Form:  ( INCLUDE-BOOK "std/omaps/portcullis" ...)
 Rules: NIL
 Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
  :REDUNDANT
@@ -580,7 +486,7 @@ ACL2 !>
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "xdoc/top" ...)
 Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
 "/home/acl2/books/xdoc/top.lisp"
 
 Summary
@@ -592,13 +498,13 @@ Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "std/strings/top" ...)
 Rules: NIL
-Time:  0.39 seconds (prove: 0.00, print: 0.00, other: 0.39)
+Time:  0.32 seconds (prove: 0.00, print: 0.00, other: 0.32)
 "/home/acl2/books/std/strings/top.lisp"
 
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "kestrel/json-parser/parse-json" ...)
 Rules: NIL
-Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
+Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
 "/home/acl2/books/kestrel/json-parser/parse-json.lisp"
 
 Summary
@@ -606,13 +512,6 @@ Form:  ( ACL2::INCLUDE-BOOK "centaur/bridge/to-json" ...)
 Rules: NIL
 Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
 "/home/acl2/books/centaur/bridge/to-json.lisp"
-
-Summary
-Form:  ( ACL2::INCLUDE-BOOK "kestrel/crypto/interfaces/hmac-sha-256"
-...)
-Rules: NIL
-Time:  0.22 seconds (prove: 0.00, print: 0.00, other: 0.22)
-"/home/acl2/books/kestrel/crypto/interfaces/hmac-sha-256.lisp"
 
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "connection" ...)
@@ -639,7 +538,7 @@ TTAG NOTE (for included book): Adding ttag :ACL2-KERNEL-PZMQ from book /workspac
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "pzmq" ...)
 Rules: NIL
-Time:  0.13 seconds (prove: 0.00, print: 0.00, other: 0.13)
+Time:  0.14 seconds (prove: 0.00, print: 0.00, other: 0.14)
 "/workspaces/acl2-jupyter/books/acl2-kernel/pzmq.lisp"
 
 TTAG NOTE (for included book): Adding ttag :QUICKLISP from book /home/acl2/books/quicklisp/base.
@@ -690,9 +589,9 @@ NIL
 Summary
 Form:  (CERTIFY-BOOK "top" ...)
 Rules: NIL
-Time:  0.87 seconds (prove: 0.00, print: 0.00, other: 0.87)
+Time:  0.61 seconds (prove: 0.00, print: 0.00, other: 0.61)
 ; (EV-REC *RETURN-LAST-ARG3* ...) took 
-; 0.87 seconds realtime, 0.86 seconds runtime
-; (484,533,616 bytes allocated).
+; 0.61 seconds realtime, 0.59 seconds runtime
+; (369,342,592 bytes allocated).
 Exit code from ACL2 is 43
--rw-r--r-- 1 jovyan users 61754 Jan 15 23:23 top.cert
+-rw-r--r-- 1 jovyan users 53554 Jan 15 23:41 top.cert

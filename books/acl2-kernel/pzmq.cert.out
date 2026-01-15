@@ -158,13 +158,13 @@ Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
 Summary
 Form:  ( PROGN! (SET-RAW-MODE T) ...)
 Rules: NIL
-Time:  0.14 seconds (prove: 0.00, print: 0.00, other: 0.14)
+Time:  0.17 seconds (prove: 0.00, print: 0.00, other: 0.17)
 NIL
 
 Summary
 Form:  ( PROGN (PROGN! ...) ...)
 Rules: NIL
-Time:  0.15 seconds (prove: 0.00, print: 0.00, other: 0.15)
+Time:  0.18 seconds (prove: 0.00, print: 0.00, other: 0.18)
 NIL
 
 
@@ -173,9 +173,9 @@ Summary
 Form:  (CERTIFY-BOOK "pzmq" ...)
 Rules: NIL
 Warnings:  Ttags
-Time:  0.18 seconds (prove: 0.00, print: 0.00, other: 0.18)
+Time:  0.22 seconds (prove: 0.00, print: 0.00, other: 0.22)
 ; (EV-REC *RETURN-LAST-ARG3* ...) took 
-; 0.18 seconds realtime, 0.17 seconds runtime
-; (134,169,440 bytes allocated).
+; 0.22 seconds realtime, 0.19 seconds runtime
+; (134,166,416 bytes allocated).
 Exit code from ACL2 is 43
--rw-r--r-- 1 jovyan users 4019 Jan 15 22:54 pzmq.cert
+-rw-r--r-- 1 jovyan users 4019 Jan 15 23:35 pzmq.cert

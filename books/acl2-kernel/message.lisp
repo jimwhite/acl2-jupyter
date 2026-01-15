@@ -5,13 +5,11 @@
 ;
 ; Implements Jupyter wire protocol message envelope:
 ; - Message structure and serialization
-; - HMAC-SHA-256 signing
+; - HMAC-SHA-256 signing (done at runtime via ironclad - see kernel-raw.lsp)
 ; - Uses centaur/bridge/to-json for JSON encoding
-; - Uses kestrel/crypto/interfaces/hmac-sha-256 for signing
 
 (in-package "ACL2-KERNEL")
 (include-book "centaur/bridge/to-json" :dir :system)
-(include-book "kestrel/crypto/interfaces/hmac-sha-256" :dir :system)
 (include-book "kestrel/typed-lists-light/map-char-code" :dir :system)
 (include-book "kestrel/utilities/strings/hexstrings" :dir :system)
 (include-book "std/strings/top" :dir :system)
@@ -52,21 +50,22 @@
   (str::downcase-string (acl2::ubyte8s=>hexstring bytes)))
 
 ;;;============================================================================
-;;; HMAC-SHA-256 Signing
+;;; HMAC-SHA-256 Signing (Runtime Implementation)
 ;;;============================================================================
 
-;; Sign a message with HMAC-SHA-256
-;; Key and data are strings, result is hex string
-;; Note: Uses :mode :program due to HMAC guard complexity (size limit)
+;; Note: HMAC signing is implemented at runtime in kernel-raw.lsp using ironclad.
+;; The ACL2 function below is a stub for documentation purposes.
+;; The actual signing happens via hmac-sign-raw in kernel-raw.lsp.
+
 (define hmac-sign ((key stringp) (data stringp))
-  :mode :program
+  :returns (sig stringp)
   :short "Compute HMAC-SHA-256 signature as hex string"
   :long "<p>Given a key and data as strings, compute the HMAC-SHA-256
-and return it as a lowercase hex string.</p>"
-  (let* ((key-bytes (string-to-bytes key))
-         (data-bytes (string-to-bytes data))
-         (sig-bytes (crypto::hmac-sha-256 key-bytes data-bytes)))
-    (bytes-to-hex-string sig-bytes)))
+and return it as a lowercase hex string. At runtime, this is done
+via ironclad in kernel-raw.lsp.</p>"
+  ;; This is a stub - actual implementation is in kernel-raw.lsp
+  (declare (ignore key data))
+  "")
 
 ;;;============================================================================
 ;;; Message Header

@@ -8,9 +8,9 @@
 ; - ZeroMQ socket management 
 ; - Threading and event loop
 ; - Output capture
+; - HMAC signing (using OpenSSL)
 ;
 ; Following the pattern from centaur/bridge/bridge-sbcl-raw.lsp
-; ACL2 functions are called using (let ((acl2::state acl2::*the-live-state*)) ...)
 ;
 ; Loaded via include-raw in top.lisp
 
@@ -21,7 +21,7 @@
 ;;;============================================================================
 
 ;; pzmq and bordeaux-threads are loaded via ACL2 quicklisp books
-;; shasht for JSON (no package conflicts)
+;; Load shasht for JSON parsing/encoding (same as common-lisp-jupyter)
 (ql:quickload "shasht" :silent t)
 
 ;;;============================================================================
@@ -292,24 +292,29 @@
   (shasht:write-json object nil))
 
 ;;;============================================================================
-;;; HMAC Signing (calls ACL2 functions)
+;;; HMAC Signing (using OpenSSL)
 ;;;============================================================================
 
 (defun hmac-sign-raw (key &rest messages)
   "Compute HMAC-SHA256 signature for messages concatenated together.
    KEY is the signing key string (empty string means no signing).
    Returns hex string signature.
-   Calls ACL2 crypto::hmac-sha-256 directly."
+   Uses OpenSSL command-line tool for production-quality HMAC."
   (if (or (null key) (equal key ""))
       ""  ; No signing if no key
     (let* ((data (apply #'concatenate 'string messages))
-           ;; Convert strings to byte lists using our ACL2 function
-           (key-bytes (acl2-kernel::string-to-bytes key))
-           (data-bytes (acl2-kernel::string-to-bytes data))
-           ;; Call the ACL2 HMAC function
-           (sig-bytes (crypto::hmac-sha-256 key-bytes data-bytes)))
-      ;; Convert result to hex string using our ACL2 function
-      (acl2-kernel::bytes-to-hex-string sig-bytes))))
+           ;; Run openssl and write data to its stdin
+           ;; OpenSSL outputs: "SHA2-256(stdin)= <hex>"
+           (output (uiop:run-program 
+                    (list "openssl" "dgst" "-sha256" "-hmac" key)
+                    :input (make-string-input-stream data)
+                    :output '(:string :stripped t)
+                    :error-output nil)))
+      ;; Extract hex from "SHA2-256(stdin)= <hex>" or "(stdin)= <hex>"
+      (let ((pos (search "= " output)))
+        (if pos
+            (subseq output (+ pos 2))
+            output)))))
 
 ;;;============================================================================
 ;;; Message Construction (Pure Common Lisp)

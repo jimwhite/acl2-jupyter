@@ -12,8 +12,9 @@ ARG Z3_VERSION=4.15.4
 ARG USER=jovyan
 ENV HOME=/home/${USER}
 
+ARG ACL2_GITHUB_REPO=jimwhite/acl2
 ARG ACL2_COMMIT=0
-ENV ACL2_SNAPSHOT_INFO="Git commit hash: ${ACL2_COMMIT}"
+ENV ACL2_SNAPSHOT_INFO="${ACL2_GITHUB_REPO} git commit hash: ${ACL2_COMMIT}"
 ARG ACL2_BUILD_OPTS=""
 ARG ACL2_CERTIFY_OPTS="-k -j 6"
 ARG ACL2_CERTIFY_TARGETS="basic"
@@ -111,7 +112,7 @@ COPY acl2-kernel acl2-kernel
 ENV ACL2_HOME=/home/acl2
 ENV ACL2_SYSTEM_BOOKS="${ACL2_HOME}/books"
 
-RUN wget "https://api.github.com/repos/acl2/acl2/zipball/${ACL2_COMMIT}" -O /tmp/acl2.zip -q
+RUN wget "https://api.github.com/repos/${ACL2_GITHUB_REPO}/zipball/${ACL2_COMMIT}" -O /tmp/acl2.zip -q
 
 RUN unzip -qq /tmp/acl2.zip -d /tmp/acl2_extract \
     && mv -T /tmp/acl2_extract/$(ls /tmp/acl2_extract) /tmp/acl2 \

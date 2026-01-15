@@ -1,5 +1,6 @@
 all: build
 .PHONY: all build push push-ghcr build-multiplatform build-multiplatform-ghcr build-arm64 build-arm64-ghcr
+.PHONY: run install-acl2-mcp git-submodules
 
 # By default this builds the latest commit from the main branch of https://github.com/jimwhite/acl2
 # TODO: Default/easy selection of released version.
@@ -100,3 +101,50 @@ push-ghcr:
 run:
 	# docker run -it -p 8888:8888 -v $(PWD):/home/jovyan/work acl2-jupyter:latest
 	$(DOCKER) run -it -p 8888:8888 -v $(PWD):/home/jovyan/work $(IMAGE_NAME):$(IMAGE_VERSION)
+
+install-acl2-mcp:
+	pip install git+https://github.com/jimwhite/acl2-mcp.git
+
+# =============================================================================
+# Rust and Parinfer Setup
+# =============================================================================
+
+CARGO_ENV := $(HOME)/.cargo/env
+
+# Source cargo environment - use this prefix for any cargo commands
+# Note: Each make recipe runs in a new shell, so we must source in each command
+CARGO := . "$(CARGO_ENV)" 2>/dev/null && 
+
+# Install Rust toolchain if not present
+# TODO: Update bash config so cargo env is always sourced (`source ~/.cargo/env`)
+install-rust:
+	@if [ ! -f "$(CARGO_ENV)" ]; then \
+		echo "Installing Rust toolchain..."; \
+		curl https://sh.rustup.rs -sSf | sh -s -- -y; \
+		echo ""; \
+		echo "Rust installed. To use cargo in this shell, run:"; \
+		echo "  source $(CARGO_ENV)"; \
+	else \
+		echo "Rust already installed at $(CARGO_ENV)"; \
+	fi
+
+# Install parinfer-rust CLI (not on crates.io, must use GitHub)
+install-parinfer: install-rust
+	@$(CARGO) \
+	if command -v parinfer-rust >/dev/null 2>&1; then \
+		echo "parinfer-rust already installed"; \
+	else \
+		echo "Installing parinfer-rust from GitHub..."; \
+		cargo install --git https://github.com/eraserhd/parinfer-rust; \
+	fi
+
+# Test parinfer-rust installation  
+test-parinfer:
+	@$(CARGO) echo '(def x' | parinfer-rust -m indent
+	@$(CARGO) echo '(defun foo (x)' | parinfer-rust -m indent --lisp-block-comments
+	@echo "Parinfer tests passed!"
+
+# Run a command with Rust/Cargo environment
+# Usage: make cargo-run CMD="cargo --version"
+cargo-run:
+	@$(CARGO) $(CMD)

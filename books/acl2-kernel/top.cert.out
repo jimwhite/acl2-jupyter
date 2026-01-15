@@ -364,7 +364,7 @@ See :DOC redundant-events.
 Summary
 Form:  ( INCLUDE-BOOK "data-structures/portcullis" ...)
 Rules: NIL
-Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
  :REDUNDANT
 ACL2 !>>
 The event ( INCLUDE-BOOK "centaur/fty/portcullis" ...) is redundant.
@@ -592,13 +592,13 @@ Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "std/strings/top" ...)
 Rules: NIL
-Time:  0.33 seconds (prove: 0.00, print: 0.00, other: 0.33)
+Time:  0.39 seconds (prove: 0.00, print: 0.00, other: 0.39)
 "/home/acl2/books/std/strings/top.lisp"
 
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "kestrel/json-parser/parse-json" ...)
 Rules: NIL
-Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
+Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
 "/home/acl2/books/kestrel/json-parser/parse-json.lisp"
 
 Summary
@@ -639,7 +639,7 @@ TTAG NOTE (for included book): Adding ttag :ACL2-KERNEL-PZMQ from book /workspac
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "pzmq" ...)
 Rules: NIL
-Time:  0.14 seconds (prove: 0.00, print: 0.00, other: 0.14)
+Time:  0.13 seconds (prove: 0.00, print: 0.00, other: 0.13)
 "/workspaces/acl2-jupyter/books/acl2-kernel/pzmq.lisp"
 
 TTAG NOTE (for included book): Adding ttag :QUICKLISP from book /home/acl2/books/quicklisp/base.
@@ -675,13 +675,13 @@ Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
 Summary
 Form:  ( PROGN! (SET-RAW-MODE T) ...)
 Rules: NIL
-Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
+Time:  0.03 seconds (prove: 0.00, print: 0.00, other: 0.03)
 NIL
 
 Summary
 Form:  ( PROGN (PROGN! ...) ...)
 Rules: NIL
-Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
+Time:  0.04 seconds (prove: 0.00, print: 0.00, other: 0.04)
 NIL
 (DEFXDOC ACL2-KERNEL)
 
@@ -690,9 +690,9 @@ NIL
 Summary
 Form:  (CERTIFY-BOOK "top" ...)
 Rules: NIL
-Time:  0.80 seconds (prove: 0.00, print: 0.00, other: 0.80)
+Time:  0.87 seconds (prove: 0.00, print: 0.00, other: 0.87)
 ; (EV-REC *RETURN-LAST-ARG3* ...) took 
-; 0.80 seconds realtime, 0.79 seconds runtime
-; (476,034,128 bytes allocated).
+; 0.87 seconds realtime, 0.86 seconds runtime
+; (484,533,616 bytes allocated).
 Exit code from ACL2 is 43
--rw-r--r-- 1 jovyan users 61754 Jan 15 22:54 top.cert
+-rw-r--r-- 1 jovyan users 61754 Jan 15 23:23 top.cert

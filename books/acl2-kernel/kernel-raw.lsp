@@ -9,18 +9,30 @@
 ; - Threading and event loop
 ; - Output capture
 ;
+; Following the pattern from centaur/bridge/bridge-sbcl-raw.lsp
+; ACL2 functions are called using (let ((acl2::state acl2::*the-live-state*)) ...)
+;
 ; Loaded via include-raw in top.lisp
 
 (in-package "ACL2-KERNEL")
 
 ;;;============================================================================
-;;; Dependencies (loaded at runtime)
+;;; Dependencies
 ;;;============================================================================
 
-;; These are loaded via Quicklisp at kernel startup
-;; - pzmq (ZeroMQ bindings)
-;; - bordeaux-threads (threading)
-;; - babel (string/octets conversion)
+;; pzmq and bordeaux-threads are loaded via ACL2 quicklisp books
+;; shasht for JSON (no package conflicts)
+(ql:quickload "shasht" :silent t)
+
+;;;============================================================================
+;;; Connection File Parser (Pure Common Lisp)
+;;;============================================================================
+
+(defun parse-connection-file (path)
+  "Parse a Jupyter connection file and return a hash-table.
+   Uses shasht for JSON parsing (same as common-lisp-jupyter)."
+  (let ((content (uiop:read-file-string path)))
+    (shasht:read-json content)))
 
 ;;;============================================================================
 ;;; UUID Generation
@@ -109,38 +121,38 @@
 
 (defun create-sockets (connection)
   "Create all ZeroMQ sockets from connection info.
-   CONNECTION is an alist from parse-connection-file."
-  (let ((transport (or (cdr (assoc-equal "transport" connection)) "tcp"))
-        (ip (or (cdr (assoc-equal "ip" connection)) "127.0.0.1")))
+   CONNECTION is a hash-table from parse-connection-file."
+  (let ((transport (or (gethash "transport" connection) "tcp"))
+        (ip (or (gethash "ip" connection) "127.0.0.1")))
     ;; Shell socket (ROUTER for bidirectional request/reply)
     (setf *shell-socket* (pzmq:socket *zmq-context* :router))
     (pzmq:bind *shell-socket* 
                (make-endpoint transport ip 
-                              (cdr (assoc-equal "shell_port" connection))))
+                              (gethash "shell_port" connection)))
     
     ;; Control socket (ROUTER, higher priority than shell)
     (setf *control-socket* (pzmq:socket *zmq-context* :router))
     (pzmq:bind *control-socket*
                (make-endpoint transport ip
-                              (cdr (assoc-equal "control_port" connection))))
+                              (gethash "control_port" connection)))
     
     ;; IOPub socket (PUB for broadcasting to all frontends)
     (setf *iopub-socket* (pzmq:socket *zmq-context* :pub))
     (pzmq:bind *iopub-socket*
                (make-endpoint transport ip
-                              (cdr (assoc-equal "iopub_port" connection))))
+                              (gethash "iopub_port" connection)))
     
     ;; Stdin socket (ROUTER for input requests)
     (setf *stdin-socket* (pzmq:socket *zmq-context* :router))
     (pzmq:bind *stdin-socket*
                (make-endpoint transport ip
-                              (cdr (assoc-equal "stdin_port" connection))))
+                              (gethash "stdin_port" connection)))
     
     ;; Heartbeat socket (REP for echo)
     (setf *heartbeat-socket* (pzmq:socket *zmq-context* :rep))
     (pzmq:bind *heartbeat-socket*
                (make-endpoint transport ip
-                              (cdr (assoc-equal "hb_port" connection))))))
+                              (gethash "hb_port" connection)))))
 
 (defun close-sockets ()
   "Close all ZeroMQ sockets."
@@ -271,47 +283,169 @@
     (get-output-stream-string *captured-output*)))
 
 ;;;============================================================================
+;;; JSON Encoding (Pure Common Lisp using shasht)
+;;;============================================================================
+
+(defun json-encode (object)
+  "Encode an object (alist) as a JSON string.
+   Uses shasht for JSON writing."
+  (shasht:write-json object nil))
+
+;;;============================================================================
+;;; HMAC Signing (calls ACL2 functions)
+;;;============================================================================
+
+(defun hmac-sign-raw (key &rest messages)
+  "Compute HMAC-SHA256 signature for messages concatenated together.
+   KEY is the signing key string (empty string means no signing).
+   Returns hex string signature.
+   Calls ACL2 crypto::hmac-sha-256 directly."
+  (if (or (null key) (equal key ""))
+      ""  ; No signing if no key
+    (let* ((data (apply #'concatenate 'string messages))
+           ;; Convert strings to byte lists using our ACL2 function
+           (key-bytes (acl2-kernel::string-to-bytes key))
+           (data-bytes (acl2-kernel::string-to-bytes data))
+           ;; Call the ACL2 HMAC function
+           (sig-bytes (crypto::hmac-sha-256 key-bytes data-bytes)))
+      ;; Convert result to hex string using our ACL2 function
+      (acl2-kernel::bytes-to-hex-string sig-bytes))))
+
+;;;============================================================================
+;;; Message Construction (Pure Common Lisp)
+;;;============================================================================
+
+(defun make-msg-header (msg-id msg-type username session date)
+  "Create a message header as a hash-table (for JSON encoding)."
+  (let ((header (make-hash-table :test #'equal)))
+    (setf (gethash "msg_id" header) msg-id)
+    (setf (gethash "msg_type" header) msg-type)
+    (setf (gethash "username" header) username)
+    (setf (gethash "session" header) session)
+    (setf (gethash "date" header) date)
+    (setf (gethash "version" header) "5.3")
+    header))
+
+(defun make-status-msg-content (status)
+  "Create status message content."
+  (let ((content (make-hash-table :test #'equal)))
+    (setf (gethash "execution_state" content) status)
+    content))
+
+(defun make-stream-msg-content (stream-name text)
+  "Create stream message content."
+  (let ((content (make-hash-table :test #'equal)))
+    (setf (gethash "name" content) stream-name)
+    (setf (gethash "text" content) text)
+    content))
+
+(defun make-execute-result-msg-content (execution-count text-result)
+  "Create execute_result message content."
+  (let ((content (make-hash-table :test #'equal))
+        (data (make-hash-table :test #'equal))
+        (metadata (make-hash-table :test #'equal)))
+    (setf (gethash "text/plain" data) text-result)
+    (setf (gethash "execution_count" content) execution-count)
+    (setf (gethash "data" content) data)
+    (setf (gethash "metadata" content) metadata)
+    content))
+
+(defun make-error-msg-content (ename evalue traceback)
+  "Create error message content."
+  (let ((content (make-hash-table :test #'equal)))
+    (setf (gethash "ename" content) ename)
+    (setf (gethash "evalue" content) evalue)
+    (setf (gethash "traceback" content) (or traceback (list evalue)))
+    content))
+
+(defun make-execute-reply-ok-content (execution-count)
+  "Create execute_reply OK content."
+  (let ((content (make-hash-table :test #'equal)))
+    (setf (gethash "status" content) "ok")
+    (setf (gethash "execution_count" content) execution-count)
+    (setf (gethash "user_expressions" content) (make-hash-table :test #'equal))
+    content))
+
+(defun make-execute-reply-error-content (execution-count ename evalue traceback)
+  "Create execute_reply error content."
+  (let ((content (make-hash-table :test #'equal)))
+    (setf (gethash "status" content) "error")
+    (setf (gethash "execution_count" content) execution-count)
+    (setf (gethash "ename" content) ename)
+    (setf (gethash "evalue" content) evalue)
+    (setf (gethash "traceback" content) (or traceback (list evalue)))
+    content))
+
+(defun make-kernel-info-content ()
+  "Create kernel_info_reply content."
+  (let ((content (make-hash-table :test #'equal))
+        (language-info (make-hash-table :test #'equal))
+        (help-links (make-hash-table :test #'equal)))
+    (setf (gethash "name" language-info) "acl2")
+    (setf (gethash "version" language-info) "8.6")
+    (setf (gethash "mimetype" language-info) "text/x-common-lisp")
+    (setf (gethash "file_extension" language-info) ".lisp")
+    (setf (gethash "pygments_lexer" language-info) "common-lisp")
+    (setf (gethash "codemirror_mode" language-info) "commonlisp")
+    (setf (gethash "nbconvert_exporter" language-info) "")
+    
+    (setf (gethash "protocol_version" content) "5.3")
+    (setf (gethash "implementation" content) "acl2-kernel")
+    (setf (gethash "implementation_version" content) "0.1.0")
+    (setf (gethash "language_info" content) language-info)
+    (setf (gethash "banner" content) "ACL2 Jupyter Kernel - A Computational Logic for Applicative Common Lisp")
+    (setf (gethash "debugger" content) nil)
+    (setf (gethash "help_links" content) (list))
+    content))
+
+(defun make-shutdown-reply-content (restart)
+  "Create shutdown_reply content."
+  (let ((content (make-hash-table :test #'equal)))
+    (setf (gethash "restart" content) restart)
+    content))
+
+;;;============================================================================
 ;;; IOPub Publishing
 ;;;============================================================================
 
 (defun publish-status (status parent-header)
   "Publish a status message (busy/idle) on IOPub."
-  (let* ((header-json (bridge::json-encode 
-                       (make-header (make-uuid) "status" 
-                                    "acl2-kernel" *session-id* (iso8601-now))))
-         (content-json (bridge::json-encode (make-status-content status)))
-         (signature (message-signature *hmac-key* header-json parent-header "{}" content-json)))
+  (let* ((header-json (json-encode 
+                       (make-msg-header (make-uuid) "status" 
+                                        "acl2-kernel" *session-id* (iso8601-now))))
+         (content-json (json-encode (make-status-msg-content status)))
+         (signature (hmac-sign-raw *hmac-key* header-json parent-header "{}" content-json)))
     (send-multipart *iopub-socket*
                     (build-wire-message nil signature header-json parent-header "{}" content-json))))
 
 (defun publish-stream (stream-name text parent-header)
   "Publish a stream message (stdout/stderr) on IOPub."
   (when (and text (> (length text) 0))
-    (let* ((header-json (bridge::json-encode
-                         (make-header (make-uuid) "stream"
-                                      "acl2-kernel" *session-id* (iso8601-now))))
-           (content-json (bridge::json-encode (make-stream-content stream-name text)))
-           (signature (message-signature *hmac-key* header-json parent-header "{}" content-json)))
+    (let* ((header-json (json-encode
+                         (make-msg-header (make-uuid) "stream"
+                                          "acl2-kernel" *session-id* (iso8601-now))))
+           (content-json (json-encode (make-stream-msg-content stream-name text)))
+           (signature (hmac-sign-raw *hmac-key* header-json parent-header "{}" content-json)))
       (send-multipart *iopub-socket*
                       (build-wire-message nil signature header-json parent-header "{}" content-json)))))
 
 (defun publish-execute-result (execution-count text-result parent-header)
   "Publish an execute_result message on IOPub."
-  (let* ((header-json (bridge::json-encode
-                       (make-header (make-uuid) "execute_result"
-                                    "acl2-kernel" *session-id* (iso8601-now))))
-         (content-json (bridge::json-encode (make-execute-result-content execution-count text-result)))
-         (signature (message-signature *hmac-key* header-json parent-header "{}" content-json)))
+  (let* ((header-json (json-encode
+                       (make-msg-header (make-uuid) "execute_result"
+                                        "acl2-kernel" *session-id* (iso8601-now))))
+         (content-json (json-encode (make-execute-result-msg-content execution-count text-result)))
+         (signature (hmac-sign-raw *hmac-key* header-json parent-header "{}" content-json)))
     (send-multipart *iopub-socket*
                     (build-wire-message nil signature header-json parent-header "{}" content-json))))
 
 (defun publish-error (ename evalue traceback parent-header)
   "Publish an error message on IOPub."
-  (let* ((header-json (bridge::json-encode
-                       (make-header (make-uuid) "error"
-                                    "acl2-kernel" *session-id* (iso8601-now))))
-         (content-json (bridge::json-encode (make-error-content ename evalue traceback)))
-         (signature (message-signature *hmac-key* header-json parent-header "{}" content-json)))
+  (let* ((header-json (json-encode
+                       (make-msg-header (make-uuid) "error"
+                                        "acl2-kernel" *session-id* (iso8601-now))))
+         (content-json (json-encode (make-error-msg-content ename evalue traceback)))
+         (signature (hmac-sign-raw *hmac-key* header-json parent-header "{}" content-json)))
     (send-multipart *iopub-socket*
                     (build-wire-message nil signature header-json parent-header "{}" content-json))))
 
@@ -321,98 +455,94 @@
 
 (defun handle-kernel-info-request (identities parent-header)
   "Handle kernel_info_request, send kernel_info_reply."
-  (let* ((header-json (bridge::json-encode
-                       (make-header (make-uuid) "kernel_info_reply"
-                                    "acl2-kernel" *session-id* (iso8601-now))))
-         (content-json (bridge::json-encode (kernel-info-content)))
-         (signature (message-signature *hmac-key* header-json parent-header "{}" content-json)))
+  (let* ((header-json (json-encode
+                       (make-msg-header (make-uuid) "kernel_info_reply"
+                                        "acl2-kernel" *session-id* (iso8601-now))))
+         (content-json (json-encode (make-kernel-info-content)))
+         (signature (hmac-sign-raw *hmac-key* header-json parent-header "{}" content-json)))
     (send-multipart *shell-socket*
                     (build-wire-message identities signature header-json parent-header "{}" content-json))))
 
 (defun handle-execute-request (identities parent-header content-json)
   "Handle execute_request, evaluate code and send replies."
-  ;; Parse the content
-  (multiple-value-bind (erp content)
-      (acl2::parse-json content-json)
-    (declare (ignore erp))
-    (let* ((code (execute-request-code content))
-           (silent (execute-request-silent-p content)))
-      ;; Increment execution count
-      (incf *execution-count*)
+  ;; Parse the content using shasht
+  (let* ((content (shasht:read-json content-json))
+         (code (gethash "code" content ""))
+         (silent (gethash "silent" content nil)))
+    ;; Increment execution count
+    (incf *execution-count*)
+    
+    ;; Publish busy status
+    (publish-status "busy" parent-header)
+    
+    ;; Execute the code
+    (let ((result nil)
+          (error-info nil)
+          (output ""))
+      (handler-case
+          (with-output-capture
+            ;; TODO: Actually evaluate in ACL2
+            ;; For now, just echo the code
+            (setf result (format nil "~S" (read-from-string code)))
+            (setf output (get-captured-output)))
+        (error (e)
+          (setf error-info (list (type-of e)
+                                 (format nil "~A" e)
+                                 nil))))
       
-      ;; Publish busy status
-      (publish-status "busy" parent-header)
+      ;; Publish stdout if any
+      (publish-stream "stdout" output parent-header)
       
-      ;; Execute the code
-      (let ((result nil)
-            (error-info nil)
-            (output ""))
-        (handler-case
-            (with-output-capture
-              ;; TODO: Actually evaluate in ACL2
-              ;; For now, just echo the code
-              (setf result (format nil "~S" (read-from-string code)))
-              (setf output (get-captured-output)))
-          (error (e)
-            (setf error-info (list (type-of e)
-                                   (format nil "~A" e)
-                                   nil))))
-        
-        ;; Publish stdout if any
-        (publish-stream "stdout" output parent-header)
-        
-        (if error-info
-            (progn
-              ;; Publish error
-              (publish-error (format nil "~A" (first error-info))
-                             (second error-info)
-                             (third error-info)
-                             parent-header)
-              ;; Send error reply
-              (let* ((header-json (bridge::json-encode
-                                   (make-header (make-uuid) "execute_reply"
-                                                "acl2-kernel" *session-id* (iso8601-now))))
-                     (content-json (bridge::json-encode
-                                    (make-execute-reply-error *execution-count*
-                                                              (format nil "~A" (first error-info))
-                                                              (second error-info)
-                                                              nil)))
-                     (signature (message-signature *hmac-key* header-json parent-header "{}" content-json)))
-                (send-multipart *shell-socket*
-                                (build-wire-message identities signature header-json parent-header "{}" content-json))))
-            (progn
-              ;; Publish result (unless silent)
-              (unless silent
-                (publish-execute-result *execution-count* result parent-header))
-              ;; Send OK reply
-              (let* ((header-json (bridge::json-encode
-                                   (make-header (make-uuid) "execute_reply"
-                                                "acl2-kernel" *session-id* (iso8601-now))))
-                     (content-json (bridge::json-encode (make-execute-reply-ok *execution-count*)))
-                     (signature (message-signature *hmac-key* header-json parent-header "{}" content-json)))
-                (send-multipart *shell-socket*
-                                (build-wire-message identities signature header-json parent-header "{}" content-json))))))
-      
-      ;; Publish idle status
-      (publish-status "idle" parent-header))))
+      (if error-info
+          (progn
+            ;; Publish error
+            (publish-error (format nil "~A" (first error-info))
+                           (second error-info)
+                           (third error-info)
+                           parent-header)
+            ;; Send error reply
+            (let* ((header-json (json-encode
+                                 (make-msg-header (make-uuid) "execute_reply"
+                                                  "acl2-kernel" *session-id* (iso8601-now))))
+                   (reply-content-json (json-encode
+                                        (make-execute-reply-error-content 
+                                         *execution-count*
+                                         (format nil "~A" (first error-info))
+                                         (second error-info)
+                                         nil)))
+                   (signature (hmac-sign-raw *hmac-key* header-json parent-header "{}" reply-content-json)))
+              (send-multipart *shell-socket*
+                              (build-wire-message identities signature header-json parent-header "{}" reply-content-json))))
+          (progn
+            ;; Publish result (unless silent)
+            (unless silent
+              (publish-execute-result *execution-count* result parent-header))
+            ;; Send OK reply
+            (let* ((header-json (json-encode
+                                 (make-msg-header (make-uuid) "execute_reply"
+                                                  "acl2-kernel" *session-id* (iso8601-now))))
+                   (reply-content-json (json-encode (make-execute-reply-ok-content *execution-count*)))
+                   (signature (hmac-sign-raw *hmac-key* header-json parent-header "{}" reply-content-json)))
+              (send-multipart *shell-socket*
+                              (build-wire-message identities signature header-json parent-header "{}" reply-content-json))))))
+    
+    ;; Publish idle status
+    (publish-status "idle" parent-header)))
 
 (defun handle-shutdown-request (identities parent-header content-json)
   "Handle shutdown_request, send reply and stop kernel."
-  (multiple-value-bind (erp content)
-      (acl2::parse-json content-json)
-    (declare (ignore erp))
-    (let* ((restart (and (assoc-equal "restart" content)
-                         (eq (cdr (assoc-equal "restart" content)) t)))
-           (header-json (bridge::json-encode
-                         (make-header (make-uuid) "shutdown_reply"
-                                      "acl2-kernel" *session-id* (iso8601-now))))
-           (content-json (bridge::json-encode (make-shutdown-reply restart)))
-           (signature (message-signature *hmac-key* header-json parent-header "{}" content-json)))
-      ;; Send reply
-      (send-multipart *shell-socket*
-                      (build-wire-message identities signature header-json parent-header "{}" content-json))
-      ;; Stop the kernel
-      (setf *kernel-running* nil))))
+  (let* ((content (shasht:read-json content-json))
+         (restart (gethash "restart" content nil))
+         (header-json (json-encode
+                       (make-msg-header (make-uuid) "shutdown_reply"
+                                        "acl2-kernel" *session-id* (iso8601-now))))
+         (reply-content-json (json-encode (make-shutdown-reply-content restart)))
+         (signature (hmac-sign-raw *hmac-key* header-json parent-header "{}" reply-content-json)))
+    ;; Send reply
+    (send-multipart *shell-socket*
+                    (build-wire-message identities signature header-json parent-header "{}" reply-content-json))
+    ;; Stop the kernel
+    (setf *kernel-running* nil)))
 
 ;;;============================================================================
 ;;; Message Dispatch
@@ -424,22 +554,20 @@
     (multiple-value-bind (identities signature header-json parent-json metadata-json content-json)
         (parse-wire-message parts)
       (when header-json
-        ;; Parse header to get msg_type
-        (multiple-value-bind (erp header)
-            (acl2::parse-json header-json)
-          (declare (ignore erp))
-          (let ((msg-type (cdr (assoc-equal "msg_type" header))))
-            ;; TODO: Verify HMAC signature
-            (cond
-              ((string= msg-type "kernel_info_request")
-               (handle-kernel-info-request identities header-json))
-              ((string= msg-type "execute_request")
-               (handle-execute-request identities header-json content-json))
-              ((string= msg-type "shutdown_request")
-               (handle-shutdown-request identities header-json content-json))
-              ;; Add more handlers as needed
-              (t
-               (format t "~&Unknown message type: ~A~%" msg-type)))))))))
+        ;; Parse header to get msg_type using shasht
+        (let* ((header (shasht:read-json header-json))
+               (msg-type (gethash "msg_type" header)))
+          ;; TODO: Verify HMAC signature
+          (cond
+            ((string= msg-type "kernel_info_request")
+             (handle-kernel-info-request identities header-json))
+            ((string= msg-type "execute_request")
+             (handle-execute-request identities header-json content-json))
+            ((string= msg-type "shutdown_request")
+             (handle-shutdown-request identities header-json content-json))
+            ;; Add more handlers as needed
+            (t
+             (format t "~&Unknown message type: ~A~%" msg-type))))))))
 
 ;;;============================================================================
 ;;; Main Event Loop
@@ -475,7 +603,7 @@
     
     ;; Initialize state
     (setf *session-id* (make-uuid))
-    (setf *hmac-key* (or (cdr (assoc-equal "key" connection)) ""))
+    (setf *hmac-key* (or (gethash "key" connection) ""))
     (setf *execution-count* 0)
     (setf *kernel-running* t)
     

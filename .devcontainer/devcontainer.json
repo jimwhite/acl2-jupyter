@@ -13,5 +13,44 @@
     "containerEnv": {
         "JUPYTER_PORT": "8888",
         "RESTARTABLE": "yes"
+    },
+    // remoteEnv supports ${containerEnv:VAR} syntax for PATH modification
+    "remoteEnv": {
+        "VIRTUAL_ENV": "/workspaces/acl2-jupyter/.venv",
+        "PATH": "/workspaces/acl2-jupyter/.venv/bin:${containerEnv:PATH}"
+    },
+    // Create venv if it doesn't exist, install packages
+    "postCreateCommand": "[ -d /workspaces/acl2-jupyter/.venv ] || (python3 -m venv /workspaces/acl2-jupyter/.venv && /workspaces/acl2-jupyter/.venv/bin/pip install --upgrade pip && /workspaces/acl2-jupyter/.venv/bin/pip install z3-solver git+https://github.com/jimwhite/acl2-mcp.git)",
+    // Add venv activation to bashrc so terminals show (.venv) prompt
+    "postStartCommand": "grep -q 'source.*\\.venv/bin/activate' ~/.bashrc || echo 'source /workspaces/acl2-jupyter/.venv/bin/activate' >> ~/.bashrc",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "ms-toolsai.jupyter"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/workspaces/acl2-acl2-jupyter/.venv/bin/python",
+                "python.terminal.activateEnvironment": true,
+                "python.terminal.activateEnvInCurrentTerminal": true
+            },
+            "mcp": {
+                "servers": {
+                    "acl2-mcp": {
+                        "command": "/workspaces/acl2-jupyter/.venv/bin/acl2-mcp",
+                        "args": [],
+                        "env": {
+                            "ACL2_HOME": "/home/acl2",
+                            "ACL2_SYSTEM_BOOKS": "/home/acl2/books",
+                            "ACL2": "/opt/acl2/bin/saved_acl2",
+                            "SBCL_USER_ARGS": "--noinform",
+                            "VIRTUAL_ENV": "/workspaces/acl2-jupyter/.venv",
+                            "PATH": "/workspaces/acl2-jupyter/.venv/bin:/opt/acl2/bin:/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                        }
+                    }
+                }
+            }
+        }
     }
 }

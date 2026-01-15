@@ -22,15 +22,8 @@ books/acl2-kernel/
 ├── cert.acl2                # Certification config
 ├── connection.lisp          # Parse Jupyter connection files (uses kestrel/json-parser)
 ├── message.lisp             # Jupyter protocol message envelopes (uses bridge/to-json, crypto/hmac)
-├── uuid-raw.lsp             # Raw: UUID v4 generation (no ACL2 book exists)
-├── uuid.lisp                # ACL2 wrapper for UUID
-├── channel.lisp             # ZeroMQ channel abstraction
-├── zmq-raw.lsp              # Raw: pzmq FFI (ZeroMQ bindings)
-├── handlers.lisp            # Request handlers (kernel_info, execute, etc.)
-├── eval.lisp                # ACL2 code evaluation wrapper
-├── eval-raw.lsp             # Raw: Output capture, ACL2 channel binding
-├── kernel.lisp              # Main kernel state and dispatch
-├── kernel-raw.lsp           # Raw: Threading, main event loop
+├── kernel.lisp              # Kernel state, message dispatch, request handlers
+├── kernel-raw.lsp           # Raw: ZeroMQ, threading, UUID, output capture, main loop
 ├── top.lisp                 # Top-level book
 └── Makefile                 # Runs cert.pl
 ```
@@ -43,13 +36,9 @@ books/acl2-kernel/
 
 3. **[DONE] Implement message envelope** - Use `centaur/bridge/to-json` for encoding, `kestrel/crypto/interfaces/hmac-sha-256` for signing. File: `message.lisp`
 
-4. **Implement UUID generation** - Raw Lisp for UUID v4 (no existing ACL2 book), ACL2 wrapper with type theorems.
+4. **Implement kernel logic** - ACL2 book for kernel state, message dispatch, request handlers. File: `kernel.lisp`
 
-5. **Implement ZeroMQ interface** - Raw Lisp for pzmq socket operations, ACL2 wrapper for channel abstraction.
-
-6. **Implement output capture** - Raw Lisp using `bridge-ostream` pattern from bridge-sbcl-raw.lsp for ACL2 channel binding during evaluation.
-
-7. **Implement kernel orchestration** - ACL2 book for kernel state and message dispatch, raw Lisp for threading and main event loop.
+5. **Implement kernel runtime** - Raw Lisp for ZeroMQ (pzmq), threading, UUID generation, output capture, main event loop. Following common-lisp-jupyter patterns. File: `kernel-raw.lsp`
 
 8. **Create kernel.json and installation** - Register kernel with Jupyter.
 
@@ -81,7 +70,7 @@ cert.pl top.lisp  # Certifies all books, running all defthm proofs
 
 2. **ACL2 book certification:** Top-level code is certifiable ACL2; raw Lisp only for FFI (ZeroMQ, crypto, threading). **Decision: ACL2-first approach**
 
-3. **ZeroMQ transport preference:** TCP vs IPC (Unix sockets)? Support both with TCP as default for remote Jupyter compatibility.
+3. **ZeroMQ transport preference:** Unix sockets (IPC) preferred for security and performance. TCP deferred - Unix sockets will be used in practice for local Jupyter↔kernel communication.
 
 ## Key Reference Files
 
@@ -100,8 +89,6 @@ cert.pl top.lisp  # Certifies all books, running all defthm proofs
 - [x] Step 1: Create kernel directory and package (basic structure done)
 - [x] Step 2: Implement connection file parser using kestrel/json-parser (connection.lisp CERTIFIED)
 - [x] Step 3: Implement message envelope using bridge/to-json and crypto/hmac (message.lisp CERTIFIED)
-- [ ] Step 4: Implement UUID generation
-- [ ] Step 5: Implement ZeroMQ interface
-- [ ] Step 6: Implement output capture
-- [ ] Step 7: Implement kernel orchestration
-- [ ] Step 8: Create kernel.json and installation
+- [ ] Step 4: Implement kernel logic (kernel.lisp)
+- [ ] Step 5: Implement kernel runtime - ZeroMQ, UUID, threading, output capture (kernel-raw.lsp)
+- [ ] Step 6: Create kernel.json and installation

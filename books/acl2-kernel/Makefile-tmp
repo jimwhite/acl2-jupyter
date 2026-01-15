@@ -954,23 +954,27 @@ CERT_PL_SOURCES := \
      portcullis.lisp \
      top.lisp
 
-CERT_PL_USES_STP :=
+CERT_PL_NON_LISPWORKS :=
 
-CERT_PL_USES_IPASIR :=
+CERT_PL_USES_ACL2R :=
 
-CERT_PL_NON_SBCL :=
-
-CERT_PL_USES_QUICKLISP :=
-
-CERT_PL_ANSI_ONLY :=
-
-CERT_PL_NON_CMUCL :=
-
-CERT_PL_USES_SMTLINK :=
+CERT_PL_NON_ALLEGRO :=
 
 CERT_PL_USES_CPP :=
 
-CERT_PL_USES_ACL2R :=
+CERT_PL_USES_ABC :=
+
+CERT_PL_USES_QUICKLISP :=
+
+CERT_PL_USES_GLUCOSE :=
+
+CERT_PL_NON_SBCL :=
+
+CERT_PL_NON_CMUCL :=
+
+CERT_PL_ANSI_ONLY :=
+
+CERT_PL_USES_IPASIR :=
 
 CERT_PL_NON_ACL2R :=  \
      ../../../../home/acl2/books/kestrel/arithmetic-light/ash.cert  \
@@ -1004,19 +1008,15 @@ CERT_PL_NON_ACL2R :=  \
      message.cert  \
      top.cert
 
-CERT_PL_USES_ABC :=
+CERT_PL_CCL_ONLY :=
 
 CERT_PL_NON_GCL :=
 
-CERT_PL_USES_GLUCOSE :=
+CERT_PL_USES_STP :=
+
+CERT_PL_USES_SMTLINK :=
 
 CERT_PL_NON_ACL2P :=
-
-CERT_PL_NON_LISPWORKS :=
-
-CERT_PL_CCL_ONLY :=
-
-CERT_PL_NON_ALLEGRO :=
 
 ../../../../home/acl2/books/arithmetic-3/bind-free/arithmetic-theory.cert : acl2x = 0
 ../../../../home/acl2/books/arithmetic-3/bind-free/arithmetic-theory.cert : pcert = 0

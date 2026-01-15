@@ -1,9 +1,11 @@
 all: build
 .PHONY: all build push push-ghcr build-multiplatform build-multiplatform-ghcr build-arm64 build-arm64-ghcr
 
-# By default this builds the latest commit from source at https://github.com/acl2/acl2
+# By default this builds the latest commit from the main branch of https://github.com/jimwhite/acl2
 # TODO: Default/easy selection of released version.
-ACL2_COMMIT ?= $(shell curl --silent https://api.github.com/repos/acl2/acl2/commits/master | jq -r .sha)
+ACL2_GITHUB_REPO ?= jimwhite/acl2
+ACL2_BRANCH ?= main
+ACL2_COMMIT ?= $(shell curl --silent https://api.github.com/repos/$(ACL2_GITHUB_REPO)/commits/$(ACL2_BRANCH) | jq -r .sha)
 
 BASE_IMAGE ?= quay.io/jupyter/minimal-notebook:latest
 IMAGE_NAME ?= acl2-jupyter
@@ -55,27 +57,37 @@ git-submodules:
 build-multiplatform:
 	$(DOCKER) buildx build --platform=$(PLATFORM) $(BUILD_CACHE) -t $(DOCKERHUB_IMAGE_NAME):$(IMAGE_VERSION) context \
 		--build-arg BASE_IMAGE=$(BASE_IMAGE) --build-arg ACL2_BUILD_OPTS=$(ACL2_BUILD_OPTS) \
-		--build-arg ACL2_COMMIT=$(ACL2_COMMIT) --build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" -f $(DOCKERFILE) --push
+		--build-arg ACL2_GITHUB_REPO=$(ACL2_GITHUB_REPO) --build-arg ACL2_COMMIT=$(ACL2_COMMIT) \
+		--build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" \
+		-f $(DOCKERFILE) --push
 
 build-multiplatform-ghcr:
 	$(DOCKER) buildx build --platform=$(PLATFORM) $(BUILD_CACHE) -t $(GHCR_IMAGE_NAME):$(IMAGE_VERSION) context \
 		--build-arg BASE_IMAGE=$(BASE_IMAGE) --build-arg ACL2_BUILD_OPTS=$(ACL2_BUILD_OPTS) \
-		--build-arg ACL2_COMMIT=$(ACL2_COMMIT) --build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" -f $(DOCKERFILE) --push
+		--build-arg ACL2_GITHUB_REPO=$(ACL2_GITHUB_REPO) --build-arg ACL2_COMMIT=$(ACL2_COMMIT) \
+		--build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" \
+		-f $(DOCKERFILE) --push
 
 build-arm64:
 	$(DOCKER) buildx build --platform=linux/arm64 $(BUILD_CACHE) -t $(DOCKERHUB_IMAGE_NAME):$(IMAGE_VERSION) context \
 		--build-arg BASE_IMAGE=$(BASE_IMAGE) --build-arg ACL2_BUILD_OPTS=$(ACL2_BUILD_OPTS) \
-		--build-arg ACL2_COMMIT=$(ACL2_COMMIT) --build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" -f $(DOCKERFILE) --push
+		--build-arg ACL2_GITHUB_REPO=$(ACL2_GITHUB_REPO) --build-arg ACL2_COMMIT=$(ACL2_COMMIT) \
+		--build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" \
+		-f $(DOCKERFILE) --push
 
 build-arm64-ghcr:
 	$(DOCKER) buildx build --platform=linux/arm64 $(BUILD_CACHE) -t $(GHCR_IMAGE_NAME):$(IMAGE_VERSION) context \
 		--build-arg BASE_IMAGE=$(BASE_IMAGE) --build-arg ACL2_BUILD_OPTS=$(ACL2_BUILD_OPTS) \
-		--build-arg ACL2_COMMIT=$(ACL2_COMMIT) --build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" -f $(DOCKERFILE) --push
+		--build-arg ACL2_GITHUB_REPO=$(ACL2_GITHUB_REPO) --build-arg ACL2_COMMIT=$(ACL2_COMMIT) \
+		--build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" \
+		-f $(DOCKERFILE) --push
 
 build:
 	$(DOCKER) buildx build context $(BUILD_CACHE) -t $(IMAGE_NAME):$(IMAGE_VERSION) \
 		--build-arg BASE_IMAGE=$(BASE_IMAGE) --build-arg ACL2_BUILD_OPTS=$(ACL2_BUILD_OPTS) \
-		--build-arg ACL2_COMMIT=$(ACL2_COMMIT) --build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" -f $(DOCKERFILE)
+		--build-arg ACL2_GITHUB_REPO=$(ACL2_GITHUB_REPO) --build-arg ACL2_COMMIT=$(ACL2_COMMIT) \
+		--build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" \
+		-f $(DOCKERFILE)
 
 push:
 	$(DOCKER) image tag $(IMAGE_NAME):$(IMAGE_VERSION) $(DOCKERHUB_IMAGE_NAME):$(IMAGE_VERSION)

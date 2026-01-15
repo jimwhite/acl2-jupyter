@@ -18,6 +18,17 @@
 (include-book "message")
 (include-book "kernel")
 
+;; Load ZeroMQ bindings and threading support via Quicklisp
+(include-book "pzmq")
+(include-book "quicklisp/bordeaux" :dir :system)
+
+;; Load raw Lisp runtime (main loop, message handling)
+(defttag :acl2-kernel-raw)
+; (depends-on "kernel-raw.lsp")
+(include-raw "kernel-raw.lsp"
+             :do-not-compile t
+             :host-readtable t)
+
 (defxdoc acl2-kernel
   :parents (acl2::interfacing-tools)
   :short "Native ACL2 Jupyter Kernel"

@@ -89,6 +89,6 @@ cert.pl top.lisp  # Certifies all books, running all defthm proofs
 - [x] Step 1: Create kernel directory and package (basic structure done)
 - [x] Step 2: Implement connection file parser using kestrel/json-parser (connection.lisp CERTIFIED)
 - [x] Step 3: Implement message envelope using bridge/to-json and crypto/hmac (message.lisp CERTIFIED)
-- [ ] Step 4: Implement kernel logic (kernel.lisp)
-- [ ] Step 5: Implement kernel runtime - ZeroMQ, UUID, threading, output capture (kernel-raw.lsp)
+- [x] Step 4: Implement kernel logic (kernel.lisp CERTIFIED)
+- [x] Step 5: Implement kernel runtime - ZeroMQ, UUID, threading, output capture (kernel-raw.lsp CERTIFIED via pzmq.lisp + bordeaux)
 - [ ] Step 6: Create kernel.json and installation

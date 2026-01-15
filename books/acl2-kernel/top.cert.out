@@ -46,6 +46,8 @@ Temp lisp file:
 (acl2::ld "connection.port" :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
 (acl2::ld "message.port" :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
 (acl2::ld "kernel.port" :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
+(acl2::ld "pzmq.port" :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
+(acl2::ld "quicklisp/bordeaux.port" :dir :SYSTEM :ld-missing-input-ok t :ld-always-skip-top-level-locals t)
 #!ACL2 (set-ld-error-action (quote :continue) state)
 
 ; certify-book command flags: ? t :ttags :all
@@ -537,6 +539,42 @@ Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
  :REDUNDANT
 ACL2 !>>Bye.
  :EOF
+ACL2 !>
+Project-dir-alist:
+((:SYSTEM . "/home/acl2/books/")).
+Type :help for help.
+Type (quit) to quit completely out of ACL2.
+
+ACL2 !>> "ACL2"
+ACL2 !>>
+The event ( INCLUDE-BOOK "portcullis" ...) is redundant.  See :DOC
+redundant-events.
+
+Summary
+Form:  ( INCLUDE-BOOK "portcullis" ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ :REDUNDANT
+ACL2 !>>Bye.
+ :EOF
+ACL2 !>
+Project-dir-alist:
+((:SYSTEM . "/home/acl2/books/")).
+Type :help for help.
+Type (quit) to quit completely out of ACL2.
+
+ACL2 !>> "ACL2"
+ACL2 !>>
+The event ( INCLUDE-BOOK "std/portcullis" ...) is redundant.  See :DOC
+redundant-events.
+
+Summary
+Form:  ( INCLUDE-BOOK "std/portcullis" ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+ :REDUNDANT
+ACL2 !>>Bye.
+ :EOF
 ACL2 !> :CONTINUE
 ACL2 !>
 Summary
@@ -554,7 +592,7 @@ Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "std/strings/top" ...)
 Rules: NIL
-Time:  0.39 seconds (prove: 0.00, print: 0.00, other: 0.39)
+Time:  0.33 seconds (prove: 0.00, print: 0.00, other: 0.33)
 "/home/acl2/books/std/strings/top.lisp"
 
 Summary
@@ -573,7 +611,7 @@ Summary
 Form:  ( ACL2::INCLUDE-BOOK "kestrel/crypto/interfaces/hmac-sha-256"
 ...)
 Rules: NIL
-Time:  0.23 seconds (prove: 0.00, print: 0.00, other: 0.23)
+Time:  0.22 seconds (prove: 0.00, print: 0.00, other: 0.22)
 "/home/acl2/books/kestrel/crypto/interfaces/hmac-sha-256.lisp"
 
 Summary
@@ -593,6 +631,58 @@ Form:  ( ACL2::INCLUDE-BOOK "kernel" ...)
 Rules: NIL
 Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
 "/workspaces/acl2-jupyter/books/acl2-kernel/kernel.lisp"
+
+TTAG NOTE (for included book): Adding ttag :QUICKLISP from book /home/acl2/books/quicklisp/base.
+
+TTAG NOTE (for included book): Adding ttag :ACL2-KERNEL-PZMQ from book /workspaces/acl2-jupyter/books/acl2-kernel/pzmq.
+
+Summary
+Form:  ( ACL2::INCLUDE-BOOK "pzmq" ...)
+Rules: NIL
+Time:  0.14 seconds (prove: 0.00, print: 0.00, other: 0.14)
+"/workspaces/acl2-jupyter/books/acl2-kernel/pzmq.lisp"
+
+TTAG NOTE (for included book): Adding ttag :QUICKLISP from book /home/acl2/books/quicklisp/base.
+
+TTAG NOTE (for included book): Adding ttag :QUICKLISP.BORDEAUX from book /home/acl2/books/quicklisp/bordeaux.
+
+Summary
+Form:  ( ACL2::INCLUDE-BOOK "quicklisp/bordeaux" ...)
+Rules: NIL
+Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
+"/home/acl2/books/quicklisp/bordeaux.lisp"
+
+TTAG NOTE: Adding ttag :ACL2-KERNEL-RAW from book /workspaces/acl2-jupyter/books/acl2-kernel/top.
+:ACL2-KERNEL-RAW
+
+Summary
+Form:  ( PROGN! (SET-RAW-MODE T) ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+NIL
+
+Summary
+Form:  ( PROGN! (SET-RAW-MODE T) ...)
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+
+Summary
+Form:  ( MAKE-EVENT (MV-LET ...))
+Rules: NIL
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
+:INVISIBLE
+
+Summary
+Form:  ( PROGN! (SET-RAW-MODE T) ...)
+Rules: NIL
+Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
+NIL
+
+Summary
+Form:  ( PROGN (PROGN! ...) ...)
+Rules: NIL
+Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
+NIL
 (DEFXDOC ACL2-KERNEL)
 
 
@@ -600,9 +690,9 @@ Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
 Summary
 Form:  (CERTIFY-BOOK "top" ...)
 Rules: NIL
-Time:  0.70 seconds (prove: 0.00, print: 0.00, other: 0.70)
+Time:  0.80 seconds (prove: 0.00, print: 0.00, other: 0.80)
 ; (EV-REC *RETURN-LAST-ARG3* ...) took 
-; 0.70 seconds realtime, 0.69 seconds runtime
-; (323,244,224 bytes allocated).
+; 0.80 seconds realtime, 0.79 seconds runtime
+; (476,034,128 bytes allocated).
 Exit code from ACL2 is 43
--rw-r--r-- 1 jovyan users 58945 Jan 15 22:39 top.cert
+-rw-r--r-- 1 jovyan users 61754 Jan 15 22:54 top.cert

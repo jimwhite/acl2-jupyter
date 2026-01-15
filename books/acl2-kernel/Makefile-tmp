@@ -274,6 +274,8 @@ CERT_PL_CERTS := \
      ../../../../home/acl2/books/misc/symbol-print-full-escapes.cert \
      ../../../../home/acl2/books/misc/total-order.cert \
      ../../../../home/acl2/books/misc/without-waterfall-parallelism.cert \
+     ../../../../home/acl2/books/quicklisp/base.cert \
+     ../../../../home/acl2/books/quicklisp/bordeaux.cert \
      ../../../../home/acl2/books/std/alists/abstract.cert \
      ../../../../home/acl2/books/std/alists/alist-defuns.cert \
      ../../../../home/acl2/books/std/alists/alist-equiv.cert \
@@ -459,6 +461,7 @@ CERT_PL_CERTS := \
      kernel.cert \
      message.cert \
      portcullis.cert \
+     pzmq.cert \
      top.cert
 
 CERT_PL_IMAGES :=
@@ -758,6 +761,9 @@ CERT_PL_SOURCES := \
      ../../../../home/acl2/books/misc/total-order.acl2 \
      ../../../../home/acl2/books/misc/total-order.lisp \
      ../../../../home/acl2/books/misc/without-waterfall-parallelism.lisp \
+     ../../../../home/acl2/books/quicklisp/base.lisp \
+     ../../../../home/acl2/books/quicklisp/bordeaux.lisp \
+     ../../../../home/acl2/books/quicklisp/cert.acl2 \
      ../../../../home/acl2/books/std/alists/abstract.lisp \
      ../../../../home/acl2/books/std/alists/alist-defuns.lisp \
      ../../../../home/acl2/books/std/alists/alist-equiv.lisp \
@@ -966,25 +972,44 @@ CERT_PL_SOURCES := \
      package.lsp \
      portcullis.acl2 \
      portcullis.lisp \
+     pzmq.lisp \
      top.lisp
 
-CERT_PL_USES_SMTLINK :=
-
-CERT_PL_USES_ABC :=
-
-CERT_PL_USES_QUICKLISP :=
-
-CERT_PL_NON_LISPWORKS :=
-
-CERT_PL_ANSI_ONLY :=
+CERT_PL_USES_CPP :=
 
 CERT_PL_USES_ACL2R :=
 
-CERT_PL_NON_CMUCL :=
+CERT_PL_USES_GLUCOSE :=
 
-CERT_PL_USES_STP :=
+CERT_PL_USES_ABC :=
+
+CERT_PL_CCL_ONLY :=
+
+CERT_PL_NON_SBCL :=
+
+CERT_PL_NON_ALLEGRO :=
+
+CERT_PL_USES_QUICKLISP :=  \
+     ../../../../home/acl2/books/quicklisp/base.cert  \
+     ../../../../home/acl2/books/quicklisp/bordeaux.cert  \
+     pzmq.cert  \
+     top.cert
+
+CERT_PL_NON_LISPWORKS :=  \
+     ../../../../home/acl2/books/quicklisp/base.cert  \
+     ../../../../home/acl2/books/quicklisp/bordeaux.cert  \
+     pzmq.cert  \
+     top.cert
 
 CERT_PL_NON_ACL2P :=
+
+CERT_PL_USES_SMTLINK :=
+
+CERT_PL_ANSI_ONLY :=
+
+CERT_PL_USES_IPASIR :=
+
+CERT_PL_USES_STP :=
 
 CERT_PL_NON_ACL2R :=  \
      ../../../../home/acl2/books/kestrel/arithmetic-light/ash.cert  \
@@ -1021,17 +1046,11 @@ CERT_PL_NON_ACL2R :=  \
 
 CERT_PL_NON_GCL :=
 
-CERT_PL_CCL_ONLY :=
-
-CERT_PL_USES_IPASIR :=
-
-CERT_PL_USES_GLUCOSE :=
-
-CERT_PL_USES_CPP :=
-
-CERT_PL_NON_ALLEGRO :=
-
-CERT_PL_NON_SBCL :=
+CERT_PL_NON_CMUCL :=  \
+     ../../../../home/acl2/books/quicklisp/base.cert  \
+     ../../../../home/acl2/books/quicklisp/bordeaux.cert  \
+     pzmq.cert  \
+     top.cert
 
 ../../../../home/acl2/books/arithmetic-3/bind-free/arithmetic-theory.cert : acl2x = 0
 ../../../../home/acl2/books/arithmetic-3/bind-free/arithmetic-theory.cert : pcert = 0
@@ -3728,6 +3747,30 @@ CERT_PL_NON_SBCL :=
      ../../../../home/acl2/books/xdoc/top.cert
 
 
+../../../../home/acl2/books/quicklisp/base.cert : acl2x = 0
+../../../../home/acl2/books/quicklisp/base.cert : pcert = 0
+
+../../../../home/acl2/books/quicklisp/base.cert : \
+     ../../../../home/acl2/books/quicklisp/base.lisp \
+     ../../../../home/acl2/books/quicklisp/cert.acl2 \
+     ../../../../home/acl2/books/tools/include-raw.cert \
+     ../../../../home/acl2/books/std/portcullis.cert \
+     ../../../../home/acl2/books/quicklisp/bundle/timestamp.txt \
+     ../../../../home/acl2/books/quicklisp/bundle/bundle.lisp \
+     ../../../../home/acl2/books/quicklisp/base-raw.lsp
+
+
+../../../../home/acl2/books/quicklisp/bordeaux.cert : acl2x = 0
+../../../../home/acl2/books/quicklisp/bordeaux.cert : pcert = 0
+
+../../../../home/acl2/books/quicklisp/bordeaux.cert : \
+     ../../../../home/acl2/books/quicklisp/bordeaux.lisp \
+     ../../../../home/acl2/books/quicklisp/cert.acl2 \
+     ../../../../home/acl2/books/quicklisp/base.cert \
+     ../../../../home/acl2/books/std/portcullis.cert \
+     ../../../../home/acl2/books/quicklisp/bordeaux-raw.lsp
+
+
 ../../../../home/acl2/books/std/alists/abstract.cert : acl2x = 0
 ../../../../home/acl2/books/std/alists/abstract.cert : pcert = 0
 
@@ -6405,6 +6448,17 @@ portcullis.cert : \
      ../../../../home/acl2/books/std/portcullis.cert
 
 
+pzmq.cert : acl2x = 0
+pzmq.cert : pcert = 0
+
+pzmq.cert : \
+     pzmq.lisp \
+     ./cert.acl2 \
+     ../../../../home/acl2/books/quicklisp/base.cert \
+     portcullis.cert \
+     pzmq-raw.lsp
+
+
 top.cert : acl2x = 0
 top.cert : pcert = 0
 
@@ -6420,7 +6474,10 @@ top.cert : \
      connection.cert \
      message.cert \
      kernel.cert \
-     portcullis.cert
+     pzmq.cert \
+     ../../../../home/acl2/books/quicklisp/bordeaux.cert \
+     portcullis.cert \
+     kernel-raw.lsp
 
 
 

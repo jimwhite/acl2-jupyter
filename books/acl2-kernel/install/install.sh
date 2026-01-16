@@ -18,12 +18,12 @@ elif [ "$1" = "--prefix" ]; then
 fi
 
 # Cleaning FASL cache to avoid stale compiled files
-rm -rf ~/.cache/common-lisp/
+# rm -rf ~/.cache/common-lisp/
 
 # Certify the kernel and all dependencies (including system books)
 # This ensures everything is certified before first use
 echo "Certifying kernel and dependencies (this may take a few minutes on first run)..."
-/home/acl2/books/build/cert.pl --clean-all "$KERNEL_DIR/top.lisp"
+# /home/acl2/books/build/cert.pl --clean-all "$KERNEL_DIR/top.lisp"
 /home/acl2/books/build/cert.pl --acl2 /home/acl2/saved_acl2 "$KERNEL_DIR/top.lisp"
 
 # Pre-populate the FASL cache by loading the kernel FIRST
@@ -31,7 +31,7 @@ echo "Certifying kernel and dependencies (this may take a few minutes on first r
 echo "Pre-compiling Quicklisp dependencies..."
 cd "$KERNEL_DIR"
 /home/acl2/saved_acl2 << 'EOF'
-(include-book "top" :ttags ((:quicklisp) (:quicklisp.bordeaux) (:acl2-kernel-pzmq) (:acl2-kernel-raw)))
+(include-book "$KERNEL_DIR/top" :ttags ((:quicklisp) (:quicklisp.bordeaux) (:acl2-kernel-pzmq) (:acl2-kernel-raw)))
 :q
 (quit)
 EOF
@@ -41,7 +41,7 @@ sbcl --eval "(ql:quickload :common-lisp-jupyter)" --eval "(quit)"
 
 # Install kernel spec
 echo "Installing ACL2 Jupyter Kernel..."
-jupyter kernelspec install "$SCRIPT_DIR" --name=acl2-native $INSTALL_ARGS --replace
+jupyter kernelspec install "$SCRIPT_DIR" --name=acl2 $INSTALL_ARGS --replace
 
 echo "ACL2 kernel installed successfully."
 echo "You can now start Jupyter and select 'ACL2' as the kernel."

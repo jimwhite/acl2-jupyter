@@ -17,12 +17,17 @@ elif [ "$1" = "--prefix" ]; then
     INSTALL_ARGS="--prefix=$2"
 fi
 
+# Certify the kernel and all dependencies (including system books)
+# This ensures everything is certified before first use
+echo "Certifying kernel and dependencies (this may take a few minutes on first run)..."
+/home/acl2/books/build/cert.pl --acl2 /home/acl2/saved_acl2 "$KERNEL_DIR/top.lisp"
+
 # Pre-populate the FASL cache by loading the kernel
-# This prevents kernel startup timeout on first use
-echo "Pre-compiling kernel dependencies ..."
+# This compiles quicklisp dependencies (pzmq, cffi, etc.)
+echo "Pre-compiling Quicklisp dependencies..."
 cd "$KERNEL_DIR"
 /home/acl2/saved_acl2 << 'EOF'
-(include-book "top")
+(include-book "top" :ttags ((:quicklisp) (:quicklisp.bordeaux) (:acl2-kernel-pzmq) (:acl2-kernel-raw)))
 :q
 (quit)
 EOF

@@ -1,2 +1,6 @@
 # actionlint binary
 actionlint
+
+# Ignore certificate output files
+*.cert.out
+*.fasl

@@ -508,14 +508,15 @@
 ;;;============================================================================
 
 (defun publish-status (status parent-header)
-  "Publish a status message (busy/idle) on IOPub."
+  "Publish a status message (busy/idle/starting) on IOPub."
   (let* ((header-json (json-encode 
                        (make-msg-header (make-uuid) "status" 
                                         "acl2-kernel" *session-id* (iso8601-now))))
          (content-json (json-encode (make-status-msg-content status)))
-         (signature (hmac-sign-raw *hmac-key* header-json parent-header "{}" content-json)))
+         (parent-json (or parent-header "{}"))
+         (signature (hmac-sign-raw *hmac-key* header-json parent-json "{}" content-json)))
     (send-multipart *iopub-socket*
-                    (build-wire-message nil signature header-json parent-header "{}" content-json))))
+                    (build-wire-message nil signature header-json parent-json "{}" content-json))))
 
 (defun publish-stream (stream-name text parent-header)
   "Publish a stream message (stdout/stderr) on IOPub."
@@ -556,6 +557,8 @@
   "Handle kernel_info_request, send kernel_info_reply."
   (debug-log "~&Handling kernel_info_request~%")
   (debug-log "  identities: ~S~%" identities)
+  ;; Publish busy status (required by Jupyter protocol for ALL requests)
+  (publish-status "busy" parent-header)
   (let* ((header-json (json-encode
                        (make-msg-header (make-uuid) "kernel_info_reply"
                                         "acl2-kernel" *session-id* (iso8601-now))))
@@ -564,7 +567,9 @@
     (debug-log "  Sending kernel_info_reply~%")
     (send-multipart *shell-socket*
                     (build-wire-message identities signature header-json parent-header "{}" content-json))
-    (debug-log "  Sent kernel_info_reply~%")))
+    (debug-log "  Sent kernel_info_reply~%"))
+  ;; Publish idle status
+  (publish-status "idle" parent-header))
 
 (defun handle-execute-request (identities parent-header content-json)
   "Handle execute_request, evaluate code and send replies."
@@ -676,6 +681,11 @@
              (handle-execute-request identities header-json content-json))
             ((string= msg-type "shutdown_request")
              (handle-shutdown-request identities header-json content-json))
+            ((string= msg-type "interrupt_request")
+             ;; Interrupt is a no-op since we're single-threaded
+             ;; Just acknowledge it with busy/idle
+             (publish-status "busy" header-json)
+             (publish-status "idle" header-json))
             ;; Add more handlers as needed
             (t
              (format t "~&Unknown message type: ~A~%" msg-type))))))))

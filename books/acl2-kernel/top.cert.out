@@ -504,7 +504,7 @@ Time:  0.31 seconds (prove: 0.00, print: 0.00, other: 0.31)
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "kestrel/json-parser/parse-json" ...)
 Rules: NIL
-Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
+Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
 "/home/acl2/books/kestrel/json-parser/parse-json.lisp"
 
 Summary
@@ -548,7 +548,7 @@ TTAG NOTE (for included book): Adding ttag :QUICKLISP.BORDEAUX from book /home/a
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "quicklisp/bordeaux" ...)
 Rules: NIL
-Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
+Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
 "/home/acl2/books/quicklisp/bordeaux.lisp"
 
 TTAG NOTE: Adding ttag :ACL2-KERNEL-RAW from book /workspaces/acl2-jupyter/books/acl2-kernel/top.
@@ -589,9 +589,9 @@ NIL
 Summary
 Form:  (CERTIFY-BOOK "top" ...)
 Rules: NIL
-Time:  0.60 seconds (prove: 0.00, print: 0.00, other: 0.60)
+Time:  0.61 seconds (prove: 0.00, print: 0.00, other: 0.61)
 ; (EV-REC *RETURN-LAST-ARG3* ...) took 
-; 0.61 seconds realtime, 0.59 seconds runtime
-; (377,688,656 bytes allocated).
+; 0.61 seconds realtime, 0.60 seconds runtime
+; (377,710,688 bytes allocated).
 Exit code from ACL2 is 43
--rw-r--r-- 1 jovyan users 53554 Jan 16 02:40 top.cert
+-rw-r--r-- 1 jovyan users 53554 Jan 16 02:50 top.cert

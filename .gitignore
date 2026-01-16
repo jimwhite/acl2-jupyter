@@ -4,3 +4,4 @@ actionlint
 # Ignore certificate output files
 *.cert.out
 *.fasl
+Makefile-tmp

@@ -20,7 +20,7 @@ fi
 echo "Installing ACL2 Jupyter Kernel..."
 
 # Install kernel spec
-jupyter kernelspec install "$KERNEL_DIR" --name=acl2 $INSTALL_ARGS --replace
+jupyter kernelspec install "$KERNEL_DIR" --name=acl2-native $INSTALL_ARGS --replace
 
 echo "ACL2 kernel installed successfully."
 echo "You can now start Jupyter and select 'ACL2' as the kernel."

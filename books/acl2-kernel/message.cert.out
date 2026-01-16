@@ -129,7 +129,7 @@ ACL2 !>>
 Summary
 Form:  ( INCLUDE-BOOK "data-structures/portcullis" ...)
 Rules: NIL
-Time:  0.03 seconds (prove: 0.00, print: 0.00, other: 0.03)
+Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
  "/home/acl2/books/data-structures/portcullis.lisp"
 ACL2 !>>
 Summary
@@ -366,7 +366,7 @@ ACL2 !>
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "centaur/bridge/to-json" ...)
 Rules: NIL
-Time:  0.16 seconds (prove: 0.00, print: 0.00, other: 0.16)
+Time:  0.14 seconds (prove: 0.00, print: 0.00, other: 0.14)
 "/home/acl2/books/centaur/bridge/to-json.lisp"
 
 Summary
@@ -380,13 +380,13 @@ Summary
 Form:  ( ACL2::INCLUDE-BOOK "kestrel/utilities/strings/hexstrings"
 ...)
 Rules: NIL
-Time:  0.13 seconds (prove: 0.00, print: 0.00, other: 0.13)
+Time:  0.11 seconds (prove: 0.00, print: 0.00, other: 0.11)
 "/home/acl2/books/kestrel/utilities/strings/hexstrings.lisp"
 
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "std/strings/top" ...)
 Rules: NIL
-Time:  0.14 seconds (prove: 0.00, print: 0.00, other: 0.14)
+Time:  0.11 seconds (prove: 0.00, print: 0.00, other: 0.11)
 "/home/acl2/books/std/strings/top.lisp"
 
 The event ( ACL2::INCLUDE-BOOK "std/util/define" ...) is redundant.
@@ -717,10 +717,10 @@ Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
 Summary
 Form:  (CERTIFY-BOOK "message" ...)
 Rules: NIL
-Time:  0.57 seconds (prove: 0.00, print: 0.00, other: 0.56)
+Time:  0.47 seconds (prove: 0.00, print: 0.00, other: 0.47)
 Prover steps counted:  1616
 ; (EV-REC *RETURN-LAST-ARG3* ...) took 
-; 0.57 seconds realtime, 0.54 seconds runtime
-; (234,289,120 bytes allocated).
+; 0.47 seconds realtime, 0.46 seconds runtime
+; (234,292,272 bytes allocated).
 Exit code from ACL2 is 43
--rw-r--r-- 1 jovyan users 76252 Jan 15 23:35 message.cert
+-rw-r--r-- 1 jovyan users 76252 Jan 16 02:40 message.cert

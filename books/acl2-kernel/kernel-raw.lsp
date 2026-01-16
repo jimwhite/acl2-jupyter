@@ -182,31 +182,107 @@
 (defparameter +ids-msg-delimiter+ "<IDS|MSG>"
   "Delimiter separating identities from message content in wire protocol")
 
+(defun bytes-vector-to-hex-string (bytes)
+  "Convert a byte vector to a hex string for identity frames."
+  (with-output-to-string (s)
+    (loop for byte across bytes
+          do (format s "~2,'0x" byte))))
+
+(defun recv-binary-part (socket msg)
+  "Receive a binary message part into MSG, return as byte vector."
+  (pzmq:msg-recv msg socket)
+  (let* ((size (pzmq:msg-size msg))
+         (data (pzmq:msg-data msg))
+         (result (make-array size :element-type '(unsigned-byte 8))))
+    (dotimes (i size)
+      (setf (aref result i) (cffi:mem-ref data :unsigned-char i)))
+    result))
+
+(defun recv-string-part (socket msg)
+  "Receive a message part as UTF-8 string."
+  (pzmq:msg-recv msg socket)
+  (handler-case
+      (cffi:foreign-string-to-lisp (pzmq:msg-data msg)
+                                   :count (pzmq:msg-size msg)
+                                   :encoding :utf-8)
+    (error (e)
+      (declare (ignore e))
+      ;; If UTF-8 decode fails, return hex representation
+      (let* ((size (pzmq:msg-size msg))
+             (data (pzmq:msg-data msg))
+             (bytes (make-array size :element-type '(unsigned-byte 8))))
+        (dotimes (i size)
+          (setf (aref bytes i) (cffi:mem-ref data :unsigned-char i)))
+        (bytes-vector-to-hex-string bytes)))))
+
+(defun more-parts-p (socket)
+  "Check if there are more parts to receive."
+  (pzmq:getsockopt socket :rcvmore))
+
 (defun recv-multipart (socket)
   "Receive a multipart message from a ZeroMQ socket.
-   Returns a list of byte vectors."
-  (let ((parts nil))
-    (loop
-      (let ((msg (pzmq:recv-string socket)))
-        (push msg parts))
-      (unless (pzmq:getsockopt socket :rcvmore)
-        (return)))
-    (nreverse parts)))
+   Identity frames (before delimiter) are received as raw byte vectors.
+   Message body frames (after delimiter) are received as UTF-8 strings.
+   Returns a list where identities are byte vectors and body parts are strings."
+  (pzmq:with-message msg
+    (let ((parts nil)
+          (past-delimiter nil))
+      (loop
+        (if past-delimiter
+            ;; After delimiter: read as UTF-8 string
+            (push (recv-string-part socket msg) parts)
+            ;; Before delimiter: read as binary
+            (let ((binary (recv-binary-part socket msg)))
+              ;; Check if this is the delimiter
+              (if (and (= (length binary) (length +ids-msg-delimiter+))
+                       (every #'char= 
+                              +ids-msg-delimiter+ 
+                              (cl:map 'string #'code-char binary)))
+                  (progn
+                    (push +ids-msg-delimiter+ parts)
+                    (setf past-delimiter t))
+                  ;; Identity frame - keep as raw bytes
+                  (push binary parts))))
+        (unless (more-parts-p socket)
+          (return)))
+      (nreverse parts))))
+
+(defun send-binary-part (socket bytes sndmore)
+  "Send a binary byte vector as a message part."
+  (let ((size (length bytes)))
+    (cffi:with-foreign-object (buf :unsigned-char size)
+      (dotimes (i size)
+        (setf (cffi:mem-ref buf :unsigned-char i) (aref bytes i)))
+      (pzmq:send socket (cffi:foreign-string-to-lisp buf :count size :encoding :latin-1)
+                 :sndmore sndmore))))
 
 (defun send-multipart (socket parts)
   "Send a multipart message to a ZeroMQ socket.
-   PARTS is a list of strings."
+   PARTS is a list where identity frames are byte vectors and body frames are strings."
   (debug-log "~&send-multipart: sending ~D parts~%" (length parts))
-  (when *kernel-debug*
-    (dolist (p parts)
-      (format t "  part: ~S~%" (subseq p 0 (min 60 (length p))))))
   (loop for (part . rest) on parts
-        do (pzmq:send socket part :sndmore (not (null rest)))))
+        do (if (typep part '(simple-array (unsigned-byte 8) (*)))
+               ;; Binary identity frame
+               (send-binary-part socket part (not (null rest)))
+               ;; String frame
+               (pzmq:send socket part :sndmore (not (null rest))))))
+
+(defun wire-part-equal (a b)
+  "Compare two wire message parts. A may be byte vector or string, B is typically a string."
+  (cond
+    ((and (stringp a) (stringp b))
+     (string= a b))
+    ((and (typep a '(simple-array (unsigned-byte 8) (*))) (stringp b))
+     ;; Compare byte vector to string
+     (and (= (length a) (length b))
+          (every #'= a (cl:map 'list #'char-code b))))
+    (t nil)))
 
 (defun parse-wire-message (parts)
   "Parse a wire protocol message into components.
+   PARTS is a list where identities may be byte vectors and body parts are strings.
    Returns: (values identities signature header parent-header metadata content)"
-  (let ((delim-pos (position +ids-msg-delimiter+ parts :test #'string=)))
+  (let ((delim-pos (position +ids-msg-delimiter+ parts :test #'wire-part-equal)))
     (if delim-pos
         (let ((identities (subseq parts 0 delim-pos))
               (rest (subseq parts (1+ delim-pos))))

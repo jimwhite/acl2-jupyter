@@ -161,7 +161,7 @@ TTAG NOTE (for included book): Adding ttag :ACL2-KERNEL-RAW from book /workspace
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "top" ...)
 Rules: NIL
-Time:  0.56 seconds (prove: 0.00, print: 0.00, other: 0.56)
+Time:  0.59 seconds (prove: 0.00, print: 0.00, other: 0.59)
 "/workspaces/acl2-jupyter/books/acl2-kernel/top.lisp"
 
 Summary
@@ -443,7 +443,25 @@ TEST-REPLY-MESSAGE-TYPE-SHUTDOWN
 TTAG NOTE: Adding ttag :ACL2-KERNEL-TESTS from book /workspaces/acl2-jupyter/books/acl2-kernel/tests.
 :ACL2-KERNEL-TESTS
 
-; All raw Lisp tests passed.
+; bytes-vector-to-hex-string tests passed
+
+; wire-part-equal tests passed
+
+; parse-wire-message tests passed
+
+; build-wire-message tests passed
+
+; wire message round-trip test passed
+
+; HMAC tests passed
+
+; UUID and timestamp tests passed
+
+; JSON encoding tests passed
+
+; Connection file parser tests passed
+
+;;; All raw Lisp unit tests passed. ;;;
 
 Summary
 Form:  ( PROGN! (SET-RAW-MODE T) ...)
@@ -456,10 +474,10 @@ NIL
 Summary
 Form:  (CERTIFY-BOOK "tests" ...)
 Rules: NIL
-Time:  0.60 seconds (prove: 0.00, print: 0.00, other: 0.60)
+Time:  0.65 seconds (prove: 0.00, print: 0.00, other: 0.65)
 Prover steps counted:  149
 ; (EV-REC *RETURN-LAST-ARG3* ...) took 
-; 0.61 seconds realtime, 0.59 seconds runtime
-; (378,960,688 bytes allocated).
+; 0.65 seconds realtime, 0.63 seconds runtime
+; (399,384,736 bytes allocated).
 Exit code from ACL2 is 43
--rw-r--r-- 1 jovyan users 54663 Jan 15 23:41 tests.cert
+-rw-r--r-- 1 jovyan users 54663 Jan 16 02:40 tests.cert

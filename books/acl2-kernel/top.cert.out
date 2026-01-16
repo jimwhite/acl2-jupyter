@@ -171,7 +171,7 @@ ACL2 !>>
 Summary
 Form:  ( INCLUDE-BOOK "data-structures/portcullis" ...)
 Rules: NIL
-Time:  0.03 seconds (prove: 0.00, print: 0.00, other: 0.03)
+Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
  "/home/acl2/books/data-structures/portcullis.lisp"
 ACL2 !>>
 Summary
@@ -486,7 +486,7 @@ ACL2 !>
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "xdoc/top" ...)
 Rules: NIL
-Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
+Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
 "/home/acl2/books/xdoc/top.lisp"
 
 Summary
@@ -498,13 +498,13 @@ Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "std/strings/top" ...)
 Rules: NIL
-Time:  0.32 seconds (prove: 0.00, print: 0.00, other: 0.32)
+Time:  0.31 seconds (prove: 0.00, print: 0.00, other: 0.31)
 "/home/acl2/books/std/strings/top.lisp"
 
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "kestrel/json-parser/parse-json" ...)
 Rules: NIL
-Time:  0.01 seconds (prove: 0.00, print: 0.00, other: 0.01)
+Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
 "/home/acl2/books/kestrel/json-parser/parse-json.lisp"
 
 Summary
@@ -538,7 +538,7 @@ TTAG NOTE (for included book): Adding ttag :ACL2-KERNEL-PZMQ from book /workspac
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "pzmq" ...)
 Rules: NIL
-Time:  0.14 seconds (prove: 0.00, print: 0.00, other: 0.14)
+Time:  0.15 seconds (prove: 0.00, print: 0.00, other: 0.15)
 "/workspaces/acl2-jupyter/books/acl2-kernel/pzmq.lisp"
 
 TTAG NOTE (for included book): Adding ttag :QUICKLISP from book /home/acl2/books/quicklisp/base.
@@ -574,13 +574,13 @@ Time:  0.00 seconds (prove: 0.00, print: 0.00, other: 0.00)
 Summary
 Form:  ( PROGN! (SET-RAW-MODE T) ...)
 Rules: NIL
-Time:  0.03 seconds (prove: 0.00, print: 0.00, other: 0.03)
+Time:  0.04 seconds (prove: 0.00, print: 0.00, other: 0.04)
 NIL
 
 Summary
 Form:  ( PROGN (PROGN! ...) ...)
 Rules: NIL
-Time:  0.04 seconds (prove: 0.00, print: 0.00, other: 0.04)
+Time:  0.05 seconds (prove: 0.00, print: 0.00, other: 0.05)
 NIL
 (DEFXDOC ACL2-KERNEL)
 
@@ -589,9 +589,9 @@ NIL
 Summary
 Form:  (CERTIFY-BOOK "top" ...)
 Rules: NIL
-Time:  0.61 seconds (prove: 0.00, print: 0.00, other: 0.61)
+Time:  0.60 seconds (prove: 0.00, print: 0.00, other: 0.60)
 ; (EV-REC *RETURN-LAST-ARG3* ...) took 
 ; 0.61 seconds realtime, 0.59 seconds runtime
-; (369,342,592 bytes allocated).
+; (377,688,656 bytes allocated).
 Exit code from ACL2 is 43
--rw-r--r-- 1 jovyan users 53554 Jan 15 23:41 top.cert
+-rw-r--r-- 1 jovyan users 53554 Jan 16 02:40 top.cert

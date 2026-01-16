@@ -271,7 +271,7 @@ Time:  0.13 seconds (prove: 0.00, print: 0.00, other: 0.13)
 Summary
 Form:  ( ACL2::INCLUDE-BOOK "message" ...)
 Rules: NIL
-Time:  0.26 seconds (prove: 0.00, print: 0.00, other: 0.26)
+Time:  0.23 seconds (prove: 0.00, print: 0.00, other: 0.23)
 "/workspaces/acl2-jupyter/books/acl2-kernel/message.lisp"
 
 The event ( ACL2::INCLUDE-BOOK "std/util/define" ...) is redundant.
@@ -821,10 +821,10 @@ Time:  0.02 seconds (prove: 0.00, print: 0.00, other: 0.02)
 Summary
 Form:  (CERTIFY-BOOK "kernel" ...)
 Rules: NIL
-Time:  0.51 seconds (prove: 0.01, print: 0.00, other: 0.51)
+Time:  0.51 seconds (prove: 0.01, print: 0.00, other: 0.50)
 Prover steps counted:  3100
 ; (EV-REC *RETURN-LAST-ARG3* ...) took 
-; 0.51 seconds realtime, 0.49 seconds runtime
-; (258,449,696 bytes allocated).
+; 0.51 seconds realtime, 0.48 seconds runtime
+; (258,440,672 bytes allocated).
 Exit code from ACL2 is 43
--rw-r--r-- 1 jovyan users 98149 Jan 15 23:35 kernel.cert
+-rw-r--r-- 1 jovyan users 98149 Jan 16 02:40 kernel.cert

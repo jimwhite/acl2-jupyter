@@ -91,4 +91,25 @@ cert.pl top.lisp  # Certifies all books, running all defthm proofs
 - [x] Step 3: Implement message envelope using bridge/to-json and crypto/hmac (message.lisp CERTIFIED)
 - [x] Step 4: Implement kernel logic (kernel.lisp CERTIFIED)
 - [x] Step 5: Implement kernel runtime - ZeroMQ, UUID, threading, output capture (kernel-raw.lsp CERTIFIED via pzmq.lisp + bordeaux)
-- [ ] Step 6: Create kernel.json and installation
+- [x] Step 6: Create kernel.json and installation (installed to `~/.local/share/jupyter/kernels/acl2`)
+
+## Test Files
+
+All tests are in files:
+
+### ACL2 Book Tests (tests.lisp)
+- 30+ `defthm` tests verified by ACL2 during certification
+- Tests for connection parsing, message construction, wire protocol
+
+### Shell Script Tests (tests/ directory)
+- `test-hmac.sh` - Test HMAC-SHA-256 signing via OpenSSL
+- `test-kernel-startup.sh` - Test kernel starts and shuts down cleanly
+- `test-jupyter-client.sh` - Full integration test via jupyter_client (kernel_info, execute, shutdown)
+- `test-zmq-direct.sh` - Direct ZMQ protocol test (bypasses jupyter_client)
+- `run-all.sh` - Runs all test scripts
+
+Run all tests:
+```bash
+cd /workspaces/acl2-jupyter/books/acl2-kernel/tests
+./run-all.sh
+```

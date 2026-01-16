@@ -17,6 +17,19 @@
 (in-package "ACL2-KERNEL")
 
 ;;;============================================================================
+;;; Debug Configuration
+;;;============================================================================
+
+(defvar *kernel-debug* nil
+  "When true, enable verbose debug output.")
+
+(defmacro debug-log (fmt &rest args)
+  "Print debug message if *kernel-debug* is true."
+  `(when *kernel-debug*
+     (format t ,fmt ,@args)
+     (force-output)))
+
+;;;============================================================================
 ;;; Dependencies
 ;;;============================================================================
 
@@ -183,6 +196,10 @@
 (defun send-multipart (socket parts)
   "Send a multipart message to a ZeroMQ socket.
    PARTS is a list of strings."
+  (debug-log "~&send-multipart: sending ~D parts~%" (length parts))
+  (when *kernel-debug*
+    (dolist (p parts)
+      (format t "  part: ~S~%" (subseq p 0 (min 60 (length p))))))
   (loop for (part . rest) on parts
         do (pzmq:send socket part :sndmore (not (null rest)))))
 
@@ -394,6 +411,7 @@
     (setf (gethash "codemirror_mode" language-info) "commonlisp")
     (setf (gethash "nbconvert_exporter" language-info) "")
     
+    (setf (gethash "status" content) "ok")  ; Required for reply validation
     (setf (gethash "protocol_version" content) "5.3")
     (setf (gethash "implementation" content) "acl2-kernel")
     (setf (gethash "implementation_version" content) "0.1.0")
@@ -460,13 +478,17 @@
 
 (defun handle-kernel-info-request (identities parent-header)
   "Handle kernel_info_request, send kernel_info_reply."
+  (debug-log "~&Handling kernel_info_request~%")
+  (debug-log "  identities: ~S~%" identities)
   (let* ((header-json (json-encode
                        (make-msg-header (make-uuid) "kernel_info_reply"
                                         "acl2-kernel" *session-id* (iso8601-now))))
          (content-json (json-encode (make-kernel-info-content)))
          (signature (hmac-sign-raw *hmac-key* header-json parent-header "{}" content-json)))
+    (debug-log "  Sending kernel_info_reply~%")
     (send-multipart *shell-socket*
-                    (build-wire-message identities signature header-json parent-header "{}" content-json))))
+                    (build-wire-message identities signature header-json parent-header "{}" content-json))
+    (debug-log "  Sent kernel_info_reply~%")))
 
 (defun handle-execute-request (identities parent-header content-json)
   "Handle execute_request, evaluate code and send replies."
@@ -555,13 +577,21 @@
 
 (defun dispatch-message (socket)
   "Receive and dispatch a message from SOCKET."
+  (debug-log "~&dispatch-message: receiving...~%")
   (let ((parts (recv-multipart socket)))
+    (debug-log "~&dispatch-message: received ~D parts~%" (length parts))
     (multiple-value-bind (identities signature header-json parent-json metadata-json content-json)
         (parse-wire-message parts)
+      (debug-log "~&dispatch-message: parsed message~%")
+      (when *kernel-debug*
+        (format t "  identities: ~S~%" identities)
+        (format t "  header-json: ~A~%" (if header-json (subseq header-json 0 (min 100 (length header-json))) nil))
+        (force-output))
       (when header-json
         ;; Parse header to get msg_type using shasht
         (let* ((header (shasht:read-json header-json))
                (msg-type (gethash "msg_type" header)))
+          (debug-log "~&dispatch-message: msg_type = ~A~%" msg-type)
           ;; TODO: Verify HMAC signature
           (cond
             ((string= msg-type "kernel_info_request")
@@ -578,21 +608,36 @@
 ;;; Main Event Loop
 ;;;============================================================================
 
+(defconstant +zmq-poll-timeout+ 500
+  "ZMQ poll timeout in milliseconds.")
+
+(defun message-available-p (socket)
+  "Check if a message is available to read on SOCKET.
+   Returns true if :pollin is in the events list."
+  (let ((status (pzmq:getsockopt socket :events)))
+    (and (position :pollin status) t)))
+
 (defun kernel-main-loop ()
   "Main event loop - poll sockets and dispatch messages."
-  (loop while *kernel-running*
-        do (handler-case
-               (progn
-                 ;; Check control socket (higher priority)
-                 (when (pzmq:getsockopt *control-socket* :events)
-                   (dispatch-message *control-socket*))
-                 ;; Check shell socket
-                 (when (pzmq:getsockopt *shell-socket* :events)
-                   (dispatch-message *shell-socket*))
-                 ;; Brief sleep to avoid busy-waiting
-                 (sleep 0.001))
-             (error (e)
-               (format t "~&Error in main loop: ~A~%" e)))))
+  (pzmq:with-poll-items items ((*control-socket* :pollin)
+                               (*shell-socket* :pollin))
+    (loop while *kernel-running*
+          do (handler-case
+                 (progn
+                   ;; Poll with timeout
+                   (let ((ready (pzmq:poll items +zmq-poll-timeout+)))
+                     (when (> ready 0)
+                       ;; Check control socket (higher priority)
+                       (when (member :pollin (pzmq:revents items 0))
+                         (debug-log "~&Message on control socket~%")
+                         (dispatch-message *control-socket*))
+                       ;; Check shell socket
+                       (when (member :pollin (pzmq:revents items 1))
+                         (debug-log "~&Message on shell socket~%")
+                         (dispatch-message *shell-socket*)))))
+               (error (e)
+                 (format t "~&Error in main loop: ~A~%" e)
+                 (force-output))))))
 
 ;;;============================================================================
 ;;; Kernel Entry Point

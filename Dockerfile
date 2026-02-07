@@ -52,29 +52,36 @@ RUN echo 'jovyan ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers \
 
 # retry might be used to retry book certification makefiles that are flaky.
 
+# STP requires: bison, flex, libboost-program-options-dev, libgmp-dev, pkg-config
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+        autoconf \
+        automake \
+        bison \
         build-essential \
+        ca-certificates \
+        curl \
+        flex \
         gcc \
         git \
-        automake \
-        autoconf \
-        make \
+        libboost-program-options-dev \
         libcurl4-openssl-dev \
-        ca-certificates \
-        libssl-dev \
-        wget \
-        perl \
-        zlib1g-dev \
-        libzstd-dev \
         libczmq-dev \
-        curl \
-        unzip \
+        libgmp-dev \
+        libssl-dev \
+        libzstd-dev \
+        make \
         nodejs npm \
+        perl \
         pipx \
-        rlwrap \
+        pkg-config \
         retry \
+        rlwrap \
         sbcl \
+        unzip \
+        wget \
+        zlib1g-dev \
     && rm -rf /var/lib/apt/lists/* # remove cached apt files
 
 # This /root/sbcl dir seems to be a tmp so why in /root?
@@ -103,6 +110,20 @@ RUN mkdir /root/z3 \
     && cd /root \
     && rm -R /root/z3 \
     && conda install z3-solver
+
+# Build STP
+COPY stp /root/stp
+RUN cd /root/stp \
+    && git submodule init && git submodule update \
+    && ./scripts/deps/setup-gtest.sh \
+    && ./scripts/deps/setup-cms.sh \
+    && ./scripts/deps/setup-minisat.sh \
+    && mkdir build && cd build \
+    && cmake .. -DENABLE_TESTING=OFF \
+    && cmake --build . --parallel \
+    && cmake --install . \
+    && cd /root \
+    && rm -rf /root/stp
 
 COPY quicklisp.lisp quicklisp.lisp
 COPY quicklisp quicklisp/

@@ -22,3 +22,6 @@
         path = context/acl2-kernel
         url = https://github.com/jimwhite/acl2-kernel.git
         branch = main
+[submodule "context/stp"]
+	path = context/stp
+	url = https://github.com/jimwhite/stp.git

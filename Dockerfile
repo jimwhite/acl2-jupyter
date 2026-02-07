@@ -52,7 +52,7 @@ RUN echo 'jovyan ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers \
 
 # retry might be used to retry book certification makefiles that are flaky.
 
-# STP requires: bison, flex, libboost-program-options-dev, libgmp-dev, pkg-config
+# STP requires: bison, cmake, flex, g++, libboost-program-options-dev, libgmp-dev, libm4ri-dev, libtinfo-dev, pkg-config
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -61,15 +61,19 @@ RUN apt-get update && \
         bison \
         build-essential \
         ca-certificates \
+        cmake \
         curl \
         flex \
+        g++ \
         gcc \
         git \
         libboost-program-options-dev \
         libcurl4-openssl-dev \
         libczmq-dev \
         libgmp-dev \
+        libm4ri-dev \
         libssl-dev \
+        libtinfo-dev \
         libzstd-dev \
         make \
         nodejs npm \
@@ -114,12 +118,11 @@ RUN mkdir /root/z3 \
 # Build STP
 COPY stp /root/stp
 RUN cd /root/stp \
-    && git submodule init && git submodule update \
     && ./scripts/deps/setup-gtest.sh \
     && ./scripts/deps/setup-cms.sh \
     && ./scripts/deps/setup-minisat.sh \
     && mkdir build && cd build \
-    && cmake .. -DENABLE_TESTING=OFF \
+    && cmake .. -DENABLE_TESTING=ON -DSTATICCOMPILE=ON -DFORCE_CMS=ON \
     && cmake --build . --parallel \
     && cmake --install . \
     && cd /root \

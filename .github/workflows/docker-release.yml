@@ -96,7 +96,7 @@ jobs:
   # Build AMD64 image on native runner
   build-amd64:
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-m
     permissions:
       contents: read
       packages: write

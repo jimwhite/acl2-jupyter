@@ -22,11 +22,11 @@ on:
       sbcl_version:
         description: 'SBCL version'
         required: false
-        default: '2.5.11'
+        default: '2.6.1'
       z3_version:
         description: 'Z3 version'
         required: false
-        default: '4.15.4'
+        default: '4.15.7'
 
 env:
   REGISTRY: ghcr.io
@@ -96,7 +96,7 @@ jobs:
   # Build AMD64 image on native runner
   build-amd64:
     needs: prepare
-    runs-on: ubuntu-latest-m
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write

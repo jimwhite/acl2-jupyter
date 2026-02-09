@@ -9,6 +9,9 @@ ARG SBCL_VERSION=2.5.11
 
 ARG Z3_VERSION=4.15.4
 
+# GitHub runner gets OOM running parallel build
+ARG STP_BUILD_JOBS="--parallel"
+
 ARG USER=jovyan
 ENV HOME=/home/${USER}
 
@@ -123,7 +126,7 @@ RUN cd /root/stp \
     && ./scripts/deps/setup-minisat.sh \
     && mkdir build && cd build \
     && cmake .. -DENABLE_TESTING=ON -DSTATICCOMPILE=ON -DFORCE_CMS=ON \
-    && cmake --build . --parallel \
+    && cmake --build . ${STP_BUILD_JOBS} \
     && cmake --install . \
     && cd /root \
     && rm -rf /root/stp

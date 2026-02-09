@@ -96,7 +96,7 @@ jobs:
   # Build AMD64 image on native runner
   build-amd64:
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-m
     permissions:
       contents: read
       packages: write
@@ -135,6 +135,7 @@ jobs:
             ACL2_CERTIFY_TARGETS=${{ github.event.inputs.books_target }}
             SBCL_VERSION=${{ github.event.inputs.sbcl_version }}
             Z3_VERSION=${{ github.event.inputs.z3_version }}
+            STP_BUILD_JOBS=
           cache-from: type=gha,scope=amd64
           cache-to: type=gha,mode=max,scope=amd64
 

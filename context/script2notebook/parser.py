@@ -37,6 +37,8 @@ class Node:
     text: str
     start_line: int        # 0-based line index in the source
     end_line: int          # 0-based, inclusive
+    start_byte: int        # byte offset in original source
+    end_byte: int          # byte offset (exclusive) in original source
 
 
 def parse(source: str | bytes) -> list[Node]:
@@ -59,6 +61,16 @@ def parse(source: str | bytes) -> list[Node]:
     source_lines = source_str.splitlines(keepends=True)
     nodes: list[Node] = []
 
+    # Precompute cumulative byte offsets for each line so we can derive
+    # byte ranges for BLANK gap nodes.
+    line_byte_offsets: list[int] = []
+    offset = 0
+    for line in source_lines:
+        line_byte_offsets.append(offset)
+        offset += len(line.encode("utf-8"))
+    # Sentinel for end-of-file.
+    line_byte_offsets.append(offset)
+
     # Track the last *content* line covered so we can emit BLANK nodes for
     # gaps.  tree-sitter comment nodes often include the trailing newline,
     # so end_point may be (next_line, 0).  We normalise to the last line
@@ -66,7 +78,7 @@ def parse(source: str | bytes) -> list[Node]:
     last_content_line = -1
 
     for child in tree.root_node.children:
-        child_start = child.start_point[0]
+        child_start_line = child.start_point[0]
         # Normalise end_line: if the node ends at column 0 of the next
         # line (i.e. only the trailing newline is there), back up one line.
         if child.end_point[1] == 0 and child.end_point[0] > child.start_point[0]:
@@ -79,12 +91,17 @@ def parse(source: str | bytes) -> list[Node]:
         child_text = child_text.rstrip("\n")
 
         # Emit BLANK node for any gap of empty lines.
-        if child_start > last_content_line + 1:
+        if child_start_line > last_content_line + 1:
             gap_start = last_content_line + 1
-            gap_end = child_start - 1
+            gap_end = child_start_line - 1
             gap_text = "".join(source_lines[gap_start:gap_end + 1])
             if gap_text.strip() == "":
-                nodes.append(Node(NodeKind.BLANK, gap_text, gap_start, gap_end))
+                gap_start_byte = line_byte_offsets[gap_start]
+                gap_end_byte = (line_byte_offsets[gap_end + 1]
+                                if gap_end + 1 < len(line_byte_offsets)
+                                else line_byte_offsets[-1])
+                nodes.append(Node(NodeKind.BLANK, gap_text, gap_start, gap_end,
+                                  gap_start_byte, gap_end_byte))
 
         # Classify the tree-sitter node.
         if child.type == "comment":
@@ -94,7 +111,8 @@ def parse(source: str | bytes) -> list[Node]:
         else:
             kind = NodeKind.FORM
 
-        nodes.append(Node(kind, child_text, child_start, child_content_end))
+        nodes.append(Node(kind, child_text, child_start_line, child_content_end,
+                          child.start_byte, child.end_byte))
         last_content_line = child_content_end
 
     return nodes

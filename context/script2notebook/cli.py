@@ -12,7 +12,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .converter import convert_file
+from .converter import CommentCellType, MarkdownBracket, convert_file
 from .languages import EXTENSION_MAP
 
 
@@ -37,6 +37,22 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Output notebook path (default: <input>.ipynb)",
     )
+    p.add_argument(
+        "--comment-cell",
+        choices=["markdown", "raw"],
+        default="markdown",
+        help="Cell type for comment blocks (default: markdown)",
+    )
+    p.add_argument(
+        "--markdown-bracket",
+        choices=["none", "fenced", "pre"],
+        default="none",
+        help=(
+            "How to bracket comment text in markdown cells: "
+            "none (default), fenced (```), or pre (<pre>). "
+            "Ignored when --comment-cell=raw."
+        ),
+    )
     return p
 
 
@@ -57,7 +73,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    out = convert_file(input_path, args.output)
+    out = convert_file(
+        input_path,
+        args.output,
+        comment_cell_type=CommentCellType(args.comment_cell),
+        markdown_bracket=MarkdownBracket(args.markdown_bracket),
+    )
     print(f"Wrote {out}")
     return 0
 

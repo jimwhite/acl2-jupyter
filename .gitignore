@@ -2,5 +2,6 @@
 actionlint
 
 .DS_Store
-doc/
-manual/
+/doc/
+/manual/
+__pycache__/

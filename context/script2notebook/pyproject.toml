@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "script2notebook"
+version = "0.1.0"
+description = "Convert Common Lisp and ACL2 scripts to Jupyter notebooks using tree-sitter"
+requires-python = ">=3.11"
+license = {text = "BSD-3-Clause"}
+dependencies = [
+    "nbformat>=5.7",
+    "tree-sitter>=0.22",
+    "tree-sitter-commonlisp>=0.4",
+]
+
+[project.scripts]
+script2notebook = "script2notebook.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7",
+]

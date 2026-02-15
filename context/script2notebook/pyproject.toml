@@ -9,8 +9,8 @@ description = "Convert Common Lisp and ACL2 scripts to Jupyter notebooks using t
 requires-python = ">=3.11"
 license = "BSD-3-Clause"
 dependencies = [
-    "nbformat>=5.7",
-    "tree-sitter>=0.22",
+    "nbformat>=5.10",
+    "tree-sitter>=0.25",
     "tree-sitter-commonlisp>=0.4",
 ]
 
@@ -23,5 +23,5 @@ script2notebook = "script2notebook.cli:main"
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7",
+    "pytest>=9",
 ]

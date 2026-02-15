@@ -12,6 +12,7 @@
     },
     "containerEnv": {
         "JUPYTER_PORT": "8888",
-        "RESTARTABLE": "yes"
+        "RESTARTABLE": "yes",
+        "USER": "jovyan"
     }
 }

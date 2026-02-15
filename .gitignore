@@ -1,2 +1,6 @@
 # actionlint binary
 actionlint
+
+.DS_Store
+doc/
+manual/

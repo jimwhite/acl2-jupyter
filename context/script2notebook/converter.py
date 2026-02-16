@@ -20,8 +20,14 @@ The conversion strategy groups top-level ``Node`` objects into cells:
 Source text is preserved exactly as-is throughout—no modifications to
 semicolons, ``#|``/``|#`` delimiters, whitespace, etc.
 
-Every cell carries provenance metadata recording the source file URI and
-the character span (byte offsets) in the original file.
+Metadata
+~~~~~~~~
+
+* **Notebook level** — ``source_file`` URI (when available).
+* **Cell level** — ``provenance.start`` / ``provenance.end`` give byte
+  offsets into the source file.  ``provenance.comment`` (when present)
+  gives ``[start, end]`` *character* offsets of the comment text within
+  the cell's ``source`` string (accounting for any bracket markup).
 """
 
 from __future__ import annotations
@@ -60,8 +66,10 @@ class MarkdownBracket(enum.Enum):
 # Grouping nodes → cells
 # ---------------------------------------------------------------------------
 
-# A cell record: (cell_type, source_text, start_byte, end_byte)
-CellTuple = tuple[str, str, int, int]
+# A cell record: (cell_type, source_text, start_byte, end_byte, comment_chars)
+# *comment_chars* is the number of characters of comment text at the start of
+# source_text (0 for pure-code cells, len(source_text) for markdown cells).
+CellTuple = tuple[str, str, int, int, int]
 
 
 def _is_comment_node(node: Node) -> bool:
@@ -113,7 +121,7 @@ def _group_nodes_into_cells(
         start = comments[0].start_byte
         end = comments[-1].end_byte
         text = source_bytes[start:end].decode("utf-8").rstrip("\n")
-        cells.append(("markdown", text, start, end))
+        cells.append(("markdown", text, start, end, len(text)))
 
     def _flush_run_and_form(form_node: Node) -> None:
         """Process the accumulated *run_nodes* when a form is encountered."""
@@ -122,7 +130,7 @@ def _group_nodes_into_cells(
         if not run_nodes:
             # No comment run — emit the form alone.
             cells.append(("code", form_node.text,
-                          form_node.start_byte, form_node.end_byte))
+                          form_node.start_byte, form_node.end_byte, 0))
             run_nodes = []
             in_comment_run = False
             return
@@ -133,7 +141,7 @@ def _group_nodes_into_cells(
             # Comment run ends with a blank → detached from the form.
             _emit_markdown(run_nodes)
             cells.append(("code", form_node.text,
-                          form_node.start_byte, form_node.end_byte))
+                          form_node.start_byte, form_node.end_byte, 0))
         else:
             # Comment immediately precedes the form → attached.
             # Find the last blank in the run to split detached / attached.
@@ -156,7 +164,11 @@ def _group_nodes_into_cells(
             code_end = form_node.end_byte
             text = source_bytes[attached_start:code_end].decode("utf-8")
             text = text.rstrip("\n")
-            cells.append(("code", text, attached_start, code_end))
+            # Compute the character length of the comment portion.
+            # It runs from the start of the cell up to (but not including)
+            # the form text.
+            comment_chars = len(text) - len(form_node.text)
+            cells.append(("code", text, attached_start, code_end, comment_chars))
 
         run_nodes = []
         in_comment_run = False
@@ -207,6 +219,15 @@ def _format_comment_source(
     return text
 
 
+def _bracket_prefix_len(bracket: MarkdownBracket) -> int:
+    """Return the number of characters the bracket prefix adds."""
+    if bracket is MarkdownBracket.FENCED:
+        return len("```\n")       # 4
+    if bracket is MarkdownBracket.PRE:
+        return len("<pre>\n")     # 6
+    return 0
+
+
 def _build_notebook(
     cells: list[CellTuple],
     lang: LanguageConfig,
@@ -216,8 +237,12 @@ def _build_notebook(
 ) -> nbformat.NotebookNode:
     """Build an ``nbformat`` v4 notebook from cell tuples.
 
-    Each cell gets a ``provenance`` entry in its metadata recording
-    the source URI and byte span.
+    * ``source_file`` is stored once in notebook-level metadata.
+    * Each cell gets ``provenance`` metadata with ``start`` / ``end``
+      byte offsets in the source file and, when the cell contains
+      comment text, a ``comment`` key giving ``[start, end]`` character
+      offsets of the comment within the cell's ``source`` string
+      (accounting for any bracket markup).
     """
     nb = new_notebook()
 
@@ -233,21 +258,27 @@ def _build_notebook(
         "codemirror_mode": lang.codemirror_mode,
         "pygments_lexer": lang.pygments_lexer,
     }
+    if source_uri is not None:
+        nb.metadata["source_file"] = source_uri
 
-    for cell_type, source, start_byte, end_byte in cells:
-        provenance = {"start": start_byte, "end": end_byte}
-        if source_uri is not None:
-            provenance["source"] = source_uri
+    for cell_type, source, start_byte, end_byte, comment_chars in cells:
+        provenance: dict = {"start": start_byte, "end": end_byte}
 
         if cell_type == "markdown":
             if comment_cell_type is CommentCellType.RAW:
                 cell = new_raw_cell(source=source)
+                # Raw cell: comment is the full source (no bracket).
+                provenance["comment"] = [0, len(source)]
             else:
-                cell = new_markdown_cell(
-                    source=_format_comment_source(source, markdown_bracket),
-                )
+                formatted = _format_comment_source(source, markdown_bracket)
+                cell = new_markdown_cell(source=formatted)
+                prefix = _bracket_prefix_len(markdown_bracket)
+                provenance["comment"] = [prefix, prefix + comment_chars]
         else:
             cell = new_code_cell(source=source)
+            if comment_chars > 0:
+                provenance["comment"] = [0, comment_chars]
+
         cell.metadata["provenance"] = provenance
         nb.cells.append(cell)
 
@@ -274,7 +305,8 @@ def source_to_notebook(
     lang : LanguageConfig
         Language configuration to embed in notebook metadata.
     source_uri : str | None
-        Optional ``file://`` URI recorded in each cell's provenance metadata.
+        Optional ``file://`` URI stored in notebook-level metadata
+        (``nb.metadata["source_file"]``).
     comment_cell_type : CommentCellType
         Cell type for comment blocks (``markdown`` or ``raw``).
     markdown_bracket : MarkdownBracket

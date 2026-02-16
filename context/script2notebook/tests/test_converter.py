@@ -214,15 +214,16 @@ class TestProvenance:
             assert "start" in prov
             assert "end" in prov
 
-    def test_provenance_with_uri(self):
+    def test_source_uri_at_notebook_level(self):
         nb = source_to_notebook(DETACHED_SOURCE, ACL2, source_uri="file:///test.lisp")
-        prov = nb.cells[0].metadata["provenance"]
-        assert prov["source"] == "file:///test.lisp"
+        assert nb.metadata["source_file"] == "file:///test.lisp"
+        # Not duplicated in cells.
+        for cell in nb.cells:
+            assert "source" not in cell.metadata["provenance"]
 
-    def test_provenance_without_uri(self):
+    def test_no_source_uri_key_when_absent(self):
         nb = source_to_notebook(DETACHED_SOURCE, ACL2)
-        prov = nb.cells[0].metadata["provenance"]
-        assert "source" not in prov
+        assert "source_file" not in nb.metadata
 
     def test_byte_offsets_cover_source(self):
         nb = source_to_notebook(DETACHED_SOURCE, ACL2)
@@ -240,6 +241,98 @@ class TestProvenance:
         text = span.decode("utf-8")
         assert "; header comment" in text
         assert "(defun foo (x) x)" in text
+
+
+# ── Comment span metadata ────────────────────────────────────────────
+
+class TestCommentSpan:
+    def test_markdown_cell_no_bracket(self):
+        """Markdown cell with no bracket: comment = [0, len(source)]."""
+        nb = source_to_notebook(DETACHED_SOURCE, ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        assert prov["comment"] == [0, len(nb.cells[0].source)]
+
+    def test_markdown_cell_fenced(self):
+        """Fenced bracket shifts comment span past the opening ```\\n."""
+        nb = source_to_notebook(
+            DETACHED_SOURCE, ACL2,
+            markdown_bracket=MarkdownBracket.FENCED,
+        )
+        src = nb.cells[0].source
+        prov = nb.cells[0].metadata["provenance"]
+        start, end = prov["comment"]
+        assert start == 4  # len("```\n")
+        comment_text = src[start:end]
+        assert comment_text == "; header comment"
+
+    def test_markdown_cell_pre(self):
+        """Pre bracket shifts comment span past the opening <pre>\\n."""
+        nb = source_to_notebook(
+            DETACHED_SOURCE, ACL2,
+            markdown_bracket=MarkdownBracket.PRE,
+        )
+        src = nb.cells[0].source
+        prov = nb.cells[0].metadata["provenance"]
+        start, end = prov["comment"]
+        assert start == 6  # len("<pre>\n")
+        comment_text = src[start:end]
+        assert comment_text == "; header comment"
+
+    def test_raw_cell_comment_span(self):
+        """Raw cell: comment is the full source."""
+        nb = source_to_notebook(
+            DETACHED_SOURCE, ACL2,
+            comment_cell_type=CommentCellType.RAW,
+        )
+        prov = nb.cells[0].metadata["provenance"]
+        assert prov["comment"] == [0, len(nb.cells[0].source)]
+
+    def test_code_cell_no_comment(self):
+        """Pure code cell has no comment key."""
+        nb = source_to_notebook(DETACHED_SOURCE, ACL2)
+        prov = nb.cells[1].metadata["provenance"]
+        assert "comment" not in prov
+
+    def test_code_cell_with_attached_comment(self):
+        """Attached comment: comment span covers the comment portion."""
+        nb = source_to_notebook(SIMPLE_SOURCE, ACL2)
+        src = nb.cells[0].source
+        prov = nb.cells[0].metadata["provenance"]
+        start, end = prov["comment"]
+        comment_text = src[start:end]
+        assert "; header comment" in comment_text
+        # The rest is the form
+        form_text = src[end:]
+        assert "(defun foo (x) x)" in form_text
+
+    def test_multiple_attached_comments_span(self):
+        """Multiple attached comments: span covers all of them."""
+        src_text = "; first\n; second\n(form)\n"
+        nb = source_to_notebook(src_text, ACL2)
+        src = nb.cells[0].source
+        prov = nb.cells[0].metadata["provenance"]
+        start, end = prov["comment"]
+        assert start == 0
+        comment_text = src[start:end]
+        assert "; first" in comment_text
+        assert "; second" in comment_text
+        form_text = src[end:]
+        assert "(form)" in form_text
+
+    def test_fenced_multiline_comment_span(self):
+        """Fenced multi-line: span skips bracket and covers actual comments."""
+        src_text = "; line A\n; line B\n\n(form)\n"
+        nb = source_to_notebook(
+            src_text, ACL2,
+            markdown_bracket=MarkdownBracket.FENCED,
+        )
+        md = nb.cells[0]
+        prov = md.metadata["provenance"]
+        start, end = prov["comment"]
+        comment_text = md.source[start:end]
+        assert "; line A" in comment_text
+        assert "; line B" in comment_text
+        assert "```" not in comment_text
 
 
 # ── Notebook metadata ────────────────────────────────────────────────
@@ -370,10 +463,9 @@ class TestFileConversion:
         nb = file_to_notebook(p)
         assert cell_types(nb) == ["markdown", "code"]
         assert nb.metadata["kernelspec"]["name"] == "acl2"
-        # Provenance should include file URI.
-        prov = nb.cells[0].metadata["provenance"]
-        assert prov["source"].startswith("file://")
-        assert "test.lisp" in prov["source"]
+        # Source file URI in notebook-level metadata.
+        assert nb.metadata["source_file"].startswith("file://")
+        assert "test.lisp" in nb.metadata["source_file"]
 
     def test_file_to_notebook_attached(self, tmp_path):
         src = "; example\n(+ 1 2)\n"  # no blank → attached

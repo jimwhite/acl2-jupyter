@@ -41,12 +41,14 @@ class Node:
     end_byte: int          # byte offset (exclusive) in original source
 
 
-def parse(source: str | bytes) -> list[Node]:
+def parse(source: str | bytes) -> tuple[list[Node], tree_sitter.Tree]:
     """Parse *source* into a list of top-level ``Node`` objects.
 
-    The returned list preserves source order and includes ``BLANK``
-    nodes for runs of empty lines between real content, which the
-    converter uses as cell boundary hints.
+    Returns a ``(nodes, tree)`` tuple.  The flat *nodes* list preserves
+    source order and includes ``BLANK`` nodes for runs of empty lines
+    between real content, which the converter uses as cell boundary
+    hints.  The raw *tree* is provided so downstream code can walk
+    into forms to locate inline comments.
     """
     if isinstance(source, str):
         source_bytes = source.encode("utf-8")
@@ -115,10 +117,10 @@ def parse(source: str | bytes) -> list[Node]:
                           child.start_byte, child.end_byte))
         last_content_line = child_content_end
 
-    return nodes
+    return nodes, tree
 
 
-def parse_file(path: str | Path) -> list[Node]:
+def parse_file(path: str | Path) -> tuple[list[Node], tree_sitter.Tree]:
     """Convenience wrapper: read *path* and parse it."""
     text = Path(path).read_text(encoding="utf-8")
     return parse(text)

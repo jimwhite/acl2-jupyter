@@ -335,6 +335,87 @@ class TestCommentSpan:
         assert "```" not in comment_text
 
 
+# ── Inline comment spans ─────────────────────────────────────────────
+
+class TestInlineCommentSpans:
+    """Tests for ``provenance.comments`` — inline comments within code forms."""
+
+    def test_no_inline_comments(self):
+        """Pure code cell without inline comments has no 'comments' key."""
+        nb = source_to_notebook("(defun foo (x) x)\n", ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        assert "comments" not in prov
+
+    def test_inline_line_comment(self):
+        """A ; comment inside a defun body appears in provenance.comments."""
+        src = "(defun foo (x)\n  ; body comment\n  x)\n"
+        nb = source_to_notebook(src, ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        assert "comments" in prov
+        spans = prov["comments"]
+        assert len(spans) == 1
+        text = nb.cells[0].source[spans[0][0]:spans[0][1]]
+        assert text == "; body comment"
+
+    def test_multiple_inline_line_comments(self):
+        """Multiple ; comments inside a form produce multiple spans."""
+        src = "(defun foo (x)\n  ; first\n  ; second\n  x)\n"
+        nb = source_to_notebook(src, ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        assert "comments" in prov
+        spans = prov["comments"]
+        assert len(spans) == 2
+        text0 = nb.cells[0].source[spans[0][0]:spans[0][1]]
+        text1 = nb.cells[0].source[spans[1][0]:spans[1][1]]
+        assert text0 == "; first"
+        assert text1 == "; second"
+
+    def test_inline_block_comment(self):
+        """A #|...|# comment inside a form appears in provenance.comments."""
+        src = "(defun foo (x)\n  #| doc |#\n  x)\n"
+        nb = source_to_notebook(src, ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        assert "comments" in prov
+        spans = prov["comments"]
+        assert len(spans) == 1
+        text = nb.cells[0].source[spans[0][0]:spans[0][1]]
+        assert text == "#| doc |#"
+
+    def test_attached_comment_plus_inline(self):
+        """Cell with attached comment AND inline comment has both keys."""
+        src = "; header\n(defun foo (x)\n  ; body\n  x)\n"
+        nb = source_to_notebook(src, ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        # Attached comment
+        assert "comment" in prov
+        comment_text = nb.cells[0].source[prov["comment"][0]:prov["comment"][1]]
+        assert "; header" in comment_text
+        # Inline comment
+        assert "comments" in prov
+        spans = prov["comments"]
+        assert len(spans) == 1
+        inline_text = nb.cells[0].source[spans[0][0]:spans[0][1]]
+        assert inline_text == "; body"
+
+    def test_detached_comment_no_inline(self):
+        """Detached comment cell has no 'comments' key (only markdown cells)."""
+        nb = source_to_notebook(DETACHED_SOURCE, ACL2)
+        for cell in nb.cells:
+            prov = cell.metadata["provenance"]
+            assert "comments" not in prov
+
+    def test_inline_spans_are_char_offsets_in_cell(self):
+        """Inline comment spans are character offsets into cell.source."""
+        src = "(defun f (x) ; note\n  x)\n"
+        nb = source_to_notebook(src, ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        spans = prov["comments"]
+        s, e = spans[0]
+        assert nb.cells[0].source[s:e] == "; note"
+        # Verify offset is correct relative to cell source
+        assert nb.cells[0].source.index("; note") == s
+
+
 # ── Notebook metadata ────────────────────────────────────────────────
 
 class TestNotebookMetadata:

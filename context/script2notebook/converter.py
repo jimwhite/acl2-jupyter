@@ -28,6 +28,9 @@ Metadata
   offsets into the source file.  ``provenance.comment`` (when present)
   gives ``[start, end]`` *character* offsets of the comment text within
   the cell's ``source`` string (accounting for any bracket markup).
+  ``provenance.comments`` (when present) is a list of ``[start, end]``
+  character-offset pairs for inline comments within a code cell's form
+  body (e.g. ``;`` comments inside a ``defun``).
 """
 
 from __future__ import annotations
@@ -39,6 +42,8 @@ from urllib.request import pathname2url
 
 import nbformat
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_raw_cell, new_notebook
+
+import tree_sitter
 
 from .languages import LanguageConfig, language_for_extension
 from .parser import Node, NodeKind, parse, parse_file
@@ -228,9 +233,49 @@ def _bracket_prefix_len(bracket: MarkdownBracket) -> int:
     return 0
 
 
+def _find_inline_comments(
+    ts_tree: tree_sitter.Tree,
+    cell_start_byte: int,
+    cell_end_byte: int,
+    form_start_byte: int,
+    source_bytes: bytes,
+) -> list[list[int, int]]:
+    """Walk *ts_tree* to find comment nodes inside a form's byte range.
+
+    Returns a list of ``[char_start, char_end]`` pairs giving character
+    offsets within the cell's source string.  Only comments that fall
+    inside the form body (i.e. starting at or after *form_start_byte*)
+    are included—attached leading comments handled separately via
+    ``provenance.comment``.
+    """
+    spans: list[list[int, int]] = []
+
+    def _walk(node: tree_sitter.Node) -> None:
+        # Skip nodes entirely outside the form's byte range.
+        if node.end_byte <= form_start_byte or node.start_byte >= cell_end_byte:
+            return
+        if node.type in ("comment", "block_comment"):
+            if node.start_byte >= form_start_byte:
+                # Compute character offsets within the cell source.
+                before = source_bytes[cell_start_byte:node.start_byte]
+                char_start = len(before.decode("utf-8"))
+                text = source_bytes[node.start_byte:node.end_byte]
+                text_str = text.decode("utf-8").rstrip("\n")
+                char_end = char_start + len(text_str)
+                spans.append([char_start, char_end])
+            return  # Don't recurse into comment children.
+        for child in node.children:
+            _walk(child)
+
+    _walk(ts_tree.root_node)
+    return spans
+
+
 def _build_notebook(
     cells: list[CellTuple],
     lang: LanguageConfig,
+    source_bytes: bytes,
+    ts_tree: tree_sitter.Tree,
     source_uri: str | None = None,
     comment_cell_type: CommentCellType = CommentCellType.MARKDOWN,
     markdown_bracket: MarkdownBracket = MarkdownBracket.NONE,
@@ -243,6 +288,9 @@ def _build_notebook(
       comment text, a ``comment`` key giving ``[start, end]`` character
       offsets of the comment within the cell's ``source`` string
       (accounting for any bracket markup).
+    * Code cells may additionally have a ``comments`` key: a list of
+      ``[start, end]`` character-offset pairs for inline comments
+      within the form body (e.g. ``;`` comments inside a ``defun``).
     """
     nb = new_notebook()
 
@@ -278,6 +326,21 @@ def _build_notebook(
             cell = new_code_cell(source=source)
             if comment_chars > 0:
                 provenance["comment"] = [0, comment_chars]
+            # Find inline comments within the form body.
+            # The form starts at start_byte + the byte length of the
+            # attached comment portion (comment_chars in chars, but we
+            # need to find form_start_byte from cell_start_byte).
+            form_start_byte = start_byte
+            if comment_chars > 0:
+                # Attached comment occupies comment_chars characters at
+                # the start.  Compute the byte offset of the form.
+                attached_bytes = source[:comment_chars].encode("utf-8")
+                form_start_byte = start_byte + len(attached_bytes)
+            inline = _find_inline_comments(
+                ts_tree, start_byte, end_byte, form_start_byte, source_bytes,
+            )
+            if inline:
+                provenance["comments"] = inline
 
         cell.metadata["provenance"] = provenance
         nb.cells.append(cell)
@@ -319,10 +382,12 @@ def source_to_notebook(
     """
     if isinstance(source, bytes):
         source = source.decode("utf-8")
-    nodes = parse(source)
+    nodes, ts_tree = parse(source)
     cells = _group_nodes_into_cells(nodes, source)
     return _build_notebook(
         cells, lang,
+        source_bytes=source.encode("utf-8"),
+        ts_tree=ts_tree,
         source_uri=source_uri,
         comment_cell_type=comment_cell_type,
         markdown_bracket=markdown_bracket,

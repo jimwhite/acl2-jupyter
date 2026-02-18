@@ -416,6 +416,134 @@ class TestInlineCommentSpans:
         assert nb.cells[0].source.index("; note") == s
 
 
+# ── Docstring spans ──────────────────────────────────────────────────
+
+class TestDocstringSpans:
+    """Tests for docstring detection within definition forms."""
+
+    def test_defun_docstring(self):
+        """A string at position 4 in a defun is detected as a docstring."""
+        src = '(defun foo (x)\n  "A docstring."\n  x)\n'
+        nb = source_to_notebook(src, ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        assert "comments" in prov
+        spans = prov["comments"]
+        assert len(spans) == 1
+        text = nb.cells[0].source[spans[0][0]:spans[0][1]]
+        assert text == '"A docstring."'
+
+    def test_defmacro_docstring(self):
+        """defmacro also gets a defun node and its docstring is detected."""
+        src = "(defmacro my-mac (x)\n  \"Mac doc.\"\n  `(list ,x))\n"
+        nb = source_to_notebook(src, ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        assert "comments" in prov
+        text = nb.cells[0].source[prov["comments"][0][0]:prov["comments"][0][1]]
+        assert text == '"Mac doc."'
+
+    def test_define_docstring_list_lit(self):
+        """define is a plain list_lit; docstring at position 4 is detected."""
+        src = '(define my-fn (x) "Docstr." (+ x 1))\n'
+        nb = source_to_notebook(src, ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        assert "comments" in prov
+        text = nb.cells[0].source[prov["comments"][0][0]:prov["comments"][0][1]]
+        assert text == '"Docstr."'
+
+    def test_defun_sk_docstring(self):
+        """defun-sk is a list_lit with 'def' in the name."""
+        src = '(defun-sk all-p (x) "All p." (forall y (p x y)))\n'
+        nb = source_to_notebook(src, ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        assert "comments" in prov
+        text = nb.cells[0].source[prov["comments"][0][0]:prov["comments"][0][1]]
+        assert text == '"All p."'
+
+    def test_no_docstring_when_string_is_last_term(self):
+        """A string as the only/last body term is NOT a docstring."""
+        src = '(defun foo (x) "only")\n'
+        nb = source_to_notebook(src, ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        assert "comments" not in prov
+
+    def test_no_docstring_in_defthm(self):
+        """defthm has no position-4 string → no docstring."""
+        src = "(defthm my-thm (implies (p x) (q x)))\n"
+        nb = source_to_notebook(src, ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        assert "comments" not in prov
+
+    def test_no_docstring_in_non_def_form(self):
+        """Non-def forms never get docstring detection."""
+        src = '(foo bar "something" baz)\n'
+        nb = source_to_notebook(src, ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        assert "comments" not in prov
+
+    def test_multiple_consecutive_docstrings(self):
+        """Multiple consecutive strings at position 4+ are all included."""
+        src = '(defun foo (x) "doc1" "doc2" x)\n'
+        nb = source_to_notebook(src, ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        assert "comments" in prov
+        spans = prov["comments"]
+        assert len(spans) == 2
+        assert nb.cells[0].source[spans[0][0]:spans[0][1]] == '"doc1"'
+        assert nb.cells[0].source[spans[1][0]:spans[1][1]] == '"doc2"'
+
+    def test_consecutive_strings_last_excluded(self):
+        """Last string excluded when it is the final term in the form."""
+        src = '(defun foo (x) "doc1" "last-is-body")\n'
+        nb = source_to_notebook(src, ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        assert "comments" in prov
+        spans = prov["comments"]
+        assert len(spans) == 1
+        assert nb.cells[0].source[spans[0][0]:spans[0][1]] == '"doc1"'
+
+    def test_docstring_and_inline_comment_together(self):
+        """Docstrings and inline comments coexist in the comments list."""
+        src = '(defun foo (x)\n  "A doc."\n  ; body comment\n  x)\n'
+        nb = source_to_notebook(src, ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        spans = prov["comments"]
+        assert len(spans) == 2
+        assert nb.cells[0].source[spans[0][0]:spans[0][1]] == '"A doc."'
+        assert nb.cells[0].source[spans[1][0]:spans[1][1]] == "; body comment"
+
+    def test_docstring_with_attached_comment(self):
+        """Attached comment + docstring → both comment and comments keys."""
+        src = '; header\n(defun foo (x) "Doc." x)\n'
+        nb = source_to_notebook(src, ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        assert "comment" in prov   # attached
+        assert "comments" in prov  # docstring
+        text = nb.cells[0].source[prov["comments"][0][0]:prov["comments"][0][1]]
+        assert text == '"Doc."'
+
+    def test_defun_no_docstring(self):
+        """defun without a string at position 4 has no docstring."""
+        src = "(defun foo (x) (+ x 1))\n"
+        nb = source_to_notebook(src, ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        assert "comments" not in prov
+
+    def test_multiline_docstring_span(self):
+        """Multiline docstrings are captured as a single span."""
+        src = ('(defun Scalep (x n)\n'
+               '  "A Scale of base n is just like\\n'
+               '   an ordinal."\n'
+               '  (if (consp x) x n))\n')
+        nb = source_to_notebook(src, ACL2)
+        prov = nb.cells[0].metadata["provenance"]
+        assert "comments" in prov
+        spans = prov["comments"]
+        assert len(spans) == 1
+        text = nb.cells[0].source[spans[0][0]:spans[0][1]]
+        assert text.startswith('"A Scale')
+        assert text.endswith('ordinal."')
+
+
 # ── Notebook metadata ────────────────────────────────────────────────
 
 class TestNotebookMetadata:

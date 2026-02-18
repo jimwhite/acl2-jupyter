@@ -29,8 +29,9 @@ Metadata
   gives ``[start, end]`` *character* offsets of the comment text within
   the cell's ``source`` string (accounting for any bracket markup).
   ``provenance.comments`` (when present) is a list of ``[start, end]``
-  character-offset pairs for inline comments within a code cell's form
-  body (e.g. ``;`` comments inside a ``defun``).
+  character-offset pairs for inline comments and docstrings within a
+  code cell's form body (e.g. ``;`` comments inside a ``defun``, or
+  string literals at position 4 in a definition form).
 """
 
 from __future__ import annotations
@@ -271,6 +272,92 @@ def _find_inline_comments(
     return spans
 
 
+def _find_docstrings(
+    ts_tree: tree_sitter.Tree,
+    form_start_byte: int,
+    cell_start_byte: int,
+    source_bytes: bytes,
+) -> list[list[int, int]]:
+    """Find docstrings in a definition form using a positional heuristic.
+
+    A string literal at position 4 (1-indexed) in a form whose first
+    term contains ``def`` is treated as a docstring provided it is not
+    the last term in the form.  Consecutive strings at that position
+    are all included (except the last one if it would be the final
+    term).
+
+    Two tree-sitter structural cases are handled:
+
+    * ``defun`` nodes — the grammar collapses keyword, name, and
+      parameter list into a ``defun_header``, so the 4th item is the
+      first child after the header.
+    * Plain ``list_lit`` nodes — each s-expression is a separate child;
+      the 4th item is ``non_paren_children[3]``.
+
+    Returns ``[char_start, char_end]`` pairs giving character offsets
+    within the cell's source string.
+    """
+    # Find the top-level form node encompassing form_start_byte.
+    form_node: tree_sitter.Node | None = None
+    for child in ts_tree.root_node.children:
+        if child.start_byte <= form_start_byte < child.end_byte:
+            form_node = child
+            break
+    if form_node is None:
+        return []
+
+    # Unwrap list_lit → defun if the grammar recognised the keyword.
+    is_defun = False
+    if form_node.type == "list_lit":
+        for c in form_node.children:
+            if c.type == "defun":
+                form_node = c
+                is_defun = True
+                break
+
+    non_paren = [
+        c for c in form_node.children if c.type not in ("(", ")")
+    ]
+
+    if is_defun:
+        # defun_header wraps items 1-3 (keyword, name, params).
+        # Items after it start at position 4 in the user's counting.
+        if not non_paren or non_paren[0].type != "defun_header":
+            return []
+        body_items = non_paren[1:]
+    else:
+        # Plain list_lit: first child (sym_lit) must contain "def".
+        if not non_paren or non_paren[0].type != "sym_lit":
+            return []
+        keyword = source_bytes[
+            non_paren[0].start_byte : non_paren[0].end_byte
+        ]
+        if b"def" not in keyword.lower():
+            return []
+        # Position 4 is non_paren[3] (0-indexed).
+        if len(non_paren) < 4:
+            return []
+        body_items = non_paren[3:]
+
+    # Collect consecutive str_lit items from the start,
+    # excluding one that is the final term in the form.
+    spans: list[list[int, int]] = []
+    for i, item in enumerate(body_items):
+        if item.type != "str_lit":
+            break
+        is_last_term = i == len(body_items) - 1
+        if is_last_term:
+            break
+        # Compute character offsets relative to the cell source.
+        before = source_bytes[cell_start_byte : item.start_byte]
+        char_start = len(before.decode("utf-8"))
+        text = source_bytes[item.start_byte : item.end_byte]
+        char_end = char_start + len(text.decode("utf-8"))
+        spans.append([char_start, char_end])
+
+    return spans
+
+
 def _build_notebook(
     cells: list[CellTuple],
     lang: LanguageConfig,
@@ -339,8 +426,12 @@ def _build_notebook(
             inline = _find_inline_comments(
                 ts_tree, start_byte, end_byte, form_start_byte, source_bytes,
             )
-            if inline:
-                provenance["comments"] = inline
+            docstrings = _find_docstrings(
+                ts_tree, form_start_byte, start_byte, source_bytes,
+            )
+            all_spans = sorted(docstrings + inline, key=lambda s: s[0])
+            if all_spans:
+                provenance["comments"] = all_spans
 
         cell.metadata["provenance"] = provenance
         nb.cells.append(cell)

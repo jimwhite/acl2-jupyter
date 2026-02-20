@@ -39,6 +39,21 @@
    NIL means full-world mode (first cell gets entire world).
    A world value means diff-only mode.")
 
+(defvar *initial-event-forms-p* nil
+  "When T, each cell's display_data includes a 'forms' array of the
+   original ACL2 event forms (the code as submitted), enabling the
+   .ipynb to serve as a self-contained book.  Set from
+   ACL2_JUPYTER_EVENT_FORMS env var in start.")
+
+(defvar *initial-deep-events-p* nil
+  "When NIL (default), only top-level events (depth=0) are included
+   in the events/forms arrays, and absolute event numbers are stripped.
+   Sub-events from include-book etc. can be found by following the
+   include-book landmark to the referenced .ipynb.
+   When T, all events (including embedded sub-events) are included
+   with their full event-tuple structure including absolute numbers.
+   Set from ACL2_JUPYTER_DEEP_EVENTS env var in start.")
+
 (defvar *main-thread-lock* (bordeaux-threads:make-lock "acl2-jupyter-main-thread-lock"))
 (defvar *main-thread-work* nil)
 (defvar *main-thread-ready* (bt-semaphore:make-semaphore))
@@ -172,13 +187,23 @@
 
 (defclass kernel (jupyter:kernel)
   ((cell-events     :initform #() :accessor cell-events)
+   (cell-forms      :initform nil  :accessor cell-forms)
    (cell-package    :initform "ACL2" :accessor cell-package)
    (world-baseline  :initform *initial-world-baseline*
                     :accessor world-baseline
                     :documentation "Previous world state for event diff.
    Set from *initial-world-baseline* when the kernel is instantiated.
    NIL = full-world mode (first cell gets entire world).
-   A world = diff-only (first cell gets only its own additions)."))
+   A world = diff-only (first cell gets only its own additions).")
+   (event-forms-p   :initform *initial-event-forms-p*
+                    :accessor event-forms-p
+                    :documentation "When T, include original event forms
+   in display_data so .ipynb can serve as a self-contained book.")
+   (deep-events-p   :initform *initial-deep-events-p*
+                    :accessor deep-events-p
+                    :documentation "When NIL, only top-level events
+   (depth=0) are included and event numbers are stripped.  When T,
+   all events including embedded sub-events with full tuples."))
   (:default-initargs
     :name "acl2"
     :package (find-package "ACL2")
@@ -362,6 +387,7 @@
   (declare (ignore source-path breakpoints))
   ;; Reset per-cell metadata
   (setf (cell-events k) #()
+        (cell-forms k)  nil
         (cell-package k) "ACL2")
   (let ((trimmed (string-trim '(#\Space #\Tab #\Newline #\Return) code)))
     (when (plusp (length trimmed))
@@ -388,18 +414,48 @@
                           (scan (if baseline
                                     (ldiff post-wrld baseline)
                                     post-wrld))
+                          (event-tuples
+                            (let ((all
+                                    (loop for triple in scan
+                                          when (and (eq (car triple)
+                                                        'acl2::event-landmark)
+                                                    (eq (cadr triple)
+                                                        'acl2::global-value))
+                                          collect (cddr triple))))
+                              (if (deep-events-p k)
+                                  all
+                                  ;; Keep only depth=0 tuples (car is integer,
+                                  ;; not a cons of (n . d) for depth>0).
+                                  (remove-if-not
+                                   (lambda (et)
+                                     (let ((inner (if (eq (car et) 'acl2::local)
+                                                      (cdr et) et)))
+                                       (integerp (car inner))))
+                                   all))))
                           (events
                             (let ((*package* (find-package "ACL2"))
                                   (*print-case* :upcase))
-                              (loop for triple in scan
-                                    when (and (eq (car triple)
-                                                  'acl2::event-landmark)
-                                              (eq (cadr triple)
-                                                  'acl2::global-value))
-                                    collect (prin1-to-string
-                                             (cddr triple))))))
+                              (if (deep-events-p k)
+                                  ;; Full tuple including event number
+                                  (mapcar #'prin1-to-string event-tuples)
+                                  ;; Strip event number: (cdr (remove-local et))
+                                  (mapcar (lambda (et)
+                                            (let ((inner (if (eq (car et) 'acl2::local)
+                                                             (cdr et) et)))
+                                              (prin1-to-string (cdr inner))))
+                                          event-tuples))))
+                          (forms
+                            (when (event-forms-p k)
+                              (let ((*package* (find-package "ACL2"))
+                                    (*print-case* :downcase))
+                                (mapcar (lambda (et)
+                                          (prin1-to-string
+                                           (acl2::access-event-tuple-form et)))
+                                        event-tuples)))))
                      (setf (cell-events k)
                            (coerce events 'vector)
+                           (cell-forms k)
+                           (when forms (coerce forms 'vector))
                            (cell-package k)
                            (acl2::current-package *the-live-state*)
                            (world-baseline k) post-wrld)
@@ -411,13 +467,15 @@
         ;; Back on shell thread.  Send metadata as display_data with a
         ;; vendor MIME type so it gets persisted in .ipynb cell outputs.
         (unless ename
-          (jupyter::send-display-data
-           (jupyter::kernel-iopub k)
-           (list :object-plist
-                 "application/vnd.acl2.events+json"
-                 (list :object-alist
-                       (cons "events" (cell-events k))
-                       (cons "package" (cell-package k))))))
+          (let ((alist (list (cons "events" (cell-events k))
+                             (cons "package" (cell-package k)))))
+            (when (plusp (length (cell-forms k)))
+              (push (cons "forms" (cell-forms k)) (cdr (last alist))))
+            (jupyter::send-display-data
+             (jupyter::kernel-iopub k)
+             (list :object-plist
+                   "application/vnd.acl2.events+json"
+                   (cons :object-alist alist)))))
         ;; Return error triple to CL-Jupyter, or no values for success.
         (when ename
           (values ename evalue traceback))))))
@@ -481,6 +539,10 @@
           (if (equal (uiop:getenv "ACL2_JUPYTER_FULL_WORLD") "1")
               nil
               (w state)))
+    (setq *initial-event-forms-p*
+          (equal (uiop:getenv "ACL2_JUPYTER_EVENT_FORMS") "1"))
+    (setq *initial-deep-events-p*
+          (equal (uiop:getenv "ACL2_JUPYTER_DEEP_EVENTS") "1"))
     (let ((conn (or connection-file
                     (first (uiop:command-line-arguments)))))
       (unless conn

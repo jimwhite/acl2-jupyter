@@ -9,7 +9,9 @@ persistence mechanism).
 The payload is:
   {
     "events": ["(DEFUN ...)", ...],   -- event landmark S-expressions
-    "package": "ACL2"                 -- current ACL2 package
+    "package": "ACL2",                -- current ACL2 package
+    "forms": ["(defun ...)", ...]     -- original event forms (optional,
+                                         requires ACL2_JUPYTER_EVENT_FORMS=1)
   }
 
 Usage:
@@ -167,3 +169,121 @@ class TestMetadata:
         # meta comes from display_data; should have at least 'package'
         assert "package" in meta, f"no display_data with {MIME_TYPE}: {meta}"
         assert "events" in meta, f"missing events key: {meta}"
+
+
+class TestEventForms:
+    """Tests for the 'forms' array in display_data metadata.
+
+    These tests require ACL2_JUPYTER_EVENT_FORMS=1 in the kernel's
+    environment (set in kernel.json via the installer).
+    """
+
+    def test_defun_has_form(self, kc):
+        """A defun should produce a form matching the source code."""
+        _, _, error, meta = eval_with_metadata(
+            kc, "(defun forms-test-fn (x) (+ x 99))")
+        assert error is None, f"error: {error}"
+        forms = meta.get("forms", [])
+        assert len(forms) > 0, f"expected forms, got: {meta}"
+        combined = " ".join(forms).lower()
+        assert "forms-test-fn" in combined, \
+            f"expected function name in forms: {forms}"
+        assert "defun" in combined, \
+            f"expected 'defun' in forms: {forms}"
+
+    def test_defthm_has_form(self, kc):
+        """A defthm should produce a form matching the theorem."""
+        _, _, error, meta = eval_with_metadata(
+            kc, "(defthm forms-test-thm (equal (cdr (cons x y)) y))")
+        assert error is None, f"error: {error}"
+        forms = meta.get("forms", [])
+        assert len(forms) > 0, f"expected forms, got: {meta}"
+        combined = " ".join(forms).lower()
+        assert "forms-test-thm" in combined, \
+            f"expected theorem name in forms: {forms}"
+        assert "defthm" in combined, \
+            f"expected 'defthm' in forms: {forms}"
+
+    def test_forms_are_strings(self, kc):
+        """Forms should be S-expression strings."""
+        _, _, error, meta = eval_with_metadata(
+            kc, "(defun forms-str-test (x) x)")
+        assert error is None, f"error: {error}"
+        forms = meta.get("forms", [])
+        assert len(forms) > 0, f"no forms"
+        for f in forms:
+            assert isinstance(f, str), f"form should be string, got: {type(f)}"
+            assert len(f) > 0, "empty form string"
+
+    def test_arithmetic_no_forms(self, kc):
+        """Plain arithmetic produces no forms (no events = no forms)."""
+        _, _, error, meta = eval_with_metadata(kc, "(+ 3 4)")
+        assert error is None, f"error: {error}"
+        forms = meta.get("forms", [])
+        assert len(forms) == 0, f"expected no forms, got: {forms}"
+
+    def test_forms_count_matches_events(self, kc):
+        """Number of forms should equal number of events."""
+        code = """(defun forms-count-a (x) (+ x 10))
+(defun forms-count-b (x) (+ x 20))"""
+        _, _, error, meta = eval_with_metadata(kc, code)
+        assert error is None, f"error: {error}"
+        events = meta.get("events", [])
+        forms = meta.get("forms", [])
+        assert len(events) == len(forms), \
+            f"events ({len(events)}) != forms ({len(forms)})"
+        assert len(forms) >= 2, f"expected >=2 forms, got {len(forms)}"
+
+
+class TestShallowEvents:
+    """Tests for the default shallow-events mode (ACL2_JUPYTER_DEEP_EVENTS=0).
+
+    In shallow mode:
+    - Only top-level events (depth=0) are included
+    - Absolute event numbers are stripped from the events output
+    - include-book produces exactly 1 event (not all sub-events)
+    """
+
+    def test_event_no_leading_number(self, kc):
+        """Events should not start with a number (number stripped)."""
+        _, _, error, meta = eval_with_metadata(
+            kc, "(defun shallow-num-test (x) (+ x 7))")
+        assert error is None, f"error: {error}"
+        events = meta.get("events", [])
+        assert len(events) > 0, f"no events"
+        for e in events:
+            # In shallow mode, the event string should start with '('
+            # followed by the form or type metadata, NOT an integer.
+            stripped = e.strip()
+            assert stripped.startswith("("), \
+                f"event should start with '(': {e!r}"
+            # The first token after '(' should NOT be a digit
+            inner = stripped[1:].lstrip()
+            assert not inner[0].isdigit(), \
+                f"event should not have leading number: {e!r}"
+
+    def test_include_book_one_event(self, kc):
+        """include-book should produce exactly 1 event (top-level only)."""
+        _, _, error, meta = eval_with_metadata(
+            kc,
+            '(include-book "std/lists/rev" :dir :system)',
+            timeout=60)
+        assert error is None, f"error: {error}"
+        events = meta.get("events", [])
+        # Should be exactly 1: the include-book landmark itself.
+        # In deep mode this would be many (all sub-events from the book).
+        assert len(events) == 1, \
+            f"expected exactly 1 event for include-book, got {len(events)}: {events}"
+
+    def test_defun_event_contains_form(self, kc):
+        """In shallow mode, a standard :program defun event IS the form."""
+        _, _, error, meta = eval_with_metadata(
+            kc, "(defun shallow-form-test (x) (cons x x))")
+        assert error is None, f"error: {error}"
+        events = meta.get("events", [])
+        assert len(events) == 1, f"expected 1 event: {events}"
+        # For a standard :program defun with depth=0, the compact tuple
+        # is (N . form), so stripping the number gives just the form.
+        e = events[0].upper()
+        assert "DEFUN" in e, f"expected DEFUN in event: {events[0]}"
+        assert "SHALLOW-FORM-TEST" in e, f"expected name in event: {events[0]}"

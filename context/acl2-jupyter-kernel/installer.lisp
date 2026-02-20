@@ -117,10 +117,14 @@
 
 (defmethod make-kernel-env ((impl (eql :sbcl)))
   (let ((sbcl-home (or (uiop:getenv "SBCL_HOME") "/usr/local/lib/sbcl/"))
-        (full-world (or (uiop:getenv "ACL2_JUPYTER_FULL_WORLD") "0")))
+        (full-world (or (uiop:getenv "ACL2_JUPYTER_FULL_WORLD") "0"))
+        (event-forms (or (uiop:getenv "ACL2_JUPYTER_EVENT_FORMS") "0"))
+        (deep-events (or (uiop:getenv "ACL2_JUPYTER_DEEP_EVENTS") "0")))
     (list :object-plist
           "SBCL_HOME" sbcl-home
-          "ACL2_JUPYTER_FULL_WORLD" full-world)))
+          "ACL2_JUPYTER_FULL_WORLD" full-world
+          "ACL2_JUPYTER_EVENT_FORMS" event-forms
+          "ACL2_JUPYTER_DEEP_EVENTS" deep-events)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Kernel Spec Override

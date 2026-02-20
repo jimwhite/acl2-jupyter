@@ -34,6 +34,7 @@ Usage examples::
 from __future__ import annotations
 
 import argparse
+import itertools
 import logging
 import os
 import shutil
@@ -92,18 +93,12 @@ def _has_cert(source: Path) -> bool:
 # ── Phase 1: Convert ────────────────────────────────────────────────
 
 
-def convert_one(
-    source: Path,
-    source_root: Path,
-    output_root: Path,
-    force: bool = False,
-) -> Path | None:
-    """Convert a single source file to a notebook.  Returns output path or None if skipped."""
+def _do_convert(source: Path, source_root: Path, output_root: Path) -> Path | None:
+    """Run script2notebook on a single file.  Returns output path or None on error.
+
+    Assumes staleness has already been checked and the parent dir exists.
+    """
     notebook = _notebook_path(source, source_root, output_root)
-
-    if not _is_stale(source, notebook, force):
-        return None
-
     notebook.parent.mkdir(parents=True, exist_ok=True)
 
     result = subprocess.run(
@@ -118,18 +113,46 @@ def convert_one(
     return notebook
 
 
-def _log_convert_progress(
-    done: int, total: int, converted: int, errors: int, interval: float = 5.0,
-    _state: dict = {"last": 0.0},
-) -> None:
-    """Log a progress line at most every *interval* seconds."""
-    now = time.monotonic()
-    if now - _state["last"] >= interval or done == total:
-        _state["last"] = now
-        log.info(
-            "  progress: %d/%d (converted %d, errors %d)",
-            done, total, converted, errors,
-        )
+def convert_one(
+    source: Path,
+    source_root: Path,
+    output_root: Path,
+    force: bool = False,
+) -> Path | None:
+    """Convert a single source file to a notebook.  Returns output path or None if skipped."""
+    notebook = _notebook_path(source, source_root, output_root)
+
+    if not _is_stale(source, notebook, force):
+        return None
+
+    return _do_convert(source, source_root, output_root)
+
+
+def _bounded_as_completed(pool, fn, items, max_pending):
+    """Submit work to *pool* in bounded batches, yielding (future, item) pairs.
+
+    At most *max_pending* futures are in-flight at any time, preventing
+    the process pool's call queue from growing unbounded for large inputs.
+    """
+    it = iter(items)
+    pending: dict = {}
+
+    # Prime the pump with the first batch.
+    for item in itertools.islice(it, max_pending):
+        f = pool.submit(fn, *item) if isinstance(item, tuple) else pool.submit(fn, item)
+        pending[f] = item
+
+    while pending:
+        # Wait for at least one to finish.
+        done_iter = as_completed(pending)
+        future = next(done_iter)
+        item = pending.pop(future)
+        yield future, item
+
+        # Refill: submit one new task for each completed one.
+        for new_item in itertools.islice(it, 1):
+            f = pool.submit(fn, *new_item) if isinstance(new_item, tuple) else pool.submit(fn, new_item)
+            pending[f] = new_item
 
 
 def phase_convert(
@@ -143,48 +166,65 @@ def phase_convert(
     total = len(sources)
     log.info("Found %d source files under %s", total, source_root)
 
-    converted = skipped = errors = 0
-    done = 0
+    # ── Check staleness in the main process (fast stat calls) ──
+    stale: list[Path] = []
+    skipped = 0
+    t_last = time.monotonic()
+    for i, source in enumerate(sources):
+        notebook = _notebook_path(source, source_root, output_root)
+        if _is_stale(source, notebook, force):
+            stale.append(source)
+        else:
+            skipped += 1
+        now = time.monotonic()
+        if (now - t_last >= 5.0) or (i + 1 == total):
+            t_last = now
+            log.info("  staleness check: %d/%d (%d need conversion)", i + 1, total, len(stale))
+
+    if not stale:
+        return 0, skipped, 0
+
+    # ── Convert only the stale files ──
+    converted = errors = 0
+    n_stale = len(stale)
+    log.info("Converting %d files…", n_stale)
 
     if jobs <= 1:
-        for source in sources:
-            result = convert_one(source, source_root, output_root, force)
+        t_last = time.monotonic()
+        for i, source in enumerate(stale):
+            result = _do_convert(source, source_root, output_root)
             if result is None:
-                notebook = _notebook_path(source, source_root, output_root)
-                if notebook.exists():
-                    skipped += 1
-                else:
-                    errors += 1
+                errors += 1
             else:
                 converted += 1
-            done += 1
-            if total > 100:
-                _log_convert_progress(done, total, converted, errors)
+            now = time.monotonic()
+            if (now - t_last >= 5.0) or (i + 1 == n_stale):
+                t_last = now
+                log.info("  converting: %d/%d (errors %d)", i + 1, n_stale, errors)
     else:
+        # Items are (source, source_root, output_root) tuples for _do_convert.
+        items = [(source, source_root, output_root) for source in stale]
+        max_pending = jobs * 2
         with ProcessPoolExecutor(max_workers=jobs) as pool:
-            futures = {
-                pool.submit(convert_one, source, source_root, output_root, force): source
-                for source in sources
-            }
             try:
-                for future in as_completed(futures):
-                    source = futures[future]
+                done = 0
+                t_last = time.monotonic()
+                for future, item in _bounded_as_completed(pool, _do_convert, items, max_pending):
+                    source = item[0]
                     try:
                         result = future.result()
                         if result is None:
-                            notebook = _notebook_path(source, source_root, output_root)
-                            if notebook.exists():
-                                skipped += 1
-                            else:
-                                errors += 1
+                            errors += 1
                         else:
                             converted += 1
                     except Exception as exc:
                         log.error("Convert %s: exception: %s", source, exc)
                         errors += 1
                     done += 1
-                    if total > 100:
-                        _log_convert_progress(done, total, converted, errors)
+                    now = time.monotonic()
+                    if (now - t_last >= 5.0) or (done == n_stale):
+                        t_last = now
+                        log.info("  converting: %d/%d (errors %d)", done, n_stale, errors)
             except KeyboardInterrupt:
                 log.warning("Interrupted — cancelling remaining conversions…")
                 pool.shutdown(wait=False, cancel_futures=True)
@@ -273,22 +313,32 @@ def _find_executable_notebooks(
     - the notebook has never been executed (no outputs in any code cell).
     """
     sources = _find_source_files(source_root)
+    certified = [(s, s.with_suffix(".cert")) for s in sources if _has_cert(s)]
+    log.info("Scanning %d certified sources for notebooks needing execution…", len(certified))
+
     pairs = []
-    for source in sources:
-        if not _has_cert(source):
-            continue
+    checked = 0
+    t_last = time.monotonic()
+    for source, cert in certified:
         notebook = _notebook_path(source, source_root, output_root)
         if not notebook.exists():
             log.warning("Notebook missing for certified source %s — run convert first", source)
+            checked += 1
             continue
 
-        cert = source.with_suffix(".cert")
         if _is_stale(cert, notebook, force) or _is_stale(source, notebook, force):
             pairs.append((source, notebook))
         elif not _notebook_has_outputs(notebook):
             # Notebook was converted but never executed.
             log.debug("Notebook %s has no outputs — needs execution", notebook)
             pairs.append((source, notebook))
+
+        checked += 1
+        now = time.monotonic()
+        if now - t_last >= 5.0:
+            t_last = now
+            log.info("  scan progress: %d/%d checked, %d need execution",
+                     checked, len(certified), len(pairs))
 
     return pairs
 
@@ -333,22 +383,18 @@ def phase_execute(
                 log.error("  %s", msg)
                 errors += 1
     else:
+        # Items are (notebook, kernel_name, cell_timeout, startup_timeout,
+        #            allow_errors, source_dir) tuples for _execute_notebook.
+        items = [
+            (notebook, kernel_name, cell_timeout, startup_timeout,
+             allow_errors, source.parent)
+            for source, notebook in pairs
+        ]
+        max_pending = jobs * 2
         with ProcessPoolExecutor(max_workers=jobs) as pool:
-            futures = {
-                pool.submit(
-                    _execute_notebook,
-                    notebook,
-                    kernel_name,
-                    cell_timeout,
-                    startup_timeout,
-                    allow_errors,
-                    source_dir=source.parent,
-                ): (source, notebook)
-                for source, notebook in pairs
-            }
             try:
-                for future in as_completed(futures):
-                    source, notebook = futures[future]
+                for future, item in _bounded_as_completed(pool, _execute_notebook, items, max_pending):
+                    notebook = item[0]
                     try:
                         path, ok, msg = future.result()
                         if ok:

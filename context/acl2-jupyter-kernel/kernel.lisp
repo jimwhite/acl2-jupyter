@@ -354,47 +354,55 @@
         (cell-package k) "ACL2")
   (let ((trimmed (string-trim '(#\Space #\Tab #\Newline #\Return) code)))
     (when (plusp (length trimmed))
-      (handler-case
-          (in-main-thread
-            ;; ---- Everything below runs on the main thread ----
-            ;; with-suppression unlocks COMMON-LISP package (on SBCL)
-            ;; so that pkg-witness can intern into it during undo etc.
-            ;; This mirrors lp which wraps ld-fn in with-suppression.
-            (acl2::with-suppression
-             (let ((pre-wrld (w *the-live-state*)))
-               (with-acl2-output-to *standard-output*
-                 (let ((channel (make-string-input-channel trimmed)))
-                   (unwind-protect
-                       (jupyter-read-eval-print-loop channel *the-live-state*)
-                     (close-string-input-channel channel))))
-               ;; After eval: capture events + package from world diff
-               (let* ((post-wrld (w *the-live-state*))
-                      (diff (ldiff post-wrld pre-wrld))
-                      (events
-                        (let ((*package* (find-package "ACL2"))
-                              (*print-case* :upcase))
-                          (loop for triple in diff
-                                when (and (eq (car triple)
-                                              'acl2::event-landmark)
-                                          (eq (cadr triple)
-                                              'acl2::global-value))
-                                collect (prin1-to-string
-                                         (cddr triple))))))
-                 (setf (cell-events k)
-                       (coerce events 'vector)
-                       (cell-package k)
-                       (acl2::current-package *the-live-state*))
-                 (values)))))
-        (error (c)
-          (values (symbol-name (type-of c))
-                  (format nil "~A" c)
-                  (list (format nil "~A" c))))))))
-
-(defmethod jupyter:execute-reply-metadata ((k kernel))
-  "Return per-cell metadata: raw event landmarks + current package."
-  (list :object-alist
-        (cons "events" (cell-events k))
-        (cons "package" (cell-package k))))
+      (multiple-value-bind (ename evalue traceback)
+          (handler-case
+              (in-main-thread
+                ;; ---- Everything below runs on the main thread ----
+                ;; with-suppression unlocks COMMON-LISP package (on SBCL)
+                ;; so that pkg-witness can intern into it during undo etc.
+                ;; This mirrors lp which wraps ld-fn in with-suppression.
+                (acl2::with-suppression
+                 (let ((pre-wrld (w *the-live-state*)))
+                   (with-acl2-output-to *standard-output*
+                     (let ((channel (make-string-input-channel trimmed)))
+                       (unwind-protect
+                           (jupyter-read-eval-print-loop channel *the-live-state*)
+                         (close-string-input-channel channel))))
+                   ;; After eval: capture events + package from world diff
+                   (let* ((post-wrld (w *the-live-state*))
+                          (diff (ldiff post-wrld pre-wrld))
+                          (events
+                            (let ((*package* (find-package "ACL2"))
+                                  (*print-case* :upcase))
+                              (loop for triple in diff
+                                    when (and (eq (car triple)
+                                                  'acl2::event-landmark)
+                                              (eq (cadr triple)
+                                                  'acl2::global-value))
+                                    collect (prin1-to-string
+                                             (cddr triple))))))
+                     (setf (cell-events k)
+                           (coerce (nreverse events) 'vector)
+                           (cell-package k)
+                           (acl2::current-package *the-live-state*))
+                     (values)))))
+            (error (c)
+              (values (symbol-name (type-of c))
+                      (format nil "~A" c)
+                      (list (format nil "~A" c)))))
+        ;; Back on shell thread.  Send metadata as display_data with a
+        ;; vendor MIME type so it gets persisted in .ipynb cell outputs.
+        (unless ename
+          (jupyter::send-display-data
+           (jupyter::kernel-iopub k)
+           (list :object-plist
+                 "application/vnd.acl2.events+json"
+                 (list :object-alist
+                       (cons "events" (cell-events k))
+                       (cons "package" (cell-package k))))))
+        ;; Return error triple to CL-Jupyter, or no values for success.
+        (when ename
+          (values ename evalue traceback))))))
 
 (defmethod jupyter:code-is-complete ((k kernel) code)
   (let ((*package* (find-package "ACL2"))

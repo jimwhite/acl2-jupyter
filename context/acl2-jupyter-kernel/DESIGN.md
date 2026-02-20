@@ -21,8 +21,8 @@ uses pexpect to scrape a REPL) with a native Common Lisp kernel that runs
                │  ZeroMQ (Jupyter Wire Protocol v5.5)
                │  TCP or IPC sockets
 ┌──────────────┴──────────────────────────────────────────┐
-│  saved_acl2_jupyter  (shell script + .core from         │
-│                       ACL2's save-exec)                  │
+│  SBCL + saved_acl2.core  (ACL2's standard core image,   │
+│   quickloads acl2-jupyter-kernel at startup via ASDF)    │
 │                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
 │  │  common-lisp-jupyter  (pzmq, ZeroMQ, wire proto)   │  │
@@ -112,7 +112,6 @@ context/acl2-jupyter-kernel/
 ├── complete.lisp             # ACL2 symbol completion
 ├── inspect.lisp              # ACL2 documentation inspection
 ├── installer.lisp            # Kernelspec installer (generates kernel.json)
-├── build-kernel-image.sh     # Build script: creates saved_acl2_jupyter via save-exec
 ├── install-kernelspec.sh     # Install script: writes kernel.json
 ├── test_dual.py              # 22 dual-fixture tests (Bridge vs Kernel)
 └── test_metadata.py          # 7 tests for cell metadata (events, package)
@@ -220,15 +219,16 @@ be supported by adding methods.  For SBCL the generated spec is:
 {
   "argv": [
     "/usr/local/bin/sbcl",
+    "--tls-limit", "16384",
     "--dynamic-space-size", "32000",
     "--control-stack-size", "64",
-    "--tls-limit", "16384",
     "--disable-ldb",
-    "--core", "/path/to/saved_acl2_jupyter.core",
+    "--core", "/home/acl2/saved_acl2.core",
     "--end-runtime-options",
     "--no-userinit",
-    "--eval", "(acl2-jupyter-kernel:start)",
-    "{connection_file}"
+    "--load", "/home/jovyan/quicklisp/setup.lisp",
+    "--eval", "(ql:quickload :acl2-jupyter-kernel :silent t)",
+    "--eval", "(acl2-jupyter-kernel:start \"{connection_file}\")"
   ],
   "env": { "SBCL_HOME": "/usr/local/lib/sbcl/" },
   "display_name": "ACL2",
@@ -238,15 +238,17 @@ be supported by adding methods.  For SBCL the generated spec is:
 }
 ```
 
-This bypasses the `saved_acl2_jupyter` shell script wrapper — `sbcl` is
-invoked directly with the right core and runtime flags.  `SBCL_HOME` is
+The kernel uses ACL2's standard `saved_acl2.core` and loads the kernel
+system from source via Quicklisp/ASDF at each startup.  `SBCL_HOME` is
 provided via `env` so SBCL can find its contribs.
 
 ### 5.5 Cell Metadata — Events and Package
 
-Each `execute_reply` carries metadata describing what the cell changed in
-the ACL2 world.  This is implemented via a `execute-reply-metadata` generic
-function added to common-lisp-jupyter (see §12, decision 7).
+After each successful cell execution, the kernel emits a `display_data`
+message containing a vendor MIME type that Jupyter persists in the
+notebook's output list.  This is the standard Jupyter mechanism for
+storing structured kernel data in `.ipynb` files (used by Vega-Lite,
+Plotly, GeoJSON, etc.).
 
 **World diff capture** (in `evaluate-code`, after eval completes):
 1. Save the old world (`acl2::w acl2::*the-live-state*`) before eval
@@ -259,16 +261,20 @@ function added to common-lisp-jupyter (see §12, decision 7).
 **Package capture**: After eval, read `(acl2::current-package
 acl2::*the-live-state*)` and store in `cell-package`.
 
-**Wire format** (in `execute-reply` message, `metadata` field):
+**Persistence format** (`display_data` output with vendor MIME type):
 ```json
 {
-  "metadata": {
-    "events": [
-      "(DEFUN APP (X Y) ...)",
-      "(DEFTHM APP-ASSOC ...)"
-    ],
-    "package": "ACL2"
-  }
+  "output_type": "display_data",
+  "data": {
+    "application/vnd.acl2.events+json": {
+      "events": [
+        "(DEFUN APP (X Y) ...)",
+        "(DEFTHM APP-ASSOC ...)"
+      ],
+      "package": "ACL2"
+    }
+  },
+  "metadata": {}
 }
 ```
 
@@ -277,57 +283,25 @@ acl2::*the-live-state*)` and store in `cell-package`.
   (e.g., arithmetic).
 - `package`: JSON string.  The current ACL2 package after the cell executes.
 
-This metadata enables frontends and tools to track world state without
-parsing ACL2 output.
+Jupyter frontends ignore MIME types they don't recognize, so this output
+is invisible to the user but persists in the `.ipynb` file for tools that
+need to reconstruct the ACL2 world state.
 
-## 6. The Saved Image: `saved_acl2_jupyter`
+## 6. Kernel Launch
 
-### Build via ACL2's `save-exec`
+### Quicklisp-from-source Approach
 
-The kernel binary is built using ACL2's own `save-exec` mechanism — the same
-one that creates `saved_acl2` itself. This is done by `build-kernel-image.sh`:
-
-1. Start `saved_acl2` and exit the ACL2 read-eval-print loop (`:q`)
-2. Load Quicklisp and the `acl2-jupyter-kernel` ASDF system
-3. Call `save-exec` with `:return-from-lp nil` (so the image starts
-   directly at `--eval` without entering LP)
-
-```lisp
-(save-exec "saved_acl2_jupyter" nil
-           :return-from-lp nil)
-```
-
-This produces two files:
-
-- **`saved_acl2_jupyter`** — a shell script (like `saved_acl2`)
-- **`saved_acl2_jupyter.core`** — the SBCL core image
-
-### Generated Shell Script
-
-The shell script that `save-exec` generates looks like:
-
-```sh
-#!/bin/sh
-export SBCL_HOME='/usr/local/lib/sbcl/'
-exec "/usr/local/bin/sbcl" \
-  --tls-limit 16384 \
-  --dynamic-space-size 32000 \
-  --control-stack-size 64 \
-  --disable-ldb \
-  --core "saved_acl2_jupyter.core" \
-  ${SBCL_USER_ARGS} \
-  --end-runtime-options \
-  --no-userinit \
-  "$@"
-```
-
-The kernel.json (from installer.lisp, §5.4) adds `--eval
-'(acl2-jupyter-kernel:start)'` and `{connection_file}` to the argv, so
-the full command line becomes:
+The kernel launches from ACL2's standard `saved_acl2.core` and loads
+the kernel system from source at each startup.  There is no separate
+pre-baked image.  The `kernel.json` generated by `installer.lisp`
+(see §5.4) tells Jupyter to run:
 
 ```
-sbcl ... --core saved_acl2_jupyter.core --end-runtime-options --no-userinit \
-  --eval '(acl2-jupyter-kernel:start)' /path/to/connection.json
+sbcl --control-stack-size 64 --dynamic-space-size 32000 --tls-limit 16384 \
+  --core /home/acl2/saved_acl2.core --end-runtime-options --no-userinit \
+  --load /home/jovyan/quicklisp/setup.lisp \
+  --eval '(ql:quickload :acl2-jupyter-kernel :silent t)' \
+  --eval '(acl2-jupyter-kernel:start "{connection_file}")'
 ```
 
 Key points:
@@ -337,21 +311,27 @@ Key points:
   bordeaux-threads via common-lisp-jupyter) inherits this setting. Without it,
   threads get SBCL's default ~2 MB which is insufficient for ACL2's deep
   recursion during `include-book`, proof search, etc.
-- **`(acl2-jupyter-kernel:start)`**: The `start` function (see §5.1)
-  calls `acl2-default-restart` for ACL2 initialization, sets up the
-  persistent LP context, spawns the Jupyter shell thread, and blocks
+- **Quicklisp loading**: Loads Quicklisp and the kernel's ASDF system from
+  source on each startup.  This adds a few seconds to startup but means
+  code changes take effect immediately without rebuilding a core image.
+- **`(acl2-jupyter-kernel:start "{connection_file}")`**: The `start` function
+  (see §5.1) calls `acl2-default-restart` for ACL2 initialization, sets up
+  the persistent LP context, spawns the Jupyter shell thread, and blocks
   the main thread in the work loop.
 
 ### Startup Flow
 
 ```
 Jupyter launches kernel.json argv:
-  sbcl --control-stack-size 64 ... --core saved_acl2_jupyter.core
-       --eval '(acl2-jupyter-kernel:start)' /path/to/connection.json
+  sbcl --control-stack-size 64 ... --core saved_acl2.core
+       --load quicklisp/setup.lisp
+       --eval '(ql:quickload :acl2-jupyter-kernel :silent t)'
+       --eval '(acl2-jupyter-kernel:start "{connection_file}")'
 
-  → SBCL starts, loads saved_acl2_jupyter.core
+  → SBCL starts, loads saved_acl2.core (standard ACL2 image)
+  → Quicklisp loads, quickloads :acl2-jupyter-kernel via ASDF
 
-  → (acl2-jupyter-kernel:start)
+  → (acl2-jupyter-kernel:start "{connection_file}")
     → (acl2-default-restart)           ; ACL2 image initialization
     → LP first-entry init:
         saved-output-reversed, set-initial-cbd,
@@ -359,7 +339,6 @@ Jupyter launches kernel.json argv:
     → Suppress W/A warnings for interactive use
     → Set up persistent LP context:
         acl2-unwind, push *acl2-unwind-protect-stack*, *ld-level* = 1
-    → conn = (first (uiop:command-line-arguments))
     → Spawn Jupyter shell thread via (jupyter:run-kernel 'kernel conn)
         → Parses connection file (JSON: transport, IP, ports, key)
         → Creates ZeroMQ sockets (shell, control, iopub, stdin, heartbeat)
@@ -465,16 +444,6 @@ This failed because:
 - `libzmq` and `libczmq` system libraries
 - `common-lisp-jupyter` available via Quicklisp
 
-### Build
-
-```sh
-cd context/acl2-jupyter-kernel
-./build-kernel-image.sh
-```
-
-This creates `saved_acl2_jupyter` (shell script) and
-`saved_acl2_jupyter.core` in the same directory.
-
 ### Install Kernelspec
 
 ```sh
@@ -530,11 +499,10 @@ fixtures) and 7 metadata tests (events array, package tracking).
    image gives us access to the world, proper output routing, and is simpler
    than managing a child process.
 
-3. **`save-exec` for the binary**: ACL2's own `save-exec` creates a shell
-   script + core pair with all the right SBCL flags (`--control-stack-size 64`,
-   `--dynamic-space-size`, `--tls-limit`, etc.). This ensures all threads
-   get adequate stack space and the binary has exactly the same structure as
-   `saved_acl2` itself.
+3. **Quicklisp-from-source, not `save-exec`**: The kernel reuses ACL2's
+   standard `saved_acl2.core` and loads the kernel system from source via
+   Quicklisp/ASDF on each startup.  This avoids maintaining a separate
+   260 MB core image and means code changes take effect immediately.
 
 4. **ASDF system, not ACL2 book**: The kernel loads via Quicklisp/ASDF from
    raw Lisp after `:q`, bypassing ACL2's book certification. ACL2 books use
@@ -550,13 +518,12 @@ fixtures) and 7 metadata tests (events array, package tracking).
    available via `(uiop:command-line-arguments)`. This is the same mechanism
    used by the standard CL SBCL kernel.
 
-7. **`execute-reply-metadata` extension to common-lisp-jupyter**: Rather than
-   monkey-patching or subclassing the shell handler, we added a
-   `execute-reply-metadata` generic function to common-lisp-jupyter.  The
-   default method returns nil (no metadata).  The ACL2 kernel specializes it
-   to return the world events and current package.  This required three small
-   changes to common-lisp-jupyter: export the symbol, define the generic, and
-   pass its return value through `send-execute-reply-ok`.
+7. **`display_data` with vendor MIME type for cell metadata**: Cell metadata
+   (world events, current package) is persisted in .ipynb files via
+   `display_data` output with MIME type `application/vnd.acl2.events+json`.
+   This is the standard Jupyter mechanism — frontends ignore unknown MIME
+   types but the data persists in the notebook JSON.  No changes to
+   common-lisp-jupyter are required.
 
 8. **`trans-eval` over raw `eval`**: ACL2's `trans-eval` provides structured
    results, full event processing, and proper error handling.  Raw `eval`

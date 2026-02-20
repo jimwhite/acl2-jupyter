@@ -92,8 +92,11 @@ class BridgeClient:
         return msg_type, content
 
     def eval_lisp(self, sexpr, timeout=60):
-        """Send a LISP command, collect results. Returns (result, stdout, error)."""
-        self.send("LISP", sexpr)
+        """Send an ACL2 command wrapped in (bridge::in-main-thread ...).
+        All client cell code must run on the main thread, same as our kernel.
+        Returns (result, stdout, error)."""
+        wrapped = f"(bridge::in-main-thread {sexpr})"
+        self.send("LISP", wrapped)
         result = None
         stdout_parts = []
         error = None
@@ -242,7 +245,7 @@ class TestBridge:
 
     def test_include_book(self, bridge):
         result, stdout, error = bridge.eval_lisp(
-            '(include-book "std/lists/append" :dir :system)', timeout=120
+            '(include-book "std/lists/append" :dir :system)', timeout=30
         )
         assert error is None, f"error: {error}"
 
@@ -250,6 +253,17 @@ class TestBridge:
         result, _, error = bridge.eval_lisp("(+ 100 200)")
         assert error is None, f"error: {error}"
         assert "300" in result
+
+    def test_include_book_apply(self, bridge):
+        result, stdout, error = bridge.eval_lisp(
+            '(include-book "projects/apply/top" :dir :system)', timeout=30
+        )
+        assert error is None, f"error: {error}"
+
+    def test_after_include_book_apply(self, bridge):
+        result, _, error = bridge.eval_lisp("(+ 1 1)")
+        assert error is None, f"error: {error}"
+        assert "2" in result
 
 
 # ---------------------------------------------------------------------------
@@ -282,7 +296,7 @@ class TestKernel:
 
     def test_include_book(self, kernel):
         result, stdout, error = kernel_eval(
-            kernel, '(include-book "std/lists/append" :dir :system)', timeout=120
+            kernel, '(include-book "std/lists/append" :dir :system)', timeout=30
         )
         assert error is None, f"error: {error}"
 
@@ -291,3 +305,30 @@ class TestKernel:
         assert error is None, f"error: {error}"
         assert result is not None
         assert "300" in result
+
+    def test_heavy_include_book(self, kernel):
+        """Test a heavy include-book (projects/apply/top) like the notebook uses."""
+        result, stdout, error = kernel_eval(
+            kernel, '(include-book "projects/apply/top" :dir :system)', timeout=30
+        )
+        assert error is None, f"error: {error}"
+
+    def test_after_heavy_include_book(self, kernel):
+        """Verify kernel is still alive after heavy include-book."""
+        result, _, error = kernel_eval(kernel, "(+ 1 1)")
+        assert error is None, f"error: {error}"
+        assert result is not None
+        assert "2" in result
+
+    def test_include_book_apply(self, kernel):
+        """Same include-book as the parse-ns notebook."""
+        result, stdout, error = kernel_eval(
+            kernel, '(include-book "projects/apply/top" :dir :system)', timeout=30
+        )
+        assert error is None, f"error: {error}"
+
+    def test_after_include_book_apply(self, kernel):
+        result, _, error = kernel_eval(kernel, "(+ 1 1)")
+        assert error is None, f"error: {error}"
+        assert result is not None
+        assert "2" in result

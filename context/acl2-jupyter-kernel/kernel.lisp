@@ -510,8 +510,13 @@
 ;;; No sbcl-restart, no LD, no set-raw-mode-on!.  We're called
 ;;; directly from sbcl --eval.
 
-(defun start (&optional connection-file)
-  "Start the ACL2 Jupyter kernel."
+(defun start (&optional connection-file
+              &key full-world event-forms deep-events)
+  "Start the ACL2 Jupyter kernel.
+   CONNECTION-FILE: Jupyter connection file path (or from argv).
+   FULL-WORLD: when T, first cell gets entire world (not just diff).
+   EVENT-FORMS: when T, include original event forms in metadata.
+   DEEP-EVENTS: when T, include embedded sub-events with full tuples."
   ;; Image initialization (idempotent -- same as sbcl-restart calls)
   (acl2::acl2-default-restart)
   ;; LP first-entry initialization (normally done by lp on first call).
@@ -533,16 +538,12 @@
     (f-put-global 'acl2::slow-array-action nil state)
     (setq *kernel-shutdown* nil)
     ;; Set world-baseline for first-cell event capture.
-    ;; ACL2_JUPYTER_FULL_WORLD=1 → baseline = NIL (first cell gets entire world).
+    ;; full-world T → baseline = NIL (first cell gets entire world).
     ;; Otherwise baseline = current world (first cell gets only its own diff).
     (setq *initial-world-baseline*
-          (if (equal (uiop:getenv "ACL2_JUPYTER_FULL_WORLD") "1")
-              nil
-              (w state)))
-    (setq *initial-event-forms-p*
-          (equal (uiop:getenv "ACL2_JUPYTER_EVENT_FORMS") "1"))
-    (setq *initial-deep-events-p*
-          (equal (uiop:getenv "ACL2_JUPYTER_DEEP_EVENTS") "1"))
+          (if full-world nil (w state)))
+    (setq *initial-event-forms-p* (and event-forms t))
+    (setq *initial-deep-events-p* (and deep-events t))
     (let ((conn (or connection-file
                     (first (uiop:command-line-arguments)))))
       (unless conn

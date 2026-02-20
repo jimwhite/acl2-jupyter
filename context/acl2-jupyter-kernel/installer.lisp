@@ -88,17 +88,26 @@
 
 (defmethod make-kernel-argv ((impl (eql :sbcl)) lisp-runtime core-path
                              quicklisp-setup)
-  (list lisp-runtime
-        "--tls-limit" "16384"
-        "--dynamic-space-size" "32000"
-        "--control-stack-size" "64"
-        "--disable-ldb"
-        "--core" core-path
-        "--end-runtime-options"
-        "--no-userinit"
-        "--load" quicklisp-setup
-        "--eval" "(ql:quickload :acl2-jupyter-kernel :silent t)"
-        "--eval" "(acl2-jupyter-kernel:start \"{connection_file}\")"))
+  (let* ((full-world  (equal (or (uiop:getenv "ACL2_JUPYTER_FULL_WORLD") "0") "1"))
+         (event-forms (equal (or (uiop:getenv "ACL2_JUPYTER_EVENT_FORMS") "0") "1"))
+         (deep-events (equal (or (uiop:getenv "ACL2_JUPYTER_DEEP_EVENTS") "0") "1"))
+         (start-form
+           (format nil "(acl2-jupyter-kernel:start \"~A\"~A~A~A)"
+                   "{connection_file}"
+                   (if full-world  " :full-world t"  "")
+                   (if event-forms " :event-forms t" "")
+                   (if deep-events " :deep-events t" ""))))
+    (list lisp-runtime
+          "--tls-limit" "16384"
+          "--dynamic-space-size" "32000"
+          "--control-stack-size" "64"
+          "--disable-ldb"
+          "--core" core-path
+          "--end-runtime-options"
+          "--no-userinit"
+          "--load" quicklisp-setup
+          "--eval" "(ql:quickload :acl2-jupyter-kernel :silent t)"
+          "--eval" start-form)))
 
 (defmethod jupyter:command-line ((instance acl2-installer))
   "Get the command line for an ACL2 kernel installation."
@@ -116,15 +125,9 @@
    dispatched on IMPL (a keyword like :SBCL or :CCL)."))
 
 (defmethod make-kernel-env ((impl (eql :sbcl)))
-  (let ((sbcl-home (or (uiop:getenv "SBCL_HOME") "/usr/local/lib/sbcl/"))
-        (full-world (or (uiop:getenv "ACL2_JUPYTER_FULL_WORLD") "0"))
-        (event-forms (or (uiop:getenv "ACL2_JUPYTER_EVENT_FORMS") "0"))
-        (deep-events (or (uiop:getenv "ACL2_JUPYTER_DEEP_EVENTS") "0")))
+  (let ((sbcl-home (or (uiop:getenv "SBCL_HOME") "/usr/local/lib/sbcl/")))
     (list :object-plist
-          "SBCL_HOME" sbcl-home
-          "ACL2_JUPYTER_FULL_WORLD" full-world
-          "ACL2_JUPYTER_EVENT_FORMS" event-forms
-          "ACL2_JUPYTER_DEEP_EVENTS" deep-events)))
+          "SBCL_HOME" sbcl-home)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Kernel Spec Override

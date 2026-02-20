@@ -110,20 +110,33 @@
           ;; Check for ACL2 keyword commands (lines starting with :)
           (cond
             ((char= ch #\:)
-             ;; Read the whole line as a keyword command
+             ;; Read the whole line as a keyword command.
+             ;; ACL2's ld translates e.g. `:pe foo` into `(PE 'FOO)`:
+             ;;   - intern the keyword's symbol-name in ACL2 package
+             ;;   - quote each argument
              (let ((line (string-trim '(#\Space #\Tab #\Return)
                                       (read-line stream nil ""))))
                (when (plusp (length line))
-                 ;; Parse it: read symbols from the line
-                 (let ((cmd-forms nil))
+                 (let ((raw-forms nil))
                    (with-input-from-string (ls line)
                      (handler-case
                          (loop for obj = (read ls nil ls)
                                until (eq obj ls)
-                               do (push obj cmd-forms))
+                               do (push obj raw-forms))
                        (error () nil)))
-                   (when cmd-forms
-                     (push (nreverse cmd-forms) forms))))))
+                   (when raw-forms
+                     (let* ((raw (nreverse raw-forms))
+                            (key (car raw))
+                            (args (cdr raw))
+                            (sym (intern (symbol-name key) "ACL2")))
+                       (if (eq key :q)
+                           ;; :q is special — exit ld
+                           (push '(acl2::exit-ld acl2::state) forms)
+                           ;; Normal keyword command: (sym 'arg1 'arg2 ...)
+                           (push (cons sym
+                                       (mapcar (lambda (a) (list 'quote a))
+                                               args))
+                                 forms))))))))
             ;; Check for comment lines
             ((char= ch #\;)
              (read-line stream nil ""))
@@ -176,11 +189,75 @@
                       (list (format nil "~A" c))))))))))
 
 (defmethod jupyter:code-is-complete ((k kernel) code)
-  "Check if ACL2 code is complete (balanced parens, etc.)."
-  (let ((*package* (find-package "ACL2")))
+  "Check if ACL2 code is complete (balanced parens, etc.).
+   Uses a fresh read pass that does NOT suppress errors (unlike
+   read-acl2-forms which wraps read errors into eval-time error forms)."
+  (let ((*package* (find-package "ACL2"))
+        (*readtable* (copy-readtable nil)))
     (handler-case
-        (progn
-          (read-acl2-forms code)
-          "complete")
+        (with-input-from-string (stream code)
+          (loop
+            ;; Skip whitespace
+            (loop for ch = (peek-char nil stream nil nil)
+                  while (and ch (member ch '(#\Space #\Tab #\Newline #\Return)))
+                  do (read-char stream))
+            (let ((ch (peek-char nil stream nil nil)))
+              (when (null ch) (return "complete"))
+              (cond
+                ((char= ch #\:) (read-line stream nil ""))
+                ((char= ch #\;) (read-line stream nil ""))
+                (t (let ((form (read stream nil stream)))
+                     (when (eq form stream) (return "complete"))))))))
       (end-of-file () "incomplete")
       (error () "invalid"))))
+
+
+;;; ---------------------------------------------------------------------------
+;;; Shell Thread Stack Size
+;;; ---------------------------------------------------------------------------
+;;; CL-jupyter creates a "Jupyter Shell" thread for handling execute requests.
+;;; bordeaux-threads:make-thread on SBCL doesn't pass a :stack-size, so the
+;;; thread gets SBCL's default (~2MB). ACL2's include-book and proof engine
+;;; need deep recursion, causing stack overflow. We override the start method
+;;; to create the shell thread with the same 64MB control stack that
+;;; saved_acl2 uses for its main thread.
+
+(defparameter *shell-thread-stack-size* (* 64 1024 1024)
+  "Control stack size for the Jupyter Shell thread (bytes). Default 64MB,
+   matching ACL2's --control-stack-size 64 setting.")
+
+(defmethod jupyter:start :around ((k kernel))
+  "Wrap the parent start method to replace the Jupyter Shell thread with
+   one that has a sufficiently large control stack for ACL2."
+  (call-next-method)
+  ;; The parent method created a shell thread with default stack.
+  ;; Kill it and replace with one that has a proper stack size.
+  (let ((old-thread (jupyter::kernel-shell-thread k)))
+    (when (and old-thread (bordeaux-threads:thread-alive-p old-thread))
+      (bordeaux-threads:destroy-thread old-thread))
+    (setf (jupyter::kernel-shell-thread k)
+          (sb-thread:make-thread (lambda () (jupyter::run-shell k))
+                                 :name "Jupyter Shell"
+                                 :arguments nil))))
+
+;;; ---------------------------------------------------------------------------
+;;; Kernel Startup
+;;; ---------------------------------------------------------------------------
+;;; This is the entry point for the kernel process, called after ACL2 has
+;;; initialized (via sbcl-restart → acl2-default-restart → LP → return-from-lp).
+;;; It starts the Jupyter kernel event loop.
+
+(defun start (&optional connection-file)
+  "Start the ACL2 Jupyter kernel event loop.
+   Called after ACL2 initialization is complete (LP has exited via
+   return-from-lp). CONNECTION-FILE is the path to the Jupyter
+   connection file. If not provided, it is read from the
+   JUPYTER_CONNECTION_FILE environment variable."
+  ;; Disable the SBCL debugger so errors don't hang the kernel process
+  ;; waiting for interactive input.
+  (sb-ext:disable-debugger)
+  (let ((conn (or connection-file
+                  (uiop:getenv "JUPYTER_CONNECTION_FILE"))))
+    (unless conn
+      (error "No connection file: pass as argument or set JUPYTER_CONNECTION_FILE"))
+    (jupyter:run-kernel 'kernel conn)))

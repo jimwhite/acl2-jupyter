@@ -1,0 +1,27 @@
+2026-02-20 01:28:04 [INFO] <KERNEL> Starting acl2 kernel
+2026-02-20 01:28:04 [INFO] <KERNEL> Parsing connection file /tmp/tmp0hql0_fn.json
+2026-02-20 01:28:04 [INFO] <MAC> Starting message authentification
+2026-02-20 01:28:04 [INFO] <MAC> Using hmac with sha256 digest for message signing.
+2026-02-20 01:28:04 [INFO] <HB-CHANNEL> Starting channel on tcp://127.0.0.1:37213
+2026-02-20 01:28:04 [INFO] <IOPUB-CHANNEL> Starting channel on tcp://127.0.0.1:48193
+2026-02-20 01:28:04 [INFO] <HB-CHANNEL> Starting thread
+2026-02-20 01:28:04 [INFO] <SHELL-CHANNEL> Starting channel on tcp://127.0.0.1:35735
+2026-02-20 01:28:04 [INFO] <STDIN-CHANNEL> Starting channel on tcp://127.0.0.1:33925
+2026-02-20 01:28:04 [INFO] <CONTROL-CHANNEL> Starting channel on tcp://127.0.0.1:33729
+2026-02-20 01:28:04 [INFO] <HISTORY> Starting history
+2026-02-20 01:28:04 [INFO] <KERNEL> Handling kernel_info_request message
+2026-02-20 01:28:04 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:28:04 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:28:04 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:28:04 [INFO] <KERNEL> Handling interrupt_request message
+2026-02-20 01:28:05 [INFO] <KERNEL> Handling shutdown_request message
+2026-02-20 01:28:05 [INFO] <KERNEL> Shell thread exiting normally.
+2026-02-20 01:28:05 [INFO] <KERNEL> Stopping acl2 kernel
+2026-02-20 01:28:05 [INFO] <HB-CHANNEL> Stopping thread
+2026-02-20 01:28:05 [INFO] <HB-CHANNEL> Stopping channel
+2026-02-20 01:28:05 [INFO] <IOPUB-CHANNEL> Stopping channel
+2026-02-20 01:28:05 [INFO] <SHELL-CHANNEL> Stopping channel
+2026-02-20 01:28:05 [INFO] <STDIN-CHANNEL> Stopping channel
+2026-02-20 01:28:05 [INFO] <CONTROL-CHANNEL> Stopping channel
+2026-02-20 01:28:05 [INFO] <MAC> Stopping message authentification
+2026-02-20 01:28:05 [INFO] <HISTORY> Stopping history

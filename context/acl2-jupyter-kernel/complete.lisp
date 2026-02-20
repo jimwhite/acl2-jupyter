@@ -33,9 +33,6 @@
          (prefix (string-upcase (subseq code start cursor-pos)))
          (prefix-len (length prefix)))
     (when (plusp prefix-len)
-      ;; Update match-set range
-      (setf (jupyter:match-set-start match-set) start
-            (jupyter:match-set-end match-set) cursor-pos)
       ;; Search for matching symbols in the ACL2 package and imported packages
       (dolist (pkg (list (find-package "ACL2")
                          (find-package "ACL2-INPUT-CHANNEL")
@@ -50,4 +47,5 @@
                                       (symbol-name sym))))
                   (jupyter:match-set-add match-set
                                          display-name
-                                         (symbol-type-string sym)))))))))))
+                                         start cursor-pos
+                                         :type (symbol-type-string sym)))))))))))

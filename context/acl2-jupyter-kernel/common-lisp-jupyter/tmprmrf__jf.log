@@ -1,0 +1,33 @@
+2026-02-20 01:33:18 [INFO] <KERNEL> Starting acl2 kernel
+2026-02-20 01:33:18 [INFO] <KERNEL> Parsing connection file /tmp/tmprmrf__jf.json
+2026-02-20 01:33:18 [INFO] <MAC> Starting message authentification
+2026-02-20 01:33:18 [INFO] <MAC> Using hmac with sha256 digest for message signing.
+2026-02-20 01:33:18 [INFO] <HB-CHANNEL> Starting channel on tcp://127.0.0.1:41737
+2026-02-20 01:33:18 [INFO] <IOPUB-CHANNEL> Starting channel on tcp://127.0.0.1:39409
+2026-02-20 01:33:18 [INFO] <HB-CHANNEL> Starting thread
+2026-02-20 01:33:18 [INFO] <SHELL-CHANNEL> Starting channel on tcp://127.0.0.1:55825
+2026-02-20 01:33:18 [INFO] <STDIN-CHANNEL> Starting channel on tcp://127.0.0.1:40043
+2026-02-20 01:33:18 [INFO] <CONTROL-CHANNEL> Starting channel on tcp://127.0.0.1:48319
+2026-02-20 01:33:18 [INFO] <HISTORY> Starting history
+2026-02-20 01:33:18 [INFO] <KERNEL> Handling kernel_info_request message
+2026-02-20 01:33:19 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:33:19 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:33:19 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:33:19 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:33:19 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:33:19 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:33:19 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:33:19 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:33:19 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:33:19 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:33:19 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:33:19 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:33:19 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:33:19 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:33:19 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:33:19 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:33:19 [INFO] <KERNEL> Handling execute_request message
+2026-02-20 01:33:20 [INFO] <KERNEL> Handling is_complete_request message
+2026-02-20 01:33:21 [INFO] <KERNEL> Handling is_complete_request message
+2026-02-20 01:33:22 [INFO] <KERNEL> Handling is_complete_request message
+2026-02-20 01:33:22 [INFO] <KERNEL> Handling execute_request message

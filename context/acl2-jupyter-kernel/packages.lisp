@@ -4,5 +4,6 @@
   (:nicknames #:jupyter/acl2)
   (:use #:common-lisp)
   (:export #:kernel
+           #:start
            #:install
            #:install-image))

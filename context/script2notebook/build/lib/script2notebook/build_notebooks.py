@@ -4,32 +4,31 @@
 Two-phase workflow:
 
   1. **Convert** — Use ``script2notebook`` to convert ``.lisp`` / ``.lsp`` /
-     ``.acl2`` source files to ``.ipynb`` notebooks, preserving directory
-     structure under an output root.
+     ``.acl2`` source files to ``.ipynb`` notebooks.
 
   2. **Execute** — Run notebooks whose source ``.lisp`` has an accompanying
      ``.cert`` file through the ACL2 kernel via ``jupyter nbconvert --execute``
      to capture execution metadata (display data, outputs).
+
+By default notebooks are placed alongside the source files (in-place).  Use
+``-o`` to redirect output to a separate directory tree.
 
 Both phases are incremental: files are only rebuilt when the source is newer
 than the output.  Use ``--force`` to override.
 
 Usage examples::
 
-    # Convert all .lisp files under /home/acl2 into notebooks
-    build-notebooks convert /home/acl2 -o /workspace/notebooks/acl2
+    # Convert all .lisp files under defsort — notebooks go alongside .lisp
+    build-notebooks convert /home/acl2/books/defsort
 
-    # Execute only the certified ones
-    build-notebooks execute /home/acl2 -o /workspace/notebooks/acl2
+    # Do both phases in one shot (in-place)
+    build-notebooks all /home/acl2/books/defsort
 
-    # Do both in one shot
+    # Redirect output to a separate tree
     build-notebooks all /home/acl2 -o /workspace/notebooks/acl2
 
     # Parallel execution with 4 workers
-    build-notebooks execute /home/acl2 -o /workspace/notebooks/acl2 -j 4
-
-    # Only process a subtree
-    build-notebooks all /home/acl2/books/arithmetic-3 -o /workspace/notebooks/acl2/books/arithmetic-3
+    build-notebooks all /home/acl2/books/defsort -j 4
 """
 
 from __future__ import annotations
@@ -108,7 +107,7 @@ def convert_one(
     notebook.parent.mkdir(parents=True, exist_ok=True)
 
     result = subprocess.run(
-        ["script2notebook", str(source), "-o", str(notebook)],
+        ["script2notebook", "--fenced", str(source), "-o", str(notebook)],
         capture_output=True,
         text=True,
     )
@@ -152,8 +151,14 @@ def _execute_notebook(
     cell_timeout: int,
     startup_timeout: int,
     allow_errors: bool,
+    source_dir: Path | None = None,
 ) -> tuple[Path, bool, str]:
-    """Execute a single notebook in-place.  Returns (path, success, message)."""
+    """Execute a single notebook in-place.  Returns (path, success, message).
+
+    *source_dir*, when given, sets the kernel working directory so that
+    relative ``include-book`` paths resolve against the original source
+    tree rather than the output directory.
+    """
     cmd = [
         "jupyter", "nbconvert",
         "--to", "notebook",
@@ -163,6 +168,8 @@ def _execute_notebook(
         f"--ExecutePreprocessor.timeout={cell_timeout}",
         f"--ExecutePreprocessor.startup_timeout={startup_timeout}",
     ]
+    if source_dir is not None:
+        cmd.append(f"--ExecutePreprocessor.cwd={source_dir}")
     if allow_errors:
         cmd.append("--ExecutePreprocessor.allow_errors=True")
     cmd.append(str(notebook))
@@ -265,7 +272,8 @@ def phase_execute(
         for source, notebook in pairs:
             log.info("Executing %s", notebook)
             path, ok, msg = _execute_notebook(
-                notebook, kernel_name, cell_timeout, startup_timeout, allow_errors
+                notebook, kernel_name, cell_timeout, startup_timeout, allow_errors,
+                source_dir=source.parent,
             )
             if ok:
                 log.info("  %s", msg)
@@ -283,6 +291,7 @@ def phase_execute(
                     cell_timeout,
                     startup_timeout,
                     allow_errors,
+                    source_dir=source.parent,
                 ): (source, notebook)
                 for source, notebook in pairs
             }
@@ -321,8 +330,8 @@ def _build_parser() -> argparse.ArgumentParser:
     conv = sub.add_parser("convert", help="Convert .lisp files to .ipynb")
     conv.add_argument("source", type=Path, help="Root directory of ACL2 sources")
     conv.add_argument(
-        "-o", "--output", type=Path, required=True,
-        help="Output directory for notebooks (preserves sub-dir structure)",
+        "-o", "--output", type=Path, default=None,
+        help="Output directory (default: same as source — in-place)",
     )
     conv.add_argument("--force", action="store_true", help="Convert even if up-to-date")
     conv.add_argument("-v", "--verbose", action="store_true")
@@ -331,8 +340,8 @@ def _build_parser() -> argparse.ArgumentParser:
     exe = sub.add_parser("execute", help="Execute certified notebooks through ACL2 kernel")
     exe.add_argument("source", type=Path, help="Root directory of ACL2 sources")
     exe.add_argument(
-        "-o", "--output", type=Path, required=True,
-        help="Output directory (must match convert output)",
+        "-o", "--output", type=Path, default=None,
+        help="Output directory (default: same as source — in-place)",
     )
     exe.add_argument(
         "-j", "--jobs", type=int, default=1,
@@ -361,8 +370,8 @@ def _build_parser() -> argparse.ArgumentParser:
     both = sub.add_parser("all", help="Convert then execute (both phases)")
     both.add_argument("source", type=Path, help="Root directory of ACL2 sources")
     both.add_argument(
-        "-o", "--output", type=Path, required=True,
-        help="Output directory for notebooks",
+        "-o", "--output", type=Path, default=None,
+        help="Output directory (default: same as source — in-place)",
     )
     both.add_argument(
         "-j", "--jobs", type=int, default=1,
@@ -400,7 +409,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     source = args.source.resolve()
-    output = args.output.resolve()
+    output = (args.output or args.source).resolve()
 
     if not source.is_dir():
         log.error("Source %s is not a directory", source)

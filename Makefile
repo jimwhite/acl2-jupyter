@@ -107,12 +107,12 @@ run:
 # =============================================================================
 # Convert ACL2 source files (.lisp) to Jupyter notebooks and execute
 # certified ones through the ACL2 kernel to capture proof output.
+# By default notebooks are placed alongside the source .lisp files (in-place).
 
 .PHONY: notebooks notebooks-convert notebooks-execute install-script2notebook
 
-# Source and output directories
+# Source directory
 ACL2_HOME ?= /home/acl2
-NOTEBOOKS_DIR ?= $(PWD)/examples/acl2-notebooks
 NOTEBOOK_JOBS ?= 1
 NOTEBOOK_CELL_TIMEOUT ?= 600
 NOTEBOOK_STARTUP_TIMEOUT ?= 120
@@ -129,35 +129,35 @@ install-script2notebook:
 		echo "build-notebooks already installed"; \
 	fi
 
-# Convert all ACL2 source files to notebooks (incremental)
+# Convert all ACL2 source files to notebooks (incremental, in-place)
 notebooks-convert: install-script2notebook
-	build-notebooks convert $(ACL2_HOME) -o $(NOTEBOOKS_DIR) -v
+	build-notebooks convert $(ACL2_HOME) -v
 
-# Execute certified notebooks through ACL2 kernel (incremental)
+# Execute certified notebooks through ACL2 kernel (incremental, in-place)
 notebooks-execute: install-script2notebook
-	build-notebooks execute $(ACL2_HOME) -o $(NOTEBOOKS_DIR) -v \
+	build-notebooks execute $(ACL2_HOME) -v \
 		-j $(NOTEBOOK_JOBS) \
 		--cell-timeout $(NOTEBOOK_CELL_TIMEOUT) \
 		--startup-timeout $(NOTEBOOK_STARTUP_TIMEOUT)
 
-# Convert + execute in one step
+# Convert + execute in one step (in-place)
 notebooks: install-script2notebook
-	build-notebooks all $(ACL2_HOME) -o $(NOTEBOOKS_DIR) -v \
+	build-notebooks all $(ACL2_HOME) -v \
 		-j $(NOTEBOOK_JOBS) \
 		--cell-timeout $(NOTEBOOK_CELL_TIMEOUT) \
 		--startup-timeout $(NOTEBOOK_STARTUP_TIMEOUT)
 
 # Force rebuild everything
 notebooks-force: install-script2notebook
-	build-notebooks all $(ACL2_HOME) -o $(NOTEBOOKS_DIR) -v --force \
+	build-notebooks all $(ACL2_HOME) -v --force \
 		-j $(NOTEBOOK_JOBS) \
 		--cell-timeout $(NOTEBOOK_CELL_TIMEOUT) \
 		--startup-timeout $(NOTEBOOK_STARTUP_TIMEOUT)
 
-# Convert a single directory (usage: make notebooks-dir DIR=/home/acl2/books/defsort)
+# Convert + execute a single directory (usage: make notebooks-dir DIR=/home/acl2/books/defsort)
 notebooks-dir: install-script2notebook
 	@if [ -z "$(DIR)" ]; then echo "Usage: make notebooks-dir DIR=/home/acl2/books/some-dir"; exit 1; fi
-	build-notebooks all $(DIR) -o $(NOTEBOOKS_DIR)/$(shell realpath --relative-to=$(ACL2_HOME) $(DIR)) -v \
+	build-notebooks all $(DIR) -v \
 		-j $(NOTEBOOK_JOBS) \
 		--cell-timeout $(NOTEBOOK_CELL_TIMEOUT) \
 		--startup-timeout $(NOTEBOOK_STARTUP_TIMEOUT)

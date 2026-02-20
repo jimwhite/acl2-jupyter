@@ -118,6 +118,20 @@ def convert_one(
     return notebook
 
 
+def _log_convert_progress(
+    done: int, total: int, converted: int, errors: int, interval: float = 5.0,
+    _state: dict = {"last": 0.0},
+) -> None:
+    """Log a progress line at most every *interval* seconds."""
+    now = time.monotonic()
+    if now - _state["last"] >= interval or done == total:
+        _state["last"] = now
+        log.info(
+            "  progress: %d/%d (converted %d, errors %d)",
+            done, total, converted, errors,
+        )
+
+
 def phase_convert(
     source_root: Path,
     output_root: Path,
@@ -126,9 +140,11 @@ def phase_convert(
 ) -> tuple[int, int, int]:
     """Convert all source files.  Returns (converted, skipped, errors)."""
     sources = _find_source_files(source_root)
-    log.info("Found %d source files under %s", len(sources), source_root)
+    total = len(sources)
+    log.info("Found %d source files under %s", total, source_root)
 
     converted = skipped = errors = 0
+    done = 0
 
     if jobs <= 1:
         for source in sources:
@@ -141,27 +157,38 @@ def phase_convert(
                     errors += 1
             else:
                 converted += 1
+            done += 1
+            if total > 100:
+                _log_convert_progress(done, total, converted, errors)
     else:
         with ProcessPoolExecutor(max_workers=jobs) as pool:
             futures = {
                 pool.submit(convert_one, source, source_root, output_root, force): source
                 for source in sources
             }
-            for future in as_completed(futures):
-                source = futures[future]
-                try:
-                    result = future.result()
-                    if result is None:
-                        notebook = _notebook_path(source, source_root, output_root)
-                        if notebook.exists():
-                            skipped += 1
+            try:
+                for future in as_completed(futures):
+                    source = futures[future]
+                    try:
+                        result = future.result()
+                        if result is None:
+                            notebook = _notebook_path(source, source_root, output_root)
+                            if notebook.exists():
+                                skipped += 1
+                            else:
+                                errors += 1
                         else:
-                            errors += 1
-                    else:
-                        converted += 1
-                except Exception as exc:
-                    log.error("Convert %s: exception: %s", source, exc)
-                    errors += 1
+                            converted += 1
+                    except Exception as exc:
+                        log.error("Convert %s: exception: %s", source, exc)
+                        errors += 1
+                    done += 1
+                    if total > 100:
+                        _log_convert_progress(done, total, converted, errors)
+            except KeyboardInterrupt:
+                log.warning("Interrupted — cancelling remaining conversions…")
+                pool.shutdown(wait=False, cancel_futures=True)
+                return converted, skipped, errors
 
     return converted, skipped, errors
 
@@ -319,19 +346,23 @@ def phase_execute(
                 ): (source, notebook)
                 for source, notebook in pairs
             }
-            for future in as_completed(futures):
-                source, notebook = futures[future]
-                try:
-                    path, ok, msg = future.result()
-                    if ok:
-                        log.info("Executed %s: %s", path, msg)
-                        executed += 1
-                    else:
-                        log.error("Execute %s: %s", path, msg)
+            try:
+                for future in as_completed(futures):
+                    source, notebook = futures[future]
+                    try:
+                        path, ok, msg = future.result()
+                        if ok:
+                            log.info("Executed %s: %s", path, msg)
+                            executed += 1
+                        else:
+                            log.error("Execute %s: %s", path, msg)
+                            errors += 1
+                    except Exception as exc:
+                        log.error("Execute %s: exception: %s", notebook, exc)
                         errors += 1
-                except Exception as exc:
-                    log.error("Execute %s: exception: %s", notebook, exc)
-                    errors += 1
+            except KeyboardInterrupt:
+                log.warning("Interrupted — cancelling remaining executions…")
+                pool.shutdown(wait=False, cancel_futures=True)
 
     skipped = total_certified - executed - errors
     return executed, skipped, errors

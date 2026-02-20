@@ -116,8 +116,11 @@
    dispatched on IMPL (a keyword like :SBCL or :CCL)."))
 
 (defmethod make-kernel-env ((impl (eql :sbcl)))
-  (let ((sbcl-home (or (uiop:getenv "SBCL_HOME") "/usr/local/lib/sbcl/")))
-    (list :object-plist "SBCL_HOME" sbcl-home)))
+  (let ((sbcl-home (or (uiop:getenv "SBCL_HOME") "/usr/local/lib/sbcl/"))
+        (full-world (or (uiop:getenv "ACL2_JUPYTER_FULL_WORLD") "0")))
+    (list :object-plist
+          "SBCL_HOME" sbcl-home
+          "ACL2_JUPYTER_FULL_WORLD" full-world)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Kernel Spec Override

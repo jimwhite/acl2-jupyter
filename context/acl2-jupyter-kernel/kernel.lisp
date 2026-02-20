@@ -34,6 +34,11 @@
 ;;; Main Thread Dispatch
 ;;; ---------------------------------------------------------------------------
 
+(defvar *initial-world-baseline* nil
+  "World baseline set by start, picked up by the kernel instance.
+   NIL means full-world mode (first cell gets entire world).
+   A world value means diff-only mode.")
+
 (defvar *main-thread-lock* (bordeaux-threads:make-lock "acl2-jupyter-main-thread-lock"))
 (defvar *main-thread-work* nil)
 (defvar *main-thread-ready* (bt-semaphore:make-semaphore))
@@ -166,8 +171,14 @@
 ;;; ---------------------------------------------------------------------------
 
 (defclass kernel (jupyter:kernel)
-  ((cell-events  :initform #() :accessor cell-events)
-   (cell-package :initform "ACL2" :accessor cell-package))
+  ((cell-events     :initform #() :accessor cell-events)
+   (cell-package    :initform "ACL2" :accessor cell-package)
+   (world-baseline  :initform *initial-world-baseline*
+                    :accessor world-baseline
+                    :documentation "Previous world state for event diff.
+   Set from *initial-world-baseline* when the kernel is instantiated.
+   NIL = full-world mode (first cell gets entire world).
+   A world = diff-only (first cell gets only its own additions)."))
   (:default-initargs
     :name "acl2"
     :package (find-package "ACL2")
@@ -362,19 +373,25 @@
                 ;; so that pkg-witness can intern into it during undo etc.
                 ;; This mirrors lp which wraps ld-fn in with-suppression.
                 (acl2::with-suppression
-                 (let ((pre-wrld (w *the-live-state*)))
-                   (with-acl2-output-to *standard-output*
+                 (with-acl2-output-to *standard-output*
                      (let ((channel (make-string-input-channel trimmed)))
                        (unwind-protect
                            (jupyter-read-eval-print-loop channel *the-live-state*)
-                         (close-string-input-channel channel))))
-                   ;; After eval: capture events + package from world diff
+                         (close-string-input-channel channel)))
+                   ;; After eval: capture events + package.
+                   ;; Diff post-world against world-baseline.  The baseline
+                   ;; is set in start: NIL for full-world mode (first cell
+                   ;; gets the entire world) or (w state) for diff-only.
+                   ;; After each cell, baseline advances to post-world.
                    (let* ((post-wrld (w *the-live-state*))
-                          (diff (ldiff post-wrld pre-wrld))
+                          (baseline (world-baseline k))
+                          (scan (if baseline
+                                    (ldiff post-wrld baseline)
+                                    post-wrld))
                           (events
                             (let ((*package* (find-package "ACL2"))
                                   (*print-case* :upcase))
-                              (loop for triple in diff
+                              (loop for triple in scan
                                     when (and (eq (car triple)
                                                   'acl2::event-landmark)
                                               (eq (cadr triple)
@@ -382,9 +399,10 @@
                                     collect (prin1-to-string
                                              (cddr triple))))))
                      (setf (cell-events k)
-                           (coerce (nreverse events) 'vector)
+                           (coerce events 'vector)
                            (cell-package k)
-                           (acl2::current-package *the-live-state*))
+                           (acl2::current-package *the-live-state*)
+                           (world-baseline k) post-wrld)
                      (values)))))
             (error (c)
               (values (symbol-name (type-of c))
@@ -456,6 +474,13 @@
     (eval '(acl2::set-slow-alist-action nil))
     (f-put-global 'acl2::slow-array-action nil state)
     (setq *kernel-shutdown* nil)
+    ;; Set world-baseline for first-cell event capture.
+    ;; ACL2_JUPYTER_FULL_WORLD=1 → baseline = NIL (first cell gets entire world).
+    ;; Otherwise baseline = current world (first cell gets only its own diff).
+    (setq *initial-world-baseline*
+          (if (equal (uiop:getenv "ACL2_JUPYTER_FULL_WORLD") "1")
+              nil
+              (w state)))
     (let ((conn (or connection-file
                     (first (uiop:command-line-arguments)))))
       (unless conn

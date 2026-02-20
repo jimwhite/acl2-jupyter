@@ -88,13 +88,16 @@ export const activate = (context) => ({
         // Show event landmark
         if (i < events.length && events[i]) {
           const eventEl = document.createElement("div");
-          eventEl.style.color = "var(--vscode-textPreformat-foreground, #ce9178)";
           eventEl.style.whiteSpace = "pre-wrap";
           eventEl.style.wordBreak = "break-word";
           if (i < forms.length && forms[i]) {
+            // When shown alongside a form, make the event smaller/muted
             eventEl.style.fontSize = "0.9em";
             eventEl.style.marginTop = "4px";
             eventEl.style.color = "var(--vscode-descriptionForeground, #888)";
+          } else {
+            // Event shown alone — use normal foreground
+            eventEl.style.color = "var(--vscode-editor-foreground, #d4d4d4)";
           }
           eventEl.textContent = events[i];
           eventBlock.appendChild(eventEl);

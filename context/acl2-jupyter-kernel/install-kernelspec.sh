@@ -22,9 +22,21 @@ LOCAL_PROJECTS="${HOME}/quicklisp/local-projects"
 # Resolve the directory where this script lives (= where the .asd is)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Ensure acl2-jupyter-kernel is in Quicklisp local-projects
+# Ensure acl2-jupyter-kernel is in Quicklisp local-projects (copy if missing or stale)
 TARGET="${LOCAL_PROJECTS}/acl2-jupyter-kernel"
+NEEDS_COPY=0
 if [ ! -e "${TARGET}/acl2-jupyter-kernel.asd" ]; then
+    NEEDS_COPY=1
+else
+    # Update if any source file is newer than the target .asd
+    for f in "${SCRIPT_DIR}"/*.lisp "${SCRIPT_DIR}"/*.asd; do
+        if [ "$f" -nt "${TARGET}/acl2-jupyter-kernel.asd" ]; then
+            NEEDS_COPY=1
+            break
+        fi
+    done
+fi
+if [ "${NEEDS_COPY}" = "1" ]; then
     echo "Copying acl2-jupyter-kernel into ${LOCAL_PROJECTS}/"
     mkdir -p "${TARGET}"
     cp -a "${SCRIPT_DIR}"/*.lisp "${SCRIPT_DIR}"/*.asd "${TARGET}/"
@@ -39,8 +51,17 @@ if [ -d "${EXTENSION_SRC}" ] && [ ! -e "${EXTENSION_DST}/package.json" ]; then
     cp -a "${EXTENSION_SRC}"/* "${EXTENSION_DST}/"
 fi
 
+# Kernel start options — set explicitly rather than relying on defaults.
+# These become flags in kernel.json's argv start form.
+export ACL2_JUPYTER_EVENT_FORMS="${ACL2_JUPYTER_EVENT_FORMS:-1}"
+export ACL2_JUPYTER_FULL_WORLD="${ACL2_JUPYTER_FULL_WORLD:-0}"
+export ACL2_JUPYTER_DEEP_EVENTS="${ACL2_JUPYTER_DEEP_EVENTS:-0}"
+
 echo "=== Installing ACL2 Jupyter Kernelspec ==="
 echo "  saved_acl2: ${SAVED_ACL2}"
+echo "  event-forms: ${ACL2_JUPYTER_EVENT_FORMS}"
+echo "  full-world:  ${ACL2_JUPYTER_FULL_WORLD}"
+echo "  deep-events: ${ACL2_JUPYTER_DEEP_EVENTS}"
 echo ""
 
 "${SAVED_ACL2}" <<EOF

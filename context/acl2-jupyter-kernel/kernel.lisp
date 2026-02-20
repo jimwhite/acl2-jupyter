@@ -8,11 +8,18 @@
 ;;;; evaluate-code runs on the shell thread.  It dispatches ACL2 work
 ;;;; to the main thread via in-main-thread, which blocks until done.
 ;;;;
-;;;; ALL user code is evaluated through ACL2's trans-eval inside LP
-;;;; scaffolding copied from ld-fn0.  This gives us:
-;;;;   - *ld-level* > 0, catch tags, acl2-unwind-protect  (LP context)
+;;;; The main thread lives inside a PERSISTENT LP context set up once
+;;;; by start.  This means *ld-level* stays at 1, the unwind-protect
+;;;; stack persists, and command history accumulates across cells --
+;;;; just like a normal ACL2 session.
+;;;;
+;;;; ALL user code is evaluated through ACL2's trans-eval, giving us:
 ;;;;   - Structured (stobjs-out . replaced-val) results   (not stdout)
 ;;;;   - ACL2's own reader (via read-object on a channel)
+;;;;   - Full event processing, command landmarks, world updates
+;;;;
+;;;; No sbcl-restart, no LD, no set-raw-mode-on!.  We set up LP
+;;;; scaffolding directly and call trans-eval ourselves.
 ;;;;
 ;;;; Proof/event output streams to Jupyter stdout via ACL2 channels.
 ;;;; Per-form result values are sent as Jupyter execute_result messages.
@@ -107,7 +114,7 @@
                              (error (condition)
                                (setq ,errval condition)
                                (setq ,finished t)))
-                         ;; Non-local exit (ACL2 throw) — same as Bridge:
+                         ;; Non-local exit (ACL2 throw) -- same as Bridge:
                          ;; set errval so caller sees the error.
                          (unless ,finished
                            (setq ,errval
@@ -115,7 +122,7 @@
                                   'simple-error
                                   :format-control "Unexpected non-local exit.")))
                          (return-from main-thread-work nil)))
-                     ;; Signal AFTER the block — same position as Bridge.
+                     ;; Signal AFTER the block -- same position as Bridge.
                      ;; This runs whether we exited normally or via
                      ;; return-from (non-local exit / error).
                      (bt-semaphore:signal-semaphore ,done))))))
@@ -205,15 +212,57 @@
 
 
 ;;; ---------------------------------------------------------------------------
-;;; LP Scaffolding + trans-eval  —  our own read-eval-print loop
+;;; Keyword Command Expansion
 ;;; ---------------------------------------------------------------------------
-;;; We copy the essential LP setup from ld-fn0 (raw code in ld.lisp):
-;;;   1. ACL2-UNWIND / push unwind-protect stack
-;;;   2. Increment *LD-LEVEL* (both CL special and state global)
-;;;   3. CATCH 'LOCAL-TOP-LEVEL
-;;;   4. trans-eval for each form — returns structured results
-;;;   5. Cleanup: restore *LD-LEVEL*, pop unwind stack
+;;; ACL2's LD supports keyword commands:
+;;;   :pe foo  =>  (ACL2::PE 'FOO)
+;;;   :ubt bar =>  (ACL2::UBT 'BAR)
 ;;;
+;;; We replicate the logic from ld-read-keyword-command (ld.lisp:820):
+;;; intern keyword name in "ACL2", look up arity, read N more forms,
+;;; quote them, build (SYM 'arg1 'arg2 ...).
+;;;
+;;; :q exits the kernel process (Jupyter client handles restart).
+
+(defun keyword-command-arity (sym state)
+  "Return the number of arguments for keyword command SYM, or NIL if
+   SYM is not a known function/macro."
+  (let ((wrld (w state)))
+    (cond ((function-symbolp sym wrld)
+           (length (formals sym wrld)))
+          ((getpropc sym 'acl2::macro-body nil wrld)
+           (macro-minimal-arity sym nil wrld))
+          (t nil))))
+
+(defun expand-keyword-command (key channel state)
+  "Expand keyword KEY into a full form, reading additional arguments
+   from CHANNEL.  Returns the expanded form ready for trans-eval.
+   Signals an error for unrecognized keywords."
+  (cond
+    ((eq key :q)
+     ;; Exit immediately.  :abort t avoids deadlock with the Jupyter
+     ;; shell thread (which is blocked waiting on in-main-thread).
+     (sb-ext:exit :code 0 :abort t))
+    (t
+     (let* ((sym (intern (symbol-name key) "ACL2"))
+            (len (keyword-command-arity sym state)))
+       (cond
+         (len
+          (let ((args (loop repeat len
+                            collect (multiple-value-bind (eofp obj state)
+                                        (acl2::read-object channel state)
+                                      (when eofp
+                                        (error "Unfinished keyword command ~S"
+                                               key))
+                                      (list 'quote obj)))))
+            (cons sym args)))
+         (t
+          (error "Unrecognized keyword command ~S" key)))))))
+
+
+;;; ---------------------------------------------------------------------------
+;;; Read-Eval-Print Loop (runs inside persistent LP context from start)
+;;; ---------------------------------------------------------------------------
 ;;; trans-eval returns (mv erp (stobjs-out . replaced-val) state).
 ;;;   - erp non-nil means error (already printed to channels)
 ;;;   - stobjs-out = (NIL NIL STATE) for error triples (most events)
@@ -222,79 +271,65 @@
 ;;;   - For non-triples: replaced-val is the value(s) directly.
 
 (defun jupyter-read-eval-print-loop (channel state)
-  "Read forms from CHANNEL, evaluate each via trans-eval inside LP context,
-   and send structured results to Jupyter.  Proof/event output streams to
-   stdout via the already-bound ACL2 output channels."
-  (let* ((old-ld-level (f-get-global 'acl2::ld-level state))
-         (new-ld-level (1+ old-ld-level)))
-    ;; Set up LP context — mirroring ld-fn0's raw code
-    (acl2::acl2-unwind acl2::*ld-level* nil)
-    (push nil acl2::*acl2-unwind-protect-stack*)
-    (let ((acl2::*ld-level* new-ld-level)
-          (*readtable* acl2::*acl2-readtable*))
-      (f-put-global 'acl2::ld-level new-ld-level state)
-      (unwind-protect
-          (catch 'acl2::local-top-level
-            (loop
-              (multiple-value-bind (eofp form state)
-                  (acl2::read-object channel state)
-                (when eofp (return))
-                ;; Evaluate via trans-eval — full ACL2 event processing
-                (multiple-value-bind (erp trans-ans state)
-                    (acl2::trans-eval-default-warning
-                     form 'acl2-jupyter state t)
-                  (cond
-                    (erp
-                     ;; Error already printed to ACL2 channels (stdout).
-                     ;; Revert world on error, same as ld-read-eval-print.
-                     nil)
-                    (t
-                     ;; Extract result for Jupyter execute_result
-                     (let* ((stobjs-out (car trans-ans))
-                            (replaced-val (cdr trans-ans)))
-                       (cond
-                         ;; Error triple: (mv erp val state)
-                         ;; stobjs-out = (NIL NIL STATE)
-                         ((equal stobjs-out acl2::*error-triple-sig*)
-                          (let ((erp-flag (car replaced-val))
-                                (val (cadr replaced-val)))
-                            (cond
-                              (erp-flag
-                               ;; Non-nil erp means the form signaled error
-                               nil)
-                              ((eq val :invisible)
-                               nil)
-                              ((eq val :q)
-                               ;; User typed :q — ignore, don't exit kernel
-                               nil)
-                              (t
-                               (jupyter:execute-result
-                                (jupyter:text
-                                 (let ((*package* (find-package
-                                                   (acl2::current-package
-                                                    *the-live-state*)))
-                                       (*print-case* :downcase)
-                                       (*print-pretty* t))
-                                   (prin1-to-string val))))))))
-                         ;; Non-error-triple: display result directly
-                         (t
-                          (unless (and (= (length stobjs-out) 1)
-                                      (eq (car stobjs-out) 'acl2::state))
-                            (jupyter:execute-result
-                             (jupyter:text
-                              (let ((*package* (find-package
-                                                (acl2::current-package
-                                                 *the-live-state*)))
-                                    (*print-case* :downcase)
-                                    (*print-pretty* t))
-                                (prin1-to-string replaced-val))))))))))))))
-        ;; Cleanup — restore ld-level, pop unwind stack
-        (f-put-global 'acl2::ld-level old-ld-level state)
-        (acl2::acl2-unwind (1- acl2::*ld-level*) nil)))))
+  "Read forms from CHANNEL, evaluate each via trans-eval, send results
+   to Jupyter.  Runs inside the persistent LP context set up by start.
+   catch 'local-top-level is per-cell so a throw aborts the rest of
+   the cell but not the kernel."
+  (let ((*readtable* acl2::*acl2-readtable*))
+    (catch 'acl2::local-top-level
+      (loop
+        ;; Clean up any pending acl2-unwind-protect forms from previous
+        ;; command, same as ld-loop does at the top of each iteration.
+        (acl2::acl2-unwind acl2::*ld-level* t)
+        (multiple-value-bind (eofp raw-form state)
+            (acl2::read-object channel state)
+          (when eofp (return))
+          ;; Keyword commands:  :pe foo => (ACL2::PE 'FOO)
+          ;; String commands:   "ACL2S" => (IN-PACKAGE "ACL2S")
+          (let ((form (cond
+                        ((keywordp raw-form)
+                         (expand-keyword-command
+                          raw-form channel state))
+                        ((stringp raw-form)
+                         (list 'acl2::in-package raw-form))
+                        (t raw-form))))
+            ;; Evaluate via trans-eval -- full ACL2 event processing
+            (multiple-value-bind (erp trans-ans state)
+                (acl2::trans-eval-default-warning
+                 form 'acl2-jupyter state t)
+              (cond
+                (erp nil)
+                (t
+                 (let* ((stobjs-out  (car trans-ans))
+                        (replaced-val (cdr trans-ans)))
+                   (cond
+                     ((equal stobjs-out acl2::*error-triple-sig*)
+                      (let ((erp-flag (car replaced-val))
+                            (val      (cadr replaced-val)))
+                        (unless (or erp-flag (eq val :invisible))
+                          (jupyter:execute-result
+                           (jupyter:text
+                            (let ((*package* (find-package
+                                              (acl2::current-package
+                                               *the-live-state*)))
+                                  (*print-case* :downcase)
+                                  (*print-pretty* t))
+                              (prin1-to-string val)))))))
+                     (t
+                      (unless (and (= (length stobjs-out) 1)
+                                  (eq (car stobjs-out) 'acl2::state))
+                        (jupyter:execute-result
+                         (jupyter:text
+                          (let ((*package* (find-package
+                                            (acl2::current-package
+                                             *the-live-state*)))
+                                (*print-case* :downcase)
+                                (*print-pretty* t))
+                            (prin1-to-string replaced-val)))))))))))))))))
 
 
 ;;; ---------------------------------------------------------------------------
-;;; evaluate-code — dispatches to main thread
+;;; evaluate-code -- dispatches to main thread
 ;;; ---------------------------------------------------------------------------
 
 (defmethod jupyter:evaluate-code ((k kernel) code &optional source-path breakpoints)
@@ -336,30 +371,58 @@
 ;;; ---------------------------------------------------------------------------
 ;;; Kernel Startup
 ;;; ---------------------------------------------------------------------------
-;;; Same pattern as Bridge's start-fn:
-;;;   1. Start listener/kernel in a spawned thread
-;;;   2. Block main thread in main-thread-loop
+;;; Set up a PERSISTENT LP context (like ld-fn0 does) and then block
+;;; the main thread in the work loop.  The LP context lives for the
+;;; entire kernel lifetime -- *ld-level* stays at 1, command history
+;;; accumulates, and : commands work across cells.
+;;;
+;;; No sbcl-restart, no LD, no set-raw-mode-on!.  We're called
+;;; directly from sbcl --eval.
 
 (defun start (&optional connection-file)
   "Start the ACL2 Jupyter kernel."
-  ;; Turn off raw mode — we needed it only for LP to call this function.
-  (f-put-global 'acl2::acl2-raw-mode-p nil *the-live-state*)
-  (sb-ext:disable-debugger)
-  ;; Suppress slow alist/array warnings for interactive use (same as acl2_jupyter)
-  (eval '(acl2::set-slow-alist-action nil))
-  (f-put-global 'acl2::slow-array-action nil *the-live-state*)
-  (setq *kernel-shutdown* nil)
-  (let ((conn (or connection-file
-                  (first (uiop:command-line-arguments)))))
-    (unless conn
-      (error "No connection file provided"))
-    ;; Start Jupyter in a thread (like Bridge starts its listener thread)
-    (bordeaux-threads:make-thread
-     (lambda ()
-       (unwind-protect
-           (jupyter:run-kernel 'kernel conn)
-         (setq *kernel-shutdown* t)
-         (bt-semaphore:signal-semaphore *main-thread-ready*)))
-     :name "jupyter-kernel")
-    ;; Block main thread in work loop (like Bridge's start-fn)
-    (main-thread-loop)))
+  ;; Image initialization (idempotent -- same as sbcl-restart calls)
+  (acl2::acl2-default-restart)
+  ;; LP first-entry initialization (normally done by lp on first call).
+  ;; We need these for include-book (:dir :system) to work.
+  (let ((state *the-live-state*))
+    (when (not acl2::*lp-ever-entered-p*)
+      (f-put-global 'acl2::saved-output-reversed nil state)
+      (acl2::push-current-acl2-world 'acl2::saved-output-reversed state)
+      (acl2::set-initial-cbd)
+      (acl2::establish-project-dir-alist
+       (acl2::getenv$-raw "ACL2_SYSTEM_BOOKS") 'acl2-jupyter state)
+      (acl2::setup-standard-io)
+      (setq acl2::*lp-ever-entered-p* t))
+    (f-put-global 'acl2::acl2-raw-mode-p nil state)
+    (f-put-global 'acl2::ld-error-action :continue state)
+    (sb-ext:disable-debugger)
+    ;; Suppress slow alist/array warnings for interactive use
+    (eval '(acl2::set-slow-alist-action nil))
+    (f-put-global 'acl2::slow-array-action nil state)
+    (setq *kernel-shutdown* nil)
+    (let ((conn (or connection-file
+                    (first (uiop:command-line-arguments)))))
+      (unless conn
+        (error "No connection file provided"))
+      ;; Set up persistent LP context -- mirroring ld-fn0's raw code.
+      ;; This stays active for the lifetime of the kernel.
+      (acl2::acl2-unwind acl2::*ld-level* nil)
+      (push nil acl2::*acl2-unwind-protect-stack*)
+      (let ((acl2::*ld-level* 1))
+        (f-put-global 'acl2::ld-level 1 state)
+        (unwind-protect
+            (progn
+              ;; Start Jupyter in a thread (like Bridge starts its listener)
+              (bordeaux-threads:make-thread
+               (lambda ()
+                 (unwind-protect
+                     (jupyter:run-kernel 'kernel conn)
+                   (setq *kernel-shutdown* t)
+                   (bt-semaphore:signal-semaphore *main-thread-ready*)))
+               :name "jupyter-kernel")
+              ;; Block main thread in work loop -- inside LP context
+              (main-thread-loop))
+          ;; Cleanup LP context on exit
+          (f-put-global 'acl2::ld-level 0 state)
+          (acl2::acl2-unwind 0 nil))))))

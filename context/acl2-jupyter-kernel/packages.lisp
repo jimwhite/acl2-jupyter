@@ -25,6 +25,11 @@
                 #:global-symbol
                 #:raw-mode-p
                 #:w
+                ;; Keyword command expansion
+                #:function-symbolp
+                #:formals
+                #:getpropc
+                #:macro-minimal-arity
                 ;; Used in ld / eval
                 #:state)
   (:export #:kernel

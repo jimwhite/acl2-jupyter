@@ -11,8 +11,13 @@ license = "BSD-3-Clause"
 dependencies = [
     "nbformat>=5.10",
     "tree-sitter>=0.25",
-    "tree-sitter-commonlisp>=0.4",
 ]
+
+# NOTE: tree-sitter-commonlisp is NOT listed here because we use a local
+# fork (context/tree-sitter-commonlisp) with block comment fixes that are
+# not yet in the PyPI release.  Install it separately:
+#   pipx inject script2notebook /path/to/tree-sitter-commonlisp
+# The Dockerfile and devcontainer handle this automatically.
 
 [tool.setuptools]
 packages = ["script2notebook"]
@@ -20,6 +25,7 @@ package-dir = {"script2notebook" = "."}
 
 [project.scripts]
 script2notebook = "script2notebook.cli:main"
+build-notebooks = "script2notebook.build_notebooks:main"
 
 [project.optional-dependencies]
 dev = [

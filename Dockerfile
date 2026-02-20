@@ -134,6 +134,14 @@ COPY quicklisp quicklisp/
 # ACL2 Jupyter kernel (Common Lisp, built on common-lisp-jupyter)
 COPY acl2-jupyter-kernel quicklisp/local-projects/acl2-jupyter-kernel
 
+# script2notebook: tree-sitter-based .lisp → .ipynb converter
+# Uses local fork of tree-sitter-commonlisp with block comment fix (not on PyPI).
+COPY tree-sitter-commonlisp /tmp/tree-sitter-commonlisp
+COPY script2notebook /tmp/script2notebook
+RUN pipx install /tmp/script2notebook \
+    && pipx inject script2notebook /tmp/tree-sitter-commonlisp \
+    && rm -rf /tmp/script2notebook /tmp/tree-sitter-commonlisp
+
 # VSCode extension for ACL2/Common Lisp language support and notebook renderer
 COPY extension/acl2-language /opt/acl2/vscode-extensions/acl2-language
 

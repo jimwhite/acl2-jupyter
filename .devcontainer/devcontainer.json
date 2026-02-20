@@ -15,5 +15,6 @@
         "RESTARTABLE": "yes",
         "USER": "jovyan"
     },
+    "postCreateCommand": "pipx install --force /workspaces/acl2-jupyter-stp/context/script2notebook/ && pipx inject --force script2notebook /workspaces/acl2-jupyter-stp/context/tree-sitter-commonlisp/ 2>/dev/null || true",
     "postStartCommand": "ln -sfn /opt/acl2/vscode-extensions/acl2-language ~/.vscode-server/extensions/acl2-jupyter.acl2-language-0.1.0 2>/dev/null || true"
 }

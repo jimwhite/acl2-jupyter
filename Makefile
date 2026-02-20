@@ -1,5 +1,6 @@
 all: build
-.PHONY: all build push push-ghcr build-multiplatform build-multiplatform-ghcr build-arm64 build-arm64-ghcr
+.PHONY: all build push push-ghcr build-multiplatform build-multiplatform-ghcr build-arm64 build-arm64-ghcr \
+        notebooks notebooks-convert notebooks-execute notebooks-force notebooks-dir install-script2notebook
 
 # By default this builds the latest commit from the main branch of https://github.com/jimwhite/acl2
 # TODO: Default/easy selection of released version.
@@ -100,6 +101,66 @@ push-ghcr:
 run:
 	# docker run -it -p 8888:8888 -v $(PWD):/home/jovyan/work acl2-jupyter:latest
 	$(DOCKER) run -it -p 8888:8888 -v $(PWD):/home/jovyan/work $(IMAGE_NAME):$(IMAGE_VERSION)
+
+# =============================================================================
+# ACL2 Notebook Generation
+# =============================================================================
+# Convert ACL2 source files (.lisp) to Jupyter notebooks and execute
+# certified ones through the ACL2 kernel to capture proof output.
+
+.PHONY: notebooks notebooks-convert notebooks-execute install-script2notebook
+
+# Source and output directories
+ACL2_HOME ?= /home/acl2
+NOTEBOOKS_DIR ?= $(PWD)/examples/acl2-notebooks
+NOTEBOOK_JOBS ?= 1
+NOTEBOOK_CELL_TIMEOUT ?= 600
+NOTEBOOK_STARTUP_TIMEOUT ?= 120
+
+# Ensure script2notebook and build-notebooks are available
+# Uses local tree-sitter-commonlisp fork with block comment fix.
+install-script2notebook:
+	@if ! command -v build-notebooks >/dev/null 2>&1; then \
+		echo "Installing script2notebook via pipx..."; \
+		pipx install $(PWD)/context/script2notebook/; \
+		echo "Injecting local tree-sitter-commonlisp..."; \
+		pipx inject script2notebook $(PWD)/context/tree-sitter-commonlisp/; \
+	else \
+		echo "build-notebooks already installed"; \
+	fi
+
+# Convert all ACL2 source files to notebooks (incremental)
+notebooks-convert: install-script2notebook
+	build-notebooks convert $(ACL2_HOME) -o $(NOTEBOOKS_DIR) -v
+
+# Execute certified notebooks through ACL2 kernel (incremental)
+notebooks-execute: install-script2notebook
+	build-notebooks execute $(ACL2_HOME) -o $(NOTEBOOKS_DIR) -v \
+		-j $(NOTEBOOK_JOBS) \
+		--cell-timeout $(NOTEBOOK_CELL_TIMEOUT) \
+		--startup-timeout $(NOTEBOOK_STARTUP_TIMEOUT)
+
+# Convert + execute in one step
+notebooks: install-script2notebook
+	build-notebooks all $(ACL2_HOME) -o $(NOTEBOOKS_DIR) -v \
+		-j $(NOTEBOOK_JOBS) \
+		--cell-timeout $(NOTEBOOK_CELL_TIMEOUT) \
+		--startup-timeout $(NOTEBOOK_STARTUP_TIMEOUT)
+
+# Force rebuild everything
+notebooks-force: install-script2notebook
+	build-notebooks all $(ACL2_HOME) -o $(NOTEBOOKS_DIR) -v --force \
+		-j $(NOTEBOOK_JOBS) \
+		--cell-timeout $(NOTEBOOK_CELL_TIMEOUT) \
+		--startup-timeout $(NOTEBOOK_STARTUP_TIMEOUT)
+
+# Convert a single directory (usage: make notebooks-dir DIR=/home/acl2/books/defsort)
+notebooks-dir: install-script2notebook
+	@if [ -z "$(DIR)" ]; then echo "Usage: make notebooks-dir DIR=/home/acl2/books/some-dir"; exit 1; fi
+	build-notebooks all $(DIR) -o $(NOTEBOOKS_DIR)/$(shell realpath --relative-to=$(ACL2_HOME) $(DIR)) -v \
+		-j $(NOTEBOOK_JOBS) \
+		--cell-timeout $(NOTEBOOK_CELL_TIMEOUT) \
+		--startup-timeout $(NOTEBOOK_STARTUP_TIMEOUT)
 
 # =============================================================================
 # Rust and Parinfer Setup

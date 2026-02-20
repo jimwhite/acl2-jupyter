@@ -1,7 +1,7 @@
 [submodule "context/quicklisp/local-projects/common-lisp-jupyter"]
 	path = context/quicklisp/local-projects/common-lisp-jupyter
-	url = https://github.com/yitzchak/common-lisp-jupyter.git
-	branch = master
+	url = https://github.com/jimwhite/common-lisp-jupyter.git
+	branch = main
 [submodule "context/quicklisp/local-projects/delta-vega"]
         path = context/quicklisp/local-projects/delta-vega
         url = https://github.com/yitzchak/delta-vega.git

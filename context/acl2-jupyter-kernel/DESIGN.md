@@ -107,19 +107,32 @@ Problems with this approach:
 ```
 context/acl2-jupyter-kernel/
 ├── acl2-jupyter-kernel.asd   # ASDF system definition
-├── packages.lisp             # Package definition (acl2-jupyter-kernel / jupyter/acl2)
+├── packages.lisp             # Package definition (acl2-jupyter)
 ├── kernel.lisp               # Kernel class + evaluate-code + output routing + start
 ├── complete.lisp             # ACL2 symbol completion
 ├── inspect.lisp              # ACL2 documentation inspection
 ├── installer.lisp            # Kernelspec installer (generates kernel.json)
 ├── build-kernel-image.sh     # Build script: creates saved_acl2_jupyter via save-exec
 ├── install-kernelspec.sh     # Install script: writes kernel.json
-└── test_kernel.py            # 21 pytest tests (arithmetic, defun, defthm, etc.)
+├── test_dual.py              # 22 dual-fixture tests (Bridge vs Kernel)
+└── test_metadata.py          # 7 tests for cell metadata (events, package)
 ```
 
 ## 5. Component Details
 
 ### 5.1 kernel.lisp — Core Evaluation
+
+**Threading model**:
+- Shell thread (Jupyter): owns `*kernel*`, IOPub socket, protocol
+- Main thread (ACL2): owns 128MB stack, ACL2 state, output channels
+- `evaluate-code` runs on the shell thread.  It dispatches ACL2 work
+  to the main thread via `in-main-thread`, which blocks until done.
+
+**Persistent LP context** (set up once by `start`):
+- The main thread lives inside a persistent LP context mirroring `ld-fn0`
+- `*ld-level*` stays at 1 for the kernel's lifetime
+- `acl2-unwind-protect-stack` persists across cells
+- Command history accumulates (`:pbt`, `:pe`, `:ubt` work across cells)
 
 **Output routing** (`with-acl2-output-to`):
 - Creates a temporary ACL2 output channel symbol
@@ -130,31 +143,49 @@ context/acl2-jupyter-kernel/
   output use
 - Cleans up on unwind
 
-**Form reading** (`read-acl2-forms`):
-- Reads in the ACL2 package
+**Form reading** (via ACL2's own reader):
+- Creates a temporary ACL2 `:object` input channel backed by a CL string stream
+- ACL2's `read-object` handles all reader macros, packages, etc.
 - Handles three kinds of input:
   1. Standard s-expressions: `(defun foo (x) x)`
-  2. ACL2 keyword commands: `:pe append` → `(PE 'APPEND)`
-  3. Comment lines: skipped
-- Returns a list of forms for sequential evaluation
+  2. ACL2 keyword commands: `:pe append` → `(ACL2::PE 'APPEND)` (via
+     `expand-keyword-command` which looks up arity from the world)
+  3. String commands: `"ACL2S"` → `(IN-PACKAGE "ACL2S")`
+- `:q` exits the kernel process
 
-**Evaluation** (`evaluate-code`):
-- Iterates through forms from `read-acl2-forms`
-- Each form is wrapped in `(let ((acl2::state acl2::*the-live-state*)) ...)`
-  and passed to `EVAL` (same pattern as the ACL2 Bridge worker thread)
-- Results are displayed via `jupyter:execute-result` using `jupyter:text`
-- STATE values are filtered from display (they're not informative)
-- Errors are caught and returned as `(values ename evalue traceback)`
+**Evaluation** (`evaluate-code` → `jupyter-read-eval-print-loop`):
+- Dispatches to main thread via `in-main-thread`
+- Wraps eval in `acl2::with-suppression` (unlocks COMMON-LISP package,
+  same as LP's own wrapping of `ld-fn`)
+- Each form is evaluated via `trans-eval-default-warning`, which gives us:
+  - Structured `(mv erp (stobjs-out . replaced-val) state)` results
+  - ACL2's own reader (via `read-object` on a channel)
+  - Full event processing, command landmarks, world updates
+- For error triples `(stobjs-out = *error-triple-sig*)`:
+  display `val` via `jupyter:execute-result` unless `:invisible`
+- For non-triples: display `replaced-val` directly
+- After each successful `trans-eval`, calls `maybe-add-command-landmark`
+  with saved `old-wrld` and `old-default-defun-mode` — this is what
+  makes `:pbt`, `:pe`, `:ubt` etc. work
+- Per-cell `catch 'local-top-level` so a throw aborts the rest of the cell
+  but not the kernel
+- After eval completes, captures world diff and current package as cell
+  metadata (see §5.5)
 
 **Code completeness** (`code-is-complete`):
 - Tries to read the code; if `end-of-file` → "incomplete", if other error →
   "invalid", otherwise → "complete"
 
 **Startup** (`start`):
-- Entry point called after ACL2 initialization completes
-- Disables the SBCL debugger (so errors don't hang the kernel)
-- Reads the connection file path from `(uiop:command-line-arguments)`
-- Calls `(jupyter:run-kernel 'kernel conn)` to start the event loop
+- Calls `acl2-default-restart` for image initialization
+- Performs LP first-entry initialization (normally done by `lp` on first
+  call): `saved-output-reversed`, `set-initial-cbd`,
+  `establish-project-dir-alist`, `setup-standard-io`
+- Suppresses slow alist/array warnings for interactive use
+- Sets up persistent LP context (mirroring `ld-fn0`'s raw code):
+  `acl2-unwind`, pushes onto `*acl2-unwind-protect-stack*`, `*ld-level*` = 1
+- Starts Jupyter in a thread via `jupyter:run-kernel`
+- Blocks main thread in work loop (`main-thread-loop`) inside LP context
 
 ### 5.2 complete.lisp — Symbol Completion
 
@@ -181,14 +212,25 @@ Provides rich markdown documentation for ACL2 symbols:
 ### 5.4 installer.lisp — Kernelspec
 
 Generates a `kernel.json` that tells Jupyter to launch the kernel.
-The argv is simply:
+The installer uses generic functions `make-kernel-argv` and `make-kernel-env`
+dispatched on `(uiop:implementation-type)` so other CL implementations can
+be supported by adding methods.  For SBCL the generated spec is:
 
 ```json
 {
   "argv": [
-    "path/to/saved_acl2_jupyter",
+    "/usr/local/bin/sbcl",
+    "--dynamic-space-size", "32000",
+    "--control-stack-size", "64",
+    "--tls-limit", "16384",
+    "--disable-ldb",
+    "--core", "/path/to/saved_acl2_jupyter.core",
+    "--end-runtime-options",
+    "--no-userinit",
+    "--eval", "(acl2-jupyter-kernel:start)",
     "{connection_file}"
   ],
+  "env": { "SBCL_HOME": "/usr/local/lib/sbcl/" },
   "display_name": "ACL2",
   "language": "acl2",
   "interrupt_mode": "message",
@@ -196,9 +238,47 @@ The argv is simply:
 }
 ```
 
-The saved binary (shell script from `save-exec`) handles all bootstrapping —
-SBCL flags, ACL2 restart, and the kernel start eval are all baked in.
-No `env` dict is needed because the script already exports `SBCL_HOME`.
+This bypasses the `saved_acl2_jupyter` shell script wrapper — `sbcl` is
+invoked directly with the right core and runtime flags.  `SBCL_HOME` is
+provided via `env` so SBCL can find its contribs.
+
+### 5.5 Cell Metadata — Events and Package
+
+Each `execute_reply` carries metadata describing what the cell changed in
+the ACL2 world.  This is implemented via a `execute-reply-metadata` generic
+function added to common-lisp-jupyter (see §12, decision 7).
+
+**World diff capture** (in `evaluate-code`, after eval completes):
+1. Save the old world (`acl2::w acl2::*the-live-state*`) before eval
+2. After eval, walk the new world's triples until we reach the old world
+3. Collect triples where `(car triple)` = `EVENT-LANDMARK` and
+   `(cadr triple)` = `GLOBAL-VALUE`
+4. Convert each event's value `(cddr triple)` to a string via `prin1-to-string`
+5. Store the resulting vector in the kernel's `cell-events` slot
+
+**Package capture**: After eval, read `(acl2::current-package
+acl2::*the-live-state*)` and store in `cell-package`.
+
+**Wire format** (in `execute-reply` message, `metadata` field):
+```json
+{
+  "metadata": {
+    "events": [
+      "(DEFUN APP (X Y) ...)",
+      "(DEFTHM APP-ASSOC ...)"
+    ],
+    "package": "ACL2"
+  }
+}
+```
+
+- `events`: JSON array of strings.  Each string is the `prin1` representation
+  of an ACL2 event landmark value.  Empty array `[]` for cells with no events
+  (e.g., arithmetic).
+- `package`: JSON string.  The current ACL2 package after the cell executes.
+
+This metadata enables frontends and tools to track world state without
+parsing ACL2 output.
 
 ## 6. The Saved Image: `saved_acl2_jupyter`
 
@@ -209,12 +289,12 @@ one that creates `saved_acl2` itself. This is done by `build-kernel-image.sh`:
 
 1. Start `saved_acl2` and exit the ACL2 read-eval-print loop (`:q`)
 2. Load Quicklisp and the `acl2-jupyter-kernel` ASDF system
-3. Call `save-exec` with `:return-from-lp` and `:toplevel-args`
+3. Call `save-exec` with `:return-from-lp nil` (so the image starts
+   directly at `--eval` without entering LP)
 
 ```lisp
 (save-exec "saved_acl2_jupyter" nil
-           :return-from-lp '(value :q)
-           :toplevel-args "--eval '(acl2-jupyter-kernel:start)'")
+           :return-from-lp nil)
 ```
 
 This produces two files:
@@ -238,9 +318,16 @@ exec "/usr/local/bin/sbcl" \
   ${SBCL_USER_ARGS} \
   --end-runtime-options \
   --no-userinit \
-  --eval '(acl2::sbcl-restart)' \
-  --eval '(acl2-jupyter-kernel:start)' \
   "$@"
+```
+
+The kernel.json (from installer.lisp, §5.4) adds `--eval
+'(acl2-jupyter-kernel:start)'` and `{connection_file}` to the argv, so
+the full command line becomes:
+
+```
+sbcl ... --core saved_acl2_jupyter.core --end-runtime-options --no-userinit \
+  --eval '(acl2-jupyter-kernel:start)' /path/to/connection.json
 ```
 
 Key points:
@@ -250,42 +337,37 @@ Key points:
   bordeaux-threads via common-lisp-jupyter) inherits this setting. Without it,
   threads get SBCL's default ~2 MB which is insufficient for ACL2's deep
   recursion during `include-book`, proof search, etc.
-- **`--eval '(acl2::sbcl-restart)'`**: Initializes ACL2 (runs
-  `acl2-default-restart` → LP). Because `:return-from-lp` was set to
-  `'(value :q)`, LP exits immediately after initialization.
-- **`--eval '(acl2-jupyter-kernel:start)'`**: Runs after ACL2 init completes,
-  reads the connection file from the command-line args, and starts the Jupyter
-  kernel event loop.
-- **`"$@"`**: Passes through the `{connection_file}` argument from kernel.json.
+- **`(acl2-jupyter-kernel:start)`**: The `start` function (see §5.1)
+  calls `acl2-default-restart` for ACL2 initialization, sets up the
+  persistent LP context, spawns the Jupyter shell thread, and blocks
+  the main thread in the work loop.
 
 ### Startup Flow
 
 ```
-Jupyter launches: saved_acl2_jupyter /path/to/connection.json
-
-  → Shell script execs: sbcl --control-stack-size 64 ...
-      --eval '(acl2::sbcl-restart)'
-      --eval '(acl2-jupyter-kernel:start)'
-      /path/to/connection.json
+Jupyter launches kernel.json argv:
+  sbcl --control-stack-size 64 ... --core saved_acl2_jupyter.core
+       --eval '(acl2-jupyter-kernel:start)' /path/to/connection.json
 
   → SBCL starts, loads saved_acl2_jupyter.core
-  → (acl2::sbcl-restart)
-    → (acl2-default-restart)
-      → (LP)
-        → *return-from-lp* = '(value :q) → LP exits immediately
-    → sbcl-restart returns
 
   → (acl2-jupyter-kernel:start)
-    → (sb-ext:disable-debugger)
+    → (acl2-default-restart)           ; ACL2 image initialization
+    → LP first-entry init:
+        saved-output-reversed, set-initial-cbd,
+        establish-project-dir-alist, setup-standard-io
+    → Suppress W/A warnings for interactive use
+    → Set up persistent LP context:
+        acl2-unwind, push *acl2-unwind-protect-stack*, *ld-level* = 1
     → conn = (first (uiop:command-line-arguments))
-           = "/path/to/connection.json"
-    → (jupyter:run-kernel 'kernel conn)
-      → Parses connection file (JSON: transport, IP, ports, key)
-      → Creates ZeroMQ sockets (shell, control, iopub, stdin, heartbeat)
-      → Spawns "Jupyter Shell" thread (bordeaux-threads)
-      → Spawns heartbeat thread
-      → Sends kernel_info_reply, status: idle
-      → Ready for execute_request messages
+    → Spawn Jupyter shell thread via (jupyter:run-kernel 'kernel conn)
+        → Parses connection file (JSON: transport, IP, ports, key)
+        → Creates ZeroMQ sockets (shell, control, iopub, stdin, heartbeat)
+        → Spawns heartbeat thread
+        → Sends kernel_info_reply, status: idle
+    → Block main thread in (main-thread-loop) inside LP context
+        → Waits for work dispatched by shell thread via in-main-thread
+        → Ready for execute_request messages
 ```
 
 ### Why `save-exec`, Not `save-lisp-and-die`
@@ -310,15 +392,25 @@ This failed because:
 
 1. User submits cell code (e.g., `(defun app (x y) ...)`)
 2. Jupyter frontend sends `execute_request` on shell channel
-3. common-lisp-jupyter's `run-shell` receives it
-4. Calls our `evaluate-code` method
-5. We parse the code into forms via `read-acl2-forms`
-6. For each form:
-   a. Redirect all output via `with-acl2-output-to` (binds ACL2 channels
-      + CL streams to Jupyter's iopub stdout)
-   b. Eval with STATE bound: `(let ((state *the-live-state*)) ,form)`
-   c. Display results via `jupyter:execute-result`
-7. common-lisp-jupyter sends `execute_reply` on shell
+3. common-lisp-jupyter's shell thread receives it, calls `evaluate-code`
+4. `evaluate-code` dispatches work to the main thread via `in-main-thread`:
+   a. Save old world: `old-wrld = (acl2::w *the-live-state*)`
+   b. Redirect output via `with-acl2-output-to` (ACL2 channels + CL streams
+      → Jupyter IOPub stdout)
+   c. Open an ACL2 input channel on the cell text
+   d. Read forms one at a time via `acl2::read-object` (handles keywords,
+      strings, s-expressions)
+   e. For each form, inside `(catch 'acl2::local-top-level ...)`:
+      - Call `(acl2::trans-eval-default-warning form ctx state t)`
+      - On success: extract `(stobjs-out . replaced-val)`, display `val`
+        via `jupyter:execute-result` (unless `:invisible`)
+      - Call `maybe-add-command-landmark` so history commands work
+   f. After all forms: capture world diff (EVENT-LANDMARK triples) into
+      `cell-events`, read `current-package` into `cell-package`
+   g. Return `(values)` — no values means success
+5. common-lisp-jupyter calls `(execute-reply-metadata *kernel*)` to get
+   the events/package metadata
+6. common-lisp-jupyter sends `execute_reply` with metadata on shell channel
 
 ## 8. Dependencies
 
@@ -356,6 +448,14 @@ This failed because:
 | `acl2::w` | Get the current ACL2 world from state |
 | `acl2::save-exec` | Build saved ACL2 binaries |
 | `acl2::*return-from-lp*` | Control LP exit behavior on restart |
+| `acl2::trans-eval-default-warning` | Evaluate a form with full ACL2 semantics |
+| `acl2::*ld-level*` | Current nesting depth of `ld` |
+| `acl2::current-package` | Get the current ACL2 package name |
+| `acl2::acl2-default-restart` | Initialize ACL2 image (called by `start`) |
+| `acl2::maybe-add-command-landmark` | Record a command in the world |
+| `acl2::with-suppression` | Unlock COMMON-LISP package around eval |
+| `acl2::read-object` | Read one form from an ACL2 input channel |
+| `acl2::keyword-command-arity` | Look up keyword command arity from world |
 
 ## 9. Build & Install
 
@@ -386,12 +486,12 @@ This writes `kernel.json` to `~/.local/share/jupyter/kernels/acl2/`.
 ### Test
 
 ```sh
-python -m pytest test_kernel.py -v --timeout=120
+python -m pytest test_dual.py test_metadata.py -v --timeout=120
 ```
 
-21 tests covering arithmetic, lists, defun, defthm, keyword commands,
-defconst, CW output routing, code completeness, error handling, and
-kernel survivability.
+29 tests total: 22 dual-backend tests (arithmetic, defun, defthm, keyword
+commands, include-book, undo, etc. each run through both Bridge and Kernel
+fixtures) and 7 metadata tests (events array, package tracking).
 
 ## 10. Comparison with Alternatives
 
@@ -414,9 +514,11 @@ kernel survivability.
   to `books/jupyter/` in the ACL2 community books.
 - **Debugger integration**: common-lisp-jupyter has full DAP support with
   breakpoints, stepping, frame inspection.
-- **CCL support**: The current implementation is SBCL-specific (uses
-  `sb-ext:disable-debugger`, `sb-introspect`, `save-exec` generates SBCL
-  flags). CCL would need a different save mechanism and ZeroMQ support.
+- **CCL support**: The installer already dispatches on
+  `(uiop:implementation-type)` so adding CCL requires only new methods for
+  `make-kernel-argv` and `make-kernel-env`.
+- **Richer metadata**: Include theorem statements, proof summaries, or
+  timing data in cell metadata.
 
 ## 12. Key Technical Decisions
 
@@ -447,3 +549,20 @@ kernel survivability.
    kernel.json argv passes through the shell script's `"$@"` and becomes
    available via `(uiop:command-line-arguments)`. This is the same mechanism
    used by the standard CL SBCL kernel.
+
+7. **`execute-reply-metadata` extension to common-lisp-jupyter**: Rather than
+   monkey-patching or subclassing the shell handler, we added a
+   `execute-reply-metadata` generic function to common-lisp-jupyter.  The
+   default method returns nil (no metadata).  The ACL2 kernel specializes it
+   to return the world events and current package.  This required three small
+   changes to common-lisp-jupyter: export the symbol, define the generic, and
+   pass its return value through `send-execute-reply-ok`.
+
+8. **`trans-eval` over raw `eval`**: ACL2's `trans-eval` provides structured
+   results, full event processing, and proper error handling.  Raw `eval`
+   bypasses the LP context and causes stack exhaustion on complex forms.
+   See DESIGN-NOTES.md for the detailed rationale.
+
+9. **Persistent LP context**: Rather than entering/exiting LP per cell, the
+   main thread lives permanently at `*ld-level*` = 1.  This preserves command
+   history, allows `:pbt`/`:ubt` across cells, and avoids LP startup cost.

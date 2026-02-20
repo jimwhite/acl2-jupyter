@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Dual-fixture tests: Bridge vs Jupyter kernel.
 
-Each test runs the same ACL2 eval through both the Bridge and the Jupyter
-kernel. This ensures the kernel behaves identically to the Bridge.
+One set of tests, run two ways.  Every test is parameterized over a
+"backend" fixture that is either the Bridge or the Jupyter kernel.
 
 Bridge fixture:
   - Starts saved_acl2 with bridge, connects via Unix socket
+  - Every eval is wrapped in (bridge::in-main-thread ...)
   - Sends LISP commands, reads RETURN/STDOUT/ERROR
 
 Kernel fixture:
@@ -25,11 +26,11 @@ import jupyter_client
 
 
 # ---------------------------------------------------------------------------
-# Bridge fixture
+# Bridge client
 # ---------------------------------------------------------------------------
 
 class BridgeClient:
-    """Minimal Bridge client matching test_bridge_include_book.py."""
+    """Minimal Bridge client."""
 
     def __init__(self, sock_path):
         self.sock_path = sock_path
@@ -45,10 +46,8 @@ class BridgeClient:
                     s.connect(self.sock_path)
                     s.settimeout(120)
                     self.sock = s
-                    # Read HELLO
                     msg_type, _ = self._read_message()
                     assert msg_type == "ACL2_BRIDGE_HELLO", f"Expected HELLO, got {msg_type}"
-                    # Read READY
                     msg_type, _ = self._read_message()
                     assert msg_type == "READY", f"Expected READY, got {msg_type}"
                     return
@@ -57,13 +56,12 @@ class BridgeClient:
             time.sleep(0.5)
         raise RuntimeError(f"Bridge socket {self.sock_path} not available after {timeout}s")
 
-    def send(self, cmd_type, sexpr):
+    def _send(self, cmd_type, sexpr):
         content = sexpr
         header = f"{cmd_type} {len(content)}\n"
         self.sock.sendall((header + content + "\n").encode())
 
     def _read_message(self):
-        # Read header line
         while b"\n" not in self.buf:
             data = self.sock.recv(4096)
             if not data:
@@ -88,15 +86,28 @@ class BridgeClient:
             self.buf += data
 
         content = self.buf[:content_len].decode()
-        self.buf = self.buf[content_len + 1:]  # skip trailing newline
+        self.buf = self.buf[content_len + 1:]
         return msg_type, content
 
     def eval_lisp(self, sexpr, timeout=60):
-        """Send an ACL2 command wrapped in (bridge::in-main-thread ...).
-        All client cell code must run on the main thread, same as our kernel.
+        """Send sexpr wrapped in (bridge::in-main-thread (ld '(...) ...)).
+        The ld wrapper provides LP context (*ld-level* > 0, catch tags)
+        so that include-book, defthm, etc. work correctly.
         Returns (result, stdout, error)."""
-        wrapped = f"(bridge::in-main-thread {sexpr})"
-        self.send("LISP", wrapped)
+        # Wrap in ld for LP context — same approach as acl2_jupyter.
+        # Without ld, *ld-level* is 0 and throw-raw-ev-fncall calls
+        # interface-er instead of throwing cleanly.
+        ld_wrapped = (
+            f'(bridge::in-main-thread'
+            f' (ld \'({sexpr})'
+            f' :ld-pre-eval-print nil'
+            f' :ld-post-eval-print :command-conventions'
+            f' :ld-verbose nil'
+            f' :ld-prompt nil'
+            f' :ld-error-action :continue'
+            f' :current-package "ACL2"))'
+        )
+        self._send("LISP", ld_wrapped)
         result = None
         stdout_parts = []
         error = None
@@ -115,10 +126,12 @@ class BridgeClient:
                 break
             elif msg_type == "READY":
                 break
-        # After RETURN, read the next READY
-        if result is not None:
-            msg_type, _ = self._read_message()
-            # should be READY
+        # Always consume until READY to keep protocol in sync
+        if msg_type not in (None, "READY"):
+            while time.time() < deadline:
+                msg_type, _ = self._read_message()
+                if msg_type is None or msg_type == "READY":
+                    break
         return result, "".join(stdout_parts), error
 
     def close(self):
@@ -129,63 +142,9 @@ class BridgeClient:
                 pass
 
 
-@pytest.fixture(scope="module")
-def bridge():
-    """Start Bridge server, yield a BridgeClient, shut down after."""
-    sock_path = "/tmp/test-dual-bridge.sock"
-    # Clean up stale socket
-    if os.path.exists(sock_path):
-        os.unlink(sock_path)
-
-    # Start Bridge via saved_acl2
-    bridge_script = f'''(include-book "centaur/bridge/top" :dir :system)
-(bridge::start "{sock_path}")
-'''
-    proc = subprocess.Popen(
-        ["/home/acl2/saved_acl2"],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    proc.stdin.write(bridge_script.encode())
-    proc.stdin.flush()
-
-    client = BridgeClient(sock_path)
-    client.connect(timeout=120)
-
-    yield client
-
-    # Shutdown
-    try:
-        client.send("LISP", "(bridge::stop)")
-    except Exception:
-        pass
-    client.close()
-    proc.terminate()
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-    if os.path.exists(sock_path):
-        os.unlink(sock_path)
-
-
 # ---------------------------------------------------------------------------
-# Kernel fixture
+# Kernel eval helper
 # ---------------------------------------------------------------------------
-
-@pytest.fixture(scope="module")
-def kernel():
-    """Start the ACL2 Jupyter kernel, yield a client."""
-    km = jupyter_client.KernelManager(kernel_name="acl2")
-    km.start_kernel()
-    kc = km.client()
-    kc.start_channels()
-    kc.wait_for_ready(timeout=120)
-    yield kc
-    kc.stop_channels()
-    km.shutdown_kernel(now=True)
-
 
 def kernel_eval(kc, code, timeout=60):
     """Execute code on Jupyter kernel. Returns (result, stdout, error)."""
@@ -216,119 +175,140 @@ def kernel_eval(kc, code, timeout=60):
 
 
 # ---------------------------------------------------------------------------
-# Tests — Bridge
+# Backend wrapper — unified eval interface
 # ---------------------------------------------------------------------------
 
-class TestBridge:
-    """Run evals through Bridge to establish baseline."""
+class Backend:
+    """Thin wrapper so tests call backend.eval(sexpr) regardless of type."""
 
-    def test_arithmetic(self, bridge):
-        result, _, error = bridge.eval_lisp("(+ 1 2)")
-        assert error is None, f"error: {error}"
-        assert result is not None
-        assert "3" in result
+    def __init__(self, name, eval_fn):
+        self.name = name
+        self._eval = eval_fn
 
-    def test_defun(self, bridge):
-        result, stdout, error = bridge.eval_lisp("(defun bridge-double (x) (* 2 x))")
-        assert error is None, f"error: {error}"
-        assert result is not None or stdout
+    def eval(self, sexpr, timeout=60):
+        return self._eval(sexpr, timeout=timeout)
 
-    def test_call_defun(self, bridge):
-        result, _, error = bridge.eval_lisp("(bridge-double 21)")
-        assert error is None, f"error: {error}"
-        assert "42" in result
-
-    def test_cw(self, bridge):
-        result, stdout, error = bridge.eval_lisp('(cw "hello bridge~%")')
-        assert error is None, f"error: {error}"
-        assert "hello bridge" in stdout.lower(), f"stdout: {stdout!r}"
-
-    def test_include_book(self, bridge):
-        result, stdout, error = bridge.eval_lisp(
-            '(include-book "std/lists/append" :dir :system)', timeout=30
-        )
-        assert error is None, f"error: {error}"
-
-    def test_after_include_book(self, bridge):
-        result, _, error = bridge.eval_lisp("(+ 100 200)")
-        assert error is None, f"error: {error}"
-        assert "300" in result
-
-    def test_include_book_apply(self, bridge):
-        result, stdout, error = bridge.eval_lisp(
-            '(include-book "projects/apply/top" :dir :system)', timeout=30
-        )
-        assert error is None, f"error: {error}"
-
-    def test_after_include_book_apply(self, bridge):
-        result, _, error = bridge.eval_lisp("(+ 1 1)")
-        assert error is None, f"error: {error}"
-        assert "2" in result
+    def __repr__(self):
+        return self.name
 
 
 # ---------------------------------------------------------------------------
-# Tests — Kernel
+# Fixtures
 # ---------------------------------------------------------------------------
 
-class TestKernel:
-    """Run the same evals through the Jupyter kernel."""
+@pytest.fixture(scope="module")
+def bridge_backend():
+    """Start Bridge server, yield a Backend, shut down after."""
+    sock_path = "/tmp/test-dual-bridge.sock"
+    if os.path.exists(sock_path):
+        os.unlink(sock_path)
 
-    def test_arithmetic(self, kernel):
-        result, _, error = kernel_eval(kernel, "(+ 1 2)")
+    bridge_script = f'''(include-book "centaur/bridge/top" :dir :system)
+(bridge::start "{sock_path}")
+'''
+    proc = subprocess.Popen(
+        ["/home/acl2/saved_acl2"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    proc.stdin.write(bridge_script.encode())
+    proc.stdin.flush()
+
+    client = BridgeClient(sock_path)
+    client.connect(timeout=120)
+
+    yield Backend("bridge", client.eval_lisp)
+
+    try:
+        client._send("LISP", "(bridge::stop)")
+    except Exception:
+        pass
+    client.close()
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+    if os.path.exists(sock_path):
+        os.unlink(sock_path)
+
+
+@pytest.fixture(scope="module")
+def kernel_backend():
+    """Start the ACL2 Jupyter kernel, yield a Backend."""
+    km = jupyter_client.KernelManager(kernel_name="acl2")
+    km.start_kernel()
+    kc = km.client()
+    kc.start_channels()
+    kc.wait_for_ready(timeout=120)
+
+    yield Backend("kernel", lambda sexpr, timeout=60: kernel_eval(kc, sexpr, timeout=timeout))
+
+    kc.stop_channels()
+    km.shutdown_kernel(now=True)
+
+
+@pytest.fixture(params=["bridge", "kernel"])
+def backend(request, bridge_backend, kernel_backend):
+    """Parameterized fixture -- each test runs once per backend."""
+    if request.param == "bridge":
+        return bridge_backend
+    return kernel_backend
+
+
+# ---------------------------------------------------------------------------
+# Tests -- one set, run two ways
+# ---------------------------------------------------------------------------
+
+class TestDual:
+
+    def test_arithmetic(self, backend):
+        result, stdout, error = backend.eval("(+ 1 2)")
         assert error is None, f"error: {error}"
-        assert result is not None
-        assert "3" in result
+        output = (result or "") + stdout
+        assert "3" in output, f"output: {output!r}"
 
-    def test_defun(self, kernel):
-        result, stdout, error = kernel_eval(kernel, "(defun kernel-double (x) (* 2 x))")
+    def test_defun(self, backend):
+        name = f"{backend.name}-double"
+        result, stdout, error = backend.eval(f"(defun {name} (x) (* 2 x))")
         assert error is None, f"error: {error}"
-        assert result is not None or stdout
+        output = (result or "") + stdout
+        assert len(output) > 0, "expected some output from defun"
 
-    def test_call_defun(self, kernel):
-        result, _, error = kernel_eval(kernel, "(kernel-double 21)")
+    def test_call_defun(self, backend):
+        name = f"{backend.name}-double"
+        result, stdout, error = backend.eval(f"({name} 21)")
         assert error is None, f"error: {error}"
-        assert "42" in result
+        output = (result or "") + stdout
+        assert "42" in output, f"output: {output!r}"
 
-    def test_cw(self, kernel):
-        result, stdout, error = kernel_eval(kernel, '(cw "hello kernel~%")')
+    def test_cw(self, backend):
+        tag = backend.name
+        result, stdout, error = backend.eval(f'(cw "hello {tag}~%")')
         assert error is None, f"error: {error}"
-        assert "hello kernel" in stdout.lower(), f"stdout: {stdout!r}"
+        assert f"hello {tag}" in stdout.lower(), f"stdout: {stdout!r}"
 
-    def test_include_book(self, kernel):
-        result, stdout, error = kernel_eval(
-            kernel, '(include-book "std/lists/append" :dir :system)', timeout=30
+    def test_include_book(self, backend):
+        result, stdout, error = backend.eval(
+            '(include-book "std/lists/append" :dir :system)', timeout=60
         )
         assert error is None, f"error: {error}"
 
-    def test_after_include_book(self, kernel):
-        result, _, error = kernel_eval(kernel, "(+ 100 200)")
+    def test_after_include_book(self, backend):
+        result, stdout, error = backend.eval("(+ 100 200)")
         assert error is None, f"error: {error}"
-        assert result is not None
-        assert "300" in result
+        output = (result or "") + stdout
+        assert "300" in output, f"output: {output!r}"
 
-    def test_heavy_include_book(self, kernel):
-        """Test a heavy include-book (projects/apply/top) like the notebook uses."""
-        result, stdout, error = kernel_eval(
-            kernel, '(include-book "projects/apply/top" :dir :system)', timeout=30
+    def test_include_book_apply(self, backend):
+        result, stdout, error = backend.eval(
+            '(include-book "projects/apply/top" :dir :system)', timeout=60
         )
         assert error is None, f"error: {error}"
 
-    def test_after_heavy_include_book(self, kernel):
-        """Verify kernel is still alive after heavy include-book."""
-        result, _, error = kernel_eval(kernel, "(+ 1 1)")
+    def test_after_include_book_apply(self, backend):
+        result, stdout, error = backend.eval("(+ 1 1)")
         assert error is None, f"error: {error}"
-        assert result is not None
-        assert "2" in result
-
-    def test_include_book_apply(self, kernel):
-        """Same include-book as the parse-ns notebook."""
-        result, stdout, error = kernel_eval(
-            kernel, '(include-book "projects/apply/top" :dir :system)', timeout=30
-        )
-        assert error is None, f"error: {error}"
-
-    def test_after_include_book_apply(self, kernel):
-        result, _, error = kernel_eval(kernel, "(+ 1 1)")
-        assert error is None, f"error: {error}"
-        assert result is not None
-        assert "2" in result
+        output = (result or "") + stdout
+        assert "2" in output, f"output: {output!r}"

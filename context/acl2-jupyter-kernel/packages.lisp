@@ -14,6 +14,9 @@
                 #:*standard-co*
                 #:*open-output-channel-key*
                 #:*open-output-channel-type-key*
+                ;; Input channel symbols — for creating channels from string streams
+                #:*open-input-channel-key*
+                #:*open-input-channel-type-key*
                 #:*the-live-state*
                 #:*ld-level*
                 ;; State access
@@ -22,7 +25,7 @@
                 #:global-symbol
                 #:raw-mode-p
                 #:w
-                ;; Used in eval
+                ;; Used in ld / eval
                 #:state)
   (:export #:kernel
            #:start

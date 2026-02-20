@@ -212,6 +212,44 @@ class TestCodeComplete:
 # Error handling
 # ---------------------------------------------------------------------------
 
+class TestIncludeBook:
+    """include-book should work without stack overflow."""
+
+    def test_include_book(self, kernel):
+        code = '(include-book "std/lists/append" :dir :system)'
+        results, stdout, error = execute(kernel, code, timeout=120)
+        assert error is None, f"error: {error}"
+        # After include-book, a function from that book should be available.
+        # The book certifies successfully, so at minimum no crash.
+        assert results or stdout or error is None, "include-book should succeed"
+
+    def test_after_include_book(self, kernel):
+        """Kernel still works after include-book."""
+        results, _, error = execute(kernel, "(+ 100 200)")
+        assert error is None, f"error: {error}"
+        assert any("300" in r for r in results), f"expected 300, got {results}"
+
+
+class TestIncludeBook:
+    """include-book should work without crashing the kernel."""
+
+    def test_include_book(self, kernel):
+        results, stdout, error = execute(
+            kernel,
+            '(include-book "std/lists/append" :dir :system)',
+            timeout=120,
+        )
+        assert error is None, f"error: {error}"
+        # include-book should succeed without crashing
+        assert results or stdout, "expected some output from include-book"
+
+    def test_function_after_include_book(self, kernel):
+        """After include-book, the kernel should still work."""
+        results, _, error = execute(kernel, "(+ 1 2)")
+        assert error is None, f"error: {error}"
+        assert any("3" in r for r in results), f"expected 3, got {results}"
+
+
 class TestErrors:
     """Evaluation errors should be reported, not crash the kernel."""
 

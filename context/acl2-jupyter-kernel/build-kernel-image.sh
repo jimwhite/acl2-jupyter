@@ -1,24 +1,30 @@
 #!/bin/sh
 
-# Build a saved ACL2 Jupyter Kernel core file.
+# Build a saved ACL2 Jupyter Kernel binary using ACL2's save-exec.
 #
-# Uses save-lisp-and-die to create a .core file with the kernel system
-# pre-loaded.  No shell script wrapper is generated — the kernelspec
-# points the sbcl binary at this core directly.
+# This produces BOTH a shell script (saved_acl2_jupyter) and a
+# .core file (saved_acl2_jupyter.core), exactly like how saved_acl2
+# itself is built.  The generated shell script includes all the
+# necessary SBCL runtime flags:
 #
-# On startup (via kernel.json argv):
-#   sbcl --core THIS.core --eval '(acl2::sbcl-restart)'
-#        --eval '(acl2-jupyter-kernel:start)'
+#   --control-stack-size 64   (64 MB for ALL threads — fixes stack overflow)
+#   --dynamic-space-size ...  (inherited from the ACL2 build)
+#   --tls-limit 16384
 #
-# The flow is:
-#   sbcl-restart -> acl2-default-restart -> LP
-#   -> *return-from-lp* causes LP to exit immediately
-#   -> sbcl-restart returns -> (acl2-jupyter-kernel:start) runs
-#   -> reads JUPYTER_CONNECTION_FILE env var -> starts kernel
+# kernel.json argv is simply:
+#   ["path/to/saved_acl2_jupyter", "{connection_file}"]
+#
+# The startup flow:
+#   saved_acl2_jupyter {connection_file}
+#   -> sbcl --control-stack-size 64 ... --eval '(acl2::sbcl-restart)'
+#   -> sbcl-restart -> acl2-default-restart -> LP
+#   -> LP runs :init-forms inside LD:
+#        (set-raw-mode-on!)           ;; enable raw Lisp (no trust tag needed)
+#        (acl2-jupyter-kernel:start)  ;; blocks, running Jupyter kernel
+#        (value :q)                   ;; when/if kernel exits, exit LP
+#   -> kernel has full ACL2 state (like the Bridge)
 #
 # Usage: ./build-kernel-image.sh [output-dir]
-#
-# The output directory defaults to the directory containing this script.
 
 set -e
 
@@ -28,11 +34,12 @@ ACL2_HOME="${ACL2_HOME:-/home/acl2}"
 QUICKLISP_SETUP="${QUICKLISP_SETUP:-${HOME}/quicklisp/setup.lisp}"
 SAVED_ACL2="${SAVED_ACL2:-${ACL2_HOME}/saved_acl2}"
 
-CORE_NAME="acl2-jupyter-kernel.core"
+BINARY_NAME="saved_acl2_jupyter"
 
-echo "=== Building ACL2 Jupyter Kernel Core ==="
+echo "=== Building ACL2 Jupyter Kernel (via save-exec) ==="
 echo "  saved_acl2: ${SAVED_ACL2}"
-echo "  Output:     ${OUTPUT_DIR}/${CORE_NAME}"
+echo "  Output:     ${OUTPUT_DIR}/${BINARY_NAME}"
+echo "              ${OUTPUT_DIR}/${BINARY_NAME}.core"
 echo ""
 
 # Ensure output directory exists
@@ -42,29 +49,29 @@ mkdir -p "${OUTPUT_DIR}"
 #   1. :q to exit LP (get to raw Lisp)
 #   2. Disable debugger so errors exit instead of hanging
 #   3. Load Quicklisp + kernel system
-#   4. Set *return-from-lp* so LP exits cleanly on restart
-#   5. Reset *acl2-default-restart-complete* so restart re-initializes
-#   6. save-lisp-and-die to create just the .core file
+#   4. save-exec with :init-forms to start kernel INSIDE LP
+#
+# Using :init-forms (not :return-from-lp) so the kernel runs inside
+# ACL2's LD like the Bridge does.  This ensures full ACL2 state
+# (CBD, world, include-book machinery) is available to kernel threads.
+#
+# After :q we're at raw Lisp with *package* = ACL2,
+# so save-exec (an ACL2 macro) is directly accessible.
 "${SAVED_ACL2}" <<EOF
 (value :q)
 (sb-ext:disable-debugger)
 (load "${QUICKLISP_SETUP}")
 (ql:quickload :acl2-jupyter-kernel :silent t)
-(setq acl2::*return-from-lp* '(value :q))
-(setq acl2::*acl2-default-restart-complete* nil)
-(sb-ext:save-lisp-and-die "${OUTPUT_DIR}/${CORE_NAME}" :purify t)
+(save-exec "${OUTPUT_DIR}/${BINARY_NAME}" nil
+           :init-forms '((set-raw-mode-on!)
+                         (acl2-jupyter-kernel:start)
+                         (value :q)))
 EOF
 
 echo ""
 echo "=== Build complete ==="
-echo "  Core: ${OUTPUT_DIR}/${CORE_NAME}"
+echo "  Binary: ${OUTPUT_DIR}/${BINARY_NAME}"
+echo "  Core:   ${OUTPUT_DIR}/${BINARY_NAME}.core"
 echo ""
-echo "To install the kernelspec, start the kernel system and run:"
-echo "  (acl2-jupyter-kernel:install)"
-echo ""
-echo "Or install from saved_acl2:"
-echo "  ${SAVED_ACL2}"
-echo "  :q"
-echo "  (load \"${QUICKLISP_SETUP}\")"
-echo "  (ql:quickload :acl2-jupyter-kernel)"
-echo "  (acl2-jupyter-kernel:install :core \"${OUTPUT_DIR}/${CORE_NAME}\")"
+echo "To install the kernelspec, run:"
+echo "  ./install-kernelspec.sh"

@@ -3,7 +3,7 @@
 ;;;; Provides ACL2-aware documentation lookup for shift-tab inspection
 ;;;; in the Jupyter frontend.
 
-(in-package #:acl2-jupyter-kernel)
+(in-package #:acl2-jupyter)
 
 (defun get-acl2-doc (sym)
   "Get the ACL2 documentation string for SYM, if available."

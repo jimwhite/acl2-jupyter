@@ -2,18 +2,16 @@
 ;;;;
 ;;;; Installs the ACL2 Jupyter kernelspec so Jupyter can find and launch it.
 ;;;;
-;;;; The kernel is launched by invoking the SBCL binary directly with
-;;;; --core pointing at a pre-built .core file that has the kernel system
-;;;; loaded. The connection file is passed via the JUPYTER_CONNECTION_FILE
-;;;; environment variable (set in kernel.json "env").
+;;;; The kernel is launched by start-kernel.sh, which invokes SBCL directly
+;;;; with the original saved_acl2.core (no save-exec, no second core image).
+;;;; Quicklisp and the kernel system are loaded at startup via --eval,
+;;;; then sbcl-restart enters LP, which reads (set-raw-mode-on!) and
+;;;; (acl2-jupyter-kernel:start) from stdin.
 ;;;;
-;;;; Two modes:
-;;;;   1. Core mode (install):  Points kernel.json at sbcl + a .core file
-;;;;      (created by build-kernel-image.sh via save-lisp-and-die).
-;;;;   2. Image mode (install-image): Saves the current process as an
-;;;;      executable image via uiop:dump-image.
+;;;; kernel.json argv is:
+;;;;   ["path/to/start-kernel.sh", "{connection_file}"]
 
-(in-package #:acl2-jupyter-kernel)
+(in-package #:acl2-jupyter)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Constants
@@ -22,28 +20,11 @@
 (defvar +display-name+ "ACL2")
 (defvar +language+ "acl2")
 
-;;; Default path to the .core file (sibling of this source file).
-(defvar +default-core+
+;;; Default path to the launcher script (sibling of this source file).
+(defvar +default-binary+
   (let ((here (or *load-pathname* *compile-file-pathname*)))
     (when here
-      (namestring (merge-pathnames "acl2-jupyter-kernel.core" here)))))
-
-;;; SBCL binary path — determined at load time from the running process.
-(defvar +sbcl-program+
-  (or (and (boundp 'sb-ext:*runtime-pathname*)
-           (namestring (truename sb-ext:*runtime-pathname*)))
-      "/usr/local/bin/sbcl"))
-
-;;; SBCL_HOME for the generated script.
-(defvar +sbcl-home+
-  (or (uiop:getenv "SBCL_HOME") "/usr/local/lib/sbcl/"))
-
-;;; Dynamic space size (MB) — inherit from current ACL2 build.
-(defvar +dynamic-space-size+
-  (let ((sym (find-symbol "*SBCL-DYNAMIC-SPACE-SIZE*" "ACL2")))
-    (if (and sym (boundp sym))
-        (format nil "~A" (symbol-value sym))
-        "32000")))
+      (namestring (merge-pathnames "start-kernel.sh" here)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Installer Classes
@@ -77,50 +58,36 @@
 ;;; ---------------------------------------------------------------------------
 ;;; Command Line Generation
 ;;; ---------------------------------------------------------------------------
-;;; kernel.json argv launches sbcl directly with the right runtime options,
-;;; --core pointing at the pre-built .core file, and --eval to initialize
-;;; ACL2 and start the kernel. The connection file is passed via the
-;;; JUPYTER_CONNECTION_FILE environment variable (in kernel.json env).
+;;; kernel.json argv invokes start-kernel.sh with {connection_file}.
+;;; The script loads the kernel into the original saved_acl2 at startup.
 
-(defun make-sbcl-argv (core-path)
-  "Build the argv list for launching sbcl with the kernel core.
-   The {connection_file} placeholder goes last, just like the CL SBCL kernel.
-   run-kernel picks it up via (first (uiop:command-line-arguments))."
-  (list +sbcl-program+
-        "--tls-limit" "16384"
-        "--dynamic-space-size" +dynamic-space-size+
-        "--control-stack-size" "64"
-        "--disable-ldb"
-        "--core" core-path
-        "--end-runtime-options"
-        "--no-userinit"
-        "--eval" "(acl2::sbcl-restart)"
-        "--eval" "(acl2-jupyter-kernel:start)"
-        "{connection_file}"))
+(defun make-kernel-argv (binary-path)
+  "Build the argv list for kernel.json.
+   start-kernel.sh takes {connection_file} as its sole argument."
+  (list binary-path "{connection_file}"))
 
 (defmethod jupyter:command-line ((instance acl2-user-installer))
   "Get the command line for a user installation."
-  (let ((core (or (jupyter:installer-implementation instance)
-                  +default-core+
-                  (error "Cannot determine path to .core file."))))
-    (make-sbcl-argv core)))
+  (let ((binary (or (jupyter:installer-implementation instance)
+                    +default-binary+
+                    (error "Cannot determine path to saved binary."))))
+    (make-kernel-argv binary)))
 
 (defmethod jupyter:command-line ((instance acl2-system-installer))
   "Get the command line for a system installation."
-  (let ((core (or (jupyter:installer-implementation instance)
-                  +default-core+
-                  (error "Cannot determine path to .core file."))))
-    (make-sbcl-argv core)))
+  (let ((binary (or (jupyter:installer-implementation instance)
+                    +default-binary+
+                    (error "Cannot determine path to saved binary."))))
+    (make-kernel-argv binary)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Kernel Spec Override
 ;;; ---------------------------------------------------------------------------
-;;; Override install-spec to add the "env" dict to kernel.json.
-;;; Jupyter supports env vars in the kernel spec — we use it to pass
-;;; SBCL_HOME and the connection file path.
+;;; Override install-spec to write kernel.json directly (the saved binary
+;;; script already exports SBCL_HOME, so no env dict is needed).
 
 (defun install-acl2-spec (instance)
-  "Install kernel.json with env dict for SBCL_HOME and connection file."
+  "Install kernel.json for the ACL2 kernel."
   (let ((spec-path (jupyter:installer-path instance :spec)))
     (format t "Installing kernel spec file ~A~%" spec-path)
     (with-open-file (stream spec-path :direction :output :if-exists :supersede)
@@ -130,8 +97,6 @@
           "display_name" (jupyter:installer-display-name instance)
           "language" (jupyter:installer-language instance)
           "interrupt_mode" "message"
-          "env" (list :object-plist
-                  "SBCL_HOME" +sbcl-home+)
           "metadata" :empty-object)
         stream))))
 
@@ -140,9 +105,9 @@
 ;;; Public Install Functions
 ;;; ---------------------------------------------------------------------------
 
-(defun install (&key core system local prefix jupyter program)
+(defun install (&key binary system local prefix jupyter program)
   "Install the ACL2 Jupyter kernel.
-   - CORE: path to the .core file (default: sibling of this source file)
+   - BINARY: path to the saved binary (default: sibling of this source file)
    - SYSTEM: if T, install system-wide; otherwise install for current user
    - LOCAL: use /usr/local/share instead of /usr/share for system installs
    - PREFIX: directory prefix for packaging
@@ -151,7 +116,7 @@
   (let ((instance (make-instance
                     (if system 'acl2-system-installer 'acl2-user-installer)
                     :display-name +display-name+
-                    :implementation (or core +default-core+)
+                    :implementation (or binary +default-binary+)
                     :kernel-name +language+
                     :local local
                     :prefix prefix

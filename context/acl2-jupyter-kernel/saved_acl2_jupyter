@@ -1,0 +1,7 @@
+#!/bin/sh
+
+# Saved February 9, 2026  21:05:02
+#  then February 20, 2026  03:45:41
+
+export SBCL_HOME='/usr/local/lib/sbcl/'
+exec "/usr/local/bin/sbcl" --tls-limit 16384 --dynamic-space-size 32000 --control-stack-size 64 --disable-ldb --core "/workspaces/acl2-jupyter-stp/context/acl2-jupyter-kernel/saved_acl2_jupyter.core" ${SBCL_USER_ARGS} --end-runtime-options --no-userinit --eval '(acl2::sbcl-restart)' "$@"

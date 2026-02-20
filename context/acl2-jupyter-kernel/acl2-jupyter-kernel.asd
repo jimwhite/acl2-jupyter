@@ -10,7 +10,7 @@
   :author "ACL2 Jupyter Contributors"
   :license "MIT"
   :version "0.1.0"
-  :depends-on ("common-lisp-jupyter")
+  :depends-on ("common-lisp-jupyter" "bt-semaphore" "bordeaux-threads")
   :serial t
   :components
     ((:file "packages")

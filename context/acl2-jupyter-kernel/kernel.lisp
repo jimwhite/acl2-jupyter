@@ -1,55 +1,150 @@
 ;;;; ACL2 Jupyter Kernel - Kernel Class
 ;;;;
-;;;; Subclasses jupyter:kernel to provide ACL2-specific evaluation.
-;;;; ACL2 forms are evaluated with STATE bound to *the-live-state*,
-;;;; and output from CW, FMT, etc. is routed through Jupyter's streams.
+;;;; Architecture:
+;;;;
+;;;;   Shell thread (Jupyter): owns *kernel*, IOPub socket, protocol.
+;;;;   Main thread (ACL2):     owns 64MB stack, ACL2 state, output channels.
+;;;;
+;;;; evaluate-code runs on the shell thread.  It dispatches ACL2 work
+;;;; (output routing + eval) to the main thread via in-main-thread,
+;;;; which returns results.  Jupyter protocol calls (execute-result)
+;;;; stay on the shell thread where *kernel* is bound.
+;;;;
+;;;; in-main-thread forwards *standard-output* (Jupyter's IOPub stream)
+;;;; and *kernel* to the main thread so both CL output and Jupyter calls
+;;;; work there.
 
-(in-package #:acl2-jupyter-kernel)
+(in-package #:acl2-jupyter)
 
 ;;; ---------------------------------------------------------------------------
-;;; ACL2 Output Routing
+;;; Main Thread Dispatch
 ;;; ---------------------------------------------------------------------------
-;;; The bridge uses a custom gray stream class and macros to redirect ACL2's
-;;; output channels (standard-co, proofs-co, trace-co) to a given stream.
-;;; We reuse the same pattern here to route output through Jupyter's streams.
+
+(defvar *main-thread-lock* (bordeaux-threads:make-lock "acl2-jupyter-main-thread-lock"))
+(defvar *main-thread-work* nil)
+(defvar *main-thread-ready* (bt-semaphore:make-semaphore))
+(defvar *kernel-shutdown* nil)
+
+(defun main-thread-loop ()
+  "Block the main thread, executing work dispatched from the Shell thread."
+  (loop until *kernel-shutdown* do
+        (bt-semaphore:wait-on-semaphore *main-thread-ready*)
+        (unless *kernel-shutdown*
+          (let ((work *main-thread-work*))
+            (setq *main-thread-work* nil)
+            (when work (funcall work))))))
+
+(defmacro in-main-thread (&body forms)
+  "Execute FORMS on the main thread.  Blocks until done.
+   Forwards all Jupyter shell-thread specials (*kernel*, *stdout*, *stderr*,
+   *stdin*, *message*, *thread-id*, *html-output*, *markdown-output*)
+   so that Jupyter protocol calls (execute-result, stream output, etc.)
+   work correctly on the main thread."
+  (let ((done     (gensym "DONE"))
+        (retvals  (gensym "RETVALS"))
+        (errval   (gensym "ERRVAL"))
+        (finished (gensym "FINISHED"))
+        (saved-stdout  (gensym "SAVED-STDOUT"))
+        (saved-stderr  (gensym "SAVED-STDERR"))
+        (saved-stdin   (gensym "SAVED-STDIN"))
+        (saved-kernel  (gensym "SAVED-KERNEL"))
+        (saved-message (gensym "SAVED-MESSAGE"))
+        (saved-thread  (gensym "SAVED-THREAD"))
+        (saved-html    (gensym "SAVED-HTML"))
+        (saved-md      (gensym "SAVED-MD"))
+        (work          (gensym "WORK")))
+    `(bordeaux-threads:with-lock-held (*main-thread-lock*)
+       (let* ((,done     (bt-semaphore:make-semaphore))
+              (,retvals  nil)
+              (,finished nil)
+              (,errval   nil)
+              ;; Capture all Jupyter shell-thread specials
+              (,saved-stdout  jupyter::*stdout*)
+              (,saved-stderr  jupyter::*stderr*)
+              (,saved-stdin   jupyter::*stdin*)
+              (,saved-kernel  jupyter:*kernel*)
+              (,saved-message jupyter::*message*)
+              (,saved-thread  jupyter:*thread-id*)
+              (,saved-html    jupyter:*html-output*)
+              (,saved-md      jupyter:*markdown-output*)
+              (,work
+               (lambda ()
+                 ;; Rebind ALL Jupyter specials on the main thread
+                 (let ((jupyter::*stdout*          ,saved-stdout)
+                       (jupyter::*stderr*          ,saved-stderr)
+                       (jupyter::*stdin*           ,saved-stdin)
+                       (jupyter:*kernel*          ,saved-kernel)
+                       (jupyter::*message*        ,saved-message)
+                       (jupyter:*thread-id*       ,saved-thread)
+                       (jupyter:*html-output*     ,saved-html)
+                       (jupyter:*markdown-output* ,saved-md)
+                       ;; Rebuild CL streams same as run-shell does
+                       (*standard-input*  (make-synonym-stream 'jupyter::*stdin*))
+                       (*standard-output* (make-synonym-stream 'jupyter::*stdout*))
+                       (*error-output*    (make-synonym-stream 'jupyter::*stderr*))
+                       (*trace-output*    (make-synonym-stream 'jupyter::*stdout*)))
+                   (let ((*debug-io*    (make-two-way-stream *standard-input* *standard-output*))
+                         (*query-io*    (make-two-way-stream *standard-input* *standard-output*))
+                         (*terminal-io* (make-two-way-stream *standard-input* *standard-output*)))
+                     (block main-thread-work
+                       (unwind-protect
+                           (handler-case
+                             (progn
+                               (setq ,retvals (multiple-value-list (progn ,@forms)))
+                               (setq ,finished t))
+                             (error (condition)
+                               (setq ,errval condition)
+                               (setq ,finished t)))
+                         ;; ACL2 throws (e.g. include-book) bypass handler-case.
+                         ;; Side effects already happened.  Treat as success
+                         ;; with nil result — same as Bridge, which lets the
+                         ;; uncaught throw become a caught condition at a
+                         ;; higher level.
+                         (unless ,finished
+                           (setq ,finished t))
+                         (return-from main-thread-work nil))))
+                   (bt-semaphore:signal-semaphore ,done)))))
+         (setq *main-thread-work* ,work)
+         (bt-semaphore:signal-semaphore *main-thread-ready*)
+         (bt-semaphore:wait-on-semaphore ,done)
+         (when ,errval (error ,errval))
+         (values-list ,retvals)))))
+
+;;; ---------------------------------------------------------------------------
+;;; ACL2 Output Routing (same macros as Bridge)
+;;; ---------------------------------------------------------------------------
 
 (defmacro with-acl2-channels-bound (channel &body forms)
-  "Bind ACL2's output channels (proofs-co, standard-co, trace-co) to CHANNEL."
+  "Bind ACL2 state globals (proofs-co, standard-co, trace-co) to CHANNEL."
   `(progv
-       (list (acl2::global-symbol 'acl2::proofs-co)
-             (acl2::global-symbol 'acl2::standard-co)
-             (acl2::global-symbol 'acl2::trace-co))
+       (list (global-symbol 'acl2::proofs-co)
+             (global-symbol 'acl2::standard-co)
+             (global-symbol 'acl2::trace-co))
        (list ,channel ,channel ,channel)
      (progn ,@forms)))
 
 (defmacro with-acl2-output-to (stream &body forms)
-  "Redirect all ACL2 output (standard-co, proofs-co, trace-co, *standard-output*,
-   *trace-output*, *error-output*) to STREAM, then execute FORMS."
+  "Redirect all ACL2 output channels AND CL streams to STREAM."
   (let ((channel (gensym "CHANNEL")))
     `(let* ((,channel (gensym "ACL2-JUPYTER-OUT")))
-       (setf (get ,channel acl2::*open-output-channel-type-key*) :character)
-       (setf (get ,channel acl2::*open-output-channel-key*) ,stream)
+       (setf (get ,channel *open-output-channel-type-key*) :character)
+       (setf (get ,channel *open-output-channel-key*) ,stream)
        (unwind-protect
            (let ((*standard-output* ,stream)
                  (*trace-output*    ,stream)
-                 (*debug-io*        ,stream)
+                 (*debug-io*        (make-two-way-stream *standard-input* ,stream))
                  (*error-output*    ,stream)
-                 (acl2::*standard-co* ,channel))
+                 (*standard-co*     ,channel))
              (with-acl2-channels-bound ,channel ,@forms))
-         ;; Clean up the symbol properties so GC can reclaim the stream.
-         (setf (get ,channel acl2::*open-output-channel-key*) nil)
-         (setf (get ,channel acl2::*open-output-channel-type-key*) nil)))))
+         (setf (get ,channel *open-output-channel-key*) nil)
+         (setf (get ,channel *open-output-channel-type-key*) nil)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; REPL Variables
 ;;; ---------------------------------------------------------------------------
-;;; Emulate the standard CL REPL variables (-, +, ++, +++, *, **, ***, /, //, ///)
-;;; within the ACL2 package context.
 
-(defvar *acl2-last-form* nil
-  "The last form read (ACL2's equivalent of CL:-)")
-(defvar *acl2-results* nil
-  "The last set of result values (CL's /)")
+(defvar *acl2-last-form* nil)
+(defvar *acl2-results* nil)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Kernel Class
@@ -62,11 +157,11 @@
     :package (find-package "ACL2")
     :version "0.1.0"
     :banner (format nil "ACL2 Jupyter Kernel v0.1.0~%~A"
-                    (acl2::f-get-global 'acl2::acl2-version
-                                        acl2::*the-live-state*))
+                    (f-get-global 'acl2::acl2-version
+                                  *the-live-state*))
     :language-name "acl2"
-    :language-version (acl2::f-get-global 'acl2::acl2-version
-                                          acl2::*the-live-state*)
+    :language-version (f-get-global 'acl2::acl2-version
+                                    *the-live-state*)
     :mime-type "text/x-common-lisp"
     :file-extension ".lisp"
     :pygments-lexer "common-lisp"
@@ -79,125 +174,104 @@
 ;;; ---------------------------------------------------------------------------
 ;;; ACL2 Form Evaluation
 ;;; ---------------------------------------------------------------------------
+;;; Same pattern as Bridge's worker-do-work:
+;;;   (eval `(let ((state *the-live-state*)) (declare (ignorable state)) ,cmd))
+;;; Plus catch for raw-ev-fncall to handle ACL2 throws gracefully.
 
 (defun acl2-eval (form)
   "Evaluate a single ACL2 form with STATE bound to *the-live-state*.
-   Returns a list of result values."
-  (multiple-value-list
-   (eval
-    ;; Bind STATE so that ACL2 macros and functions that use it work directly.
-    ;; This is the same pattern used by the ACL2 Bridge.
-    `(let ((acl2::state acl2::*the-live-state*))
-       (declare (ignorable acl2::state))
-       ,form))))
+   Catches raw-ev-fncall throws so they become CL errors."
+  (let ((threw t))
+    (let ((result
+            (multiple-value-list
+             (catch 'acl2::raw-ev-fncall
+               (prog1
+                   (eval
+                    `(let ((state *the-live-state*))
+                       (declare (ignorable state))
+                       ,form))
+                 (setq threw nil))))))
+      (when threw
+        (let ((msg (ignore-errors
+                     (format nil "~A"
+                             (if (and (consp (car result))
+                                      (consp (cdar result)))
+                                 (cadar result)
+                                 (car result))))))
+          (error "ACL2 error: ~A" (or msg "unknown error"))))
+      result)))
 
 (defun read-acl2-forms (code)
-  "Read all forms from a string of ACL2 code.
-   Returns a list of forms. Handles ACL2 keyword commands (e.g. :pe, :pl)
-   as well as standard s-expressions."
+  "Read all forms from a string of ACL2 code."
   (let ((forms nil)
         (*package* (find-package "ACL2"))
         (*readtable* (copy-readtable nil)))
     (with-input-from-string (stream code)
       (loop
-        ;; Skip whitespace
         (loop for ch = (peek-char nil stream nil nil)
               while (and ch (member ch '(#\Space #\Tab #\Newline #\Return)))
               do (read-char stream))
-        ;; Check for EOF
         (let ((ch (peek-char nil stream nil nil)))
           (when (null ch) (return))
-          ;; Check for ACL2 keyword commands (lines starting with :)
           (cond
             ((char= ch #\:)
-             ;; Read the whole line as a keyword command.
-             ;; ACL2's ld translates e.g. `:pe foo` into `(PE 'FOO)`:
-             ;;   - intern the keyword's symbol-name in ACL2 package
-             ;;   - quote each argument
-             (let ((line (string-trim '(#\Space #\Tab #\Return)
-                                      (read-line stream nil ""))))
-               (when (plusp (length line))
-                 (let ((raw-forms nil))
-                   (with-input-from-string (ls line)
-                     (handler-case
-                         (loop for obj = (read ls nil ls)
-                               until (eq obj ls)
-                               do (push obj raw-forms))
-                       (error () nil)))
-                   (when raw-forms
-                     (let* ((raw (nreverse raw-forms))
-                            (key (car raw))
-                            (args (cdr raw))
-                            (sym (intern (symbol-name key) "ACL2")))
-                       (if (eq key :q)
-                           ;; :q is special — exit ld
-                           (push '(acl2::exit-ld acl2::state) forms)
-                           ;; Normal keyword command: (sym 'arg1 'arg2 ...)
-                           (push (cons sym
-                                       (mapcar (lambda (a) (list 'quote a))
-                                               args))
-                                 forms))))))))
-            ;; Check for comment lines
+             (read-line stream nil ""))
             ((char= ch #\;)
              (read-line stream nil ""))
             (t
-             ;; Standard s-expression
              (handler-case
                  (let ((form (read stream nil stream)))
                    (unless (eq form stream)
                      (push form forms)))
                (error (c)
-                 ;; If there's a read error, capture the rest as a string
-                 ;; and report it later during evaluation
                  (let ((rest (read-line stream nil "")))
-                   (push `(acl2::er acl2::soft 'acl2-jupyter-kernel
+                   (push `(acl2::er acl2::soft 'acl2-jupyter
                                     "Read error: ~@0 near: ~@1"
                                     ,(format nil "~A" c)
                                     ,rest)
                          forms)))))))))
     (nreverse forms)))
 
+;;; ---------------------------------------------------------------------------
+;;; evaluate-code — ALL work dispatched to main thread
+;;; ---------------------------------------------------------------------------
+;;; This is the key architectural alignment with Bridge.  Bridge's worker
+;;; thread does: output routing → eval → result handling, all on ONE thread.
+;;; We do the same on the main thread.  The Jupyter shell thread only
+;;; dispatches and waits.
+
 (defmethod jupyter:evaluate-code ((k kernel) code &optional source-path breakpoints)
-  "Evaluate ACL2 code in the kernel.
-   Each top-level form is evaluated sequentially. Results are displayed
-   via execute-result. Errors are caught and reported."
   (declare (ignore source-path breakpoints))
-  (let* ((*package* (find-package "ACL2"))
-         (forms (read-acl2-forms code))
-         (acl2::state acl2::*the-live-state*))
-    (declare (ignorable acl2::state))
-    (dolist (form forms)
-      (setf *acl2-last-form* form)
-      (with-acl2-output-to *standard-output*
-        (handler-case
-            (let ((results (acl2-eval form)))
-              (setf *acl2-results* results)
-              ;; Display each result value
-              (dolist (result results)
-                ;; Don't display STATE (it's not informative)
-                (unless (eq result acl2::*the-live-state*)
-                  (jupyter:execute-result
-                   (jupyter:text
-                    (let ((*package* (find-package "ACL2"))
-                          (*print-case* :downcase)
-                          (*print-pretty* t))
-                      (prin1-to-string result)))))))
-          (error (c)
-            (return-from jupyter:evaluate-code
-              (values (symbol-name (type-of c))
-                      (format nil "~A" c)
-                      (list (format nil "~A" c))))))))))
+  (let ((forms (let ((*package* (find-package "ACL2")))
+                 (read-acl2-forms code))))
+    (handler-case
+        (in-main-thread
+          ;; ---- Everything below runs on the main thread ----
+          (with-acl2-output-to *standard-output*
+            (let ((*package* (find-package "ACL2")))
+              (dolist (form forms)
+                (setf *acl2-last-form* form)
+                (let ((results (acl2-eval form)))
+                  (setf *acl2-results* results)
+                  (dolist (result results)
+                    (unless (eq result *the-live-state*)
+                      (jupyter:execute-result
+                       (jupyter:text
+                        (let ((*package* (find-package "ACL2"))
+                              (*print-case* :downcase)
+                              (*print-pretty* t))
+                          (prin1-to-string result)))))))))))
+      (error (c)
+        (values (symbol-name (type-of c))
+                (format nil "~A" c)
+                (list (format nil "~A" c)))))))
 
 (defmethod jupyter:code-is-complete ((k kernel) code)
-  "Check if ACL2 code is complete (balanced parens, etc.).
-   Uses a fresh read pass that does NOT suppress errors (unlike
-   read-acl2-forms which wraps read errors into eval-time error forms)."
   (let ((*package* (find-package "ACL2"))
         (*readtable* (copy-readtable nil)))
     (handler-case
         (with-input-from-string (stream code)
           (loop
-            ;; Skip whitespace
             (loop for ch = (peek-char nil stream nil nil)
                   while (and ch (member ch '(#\Space #\Tab #\Newline #\Return)))
                   do (read-char stream))
@@ -213,51 +287,29 @@
 
 
 ;;; ---------------------------------------------------------------------------
-;;; Shell Thread Stack Size
-;;; ---------------------------------------------------------------------------
-;;; CL-jupyter creates a "Jupyter Shell" thread for handling execute requests.
-;;; bordeaux-threads:make-thread on SBCL doesn't pass a :stack-size, so the
-;;; thread gets SBCL's default (~2MB). ACL2's include-book and proof engine
-;;; need deep recursion, causing stack overflow. We override the start method
-;;; to create the shell thread with the same 64MB control stack that
-;;; saved_acl2 uses for its main thread.
-
-(defparameter *shell-thread-stack-size* (* 64 1024 1024)
-  "Control stack size for the Jupyter Shell thread (bytes). Default 64MB,
-   matching ACL2's --control-stack-size 64 setting.")
-
-(defmethod jupyter:start :around ((k kernel))
-  "Wrap the parent start method to replace the Jupyter Shell thread with
-   one that has a sufficiently large control stack for ACL2."
-  (call-next-method)
-  ;; The parent method created a shell thread with default stack.
-  ;; Kill it and replace with one that has a proper stack size.
-  (let ((old-thread (jupyter::kernel-shell-thread k)))
-    (when (and old-thread (bordeaux-threads:thread-alive-p old-thread))
-      (bordeaux-threads:destroy-thread old-thread))
-    (setf (jupyter::kernel-shell-thread k)
-          (sb-thread:make-thread (lambda () (jupyter::run-shell k))
-                                 :name "Jupyter Shell"
-                                 :arguments nil))))
-
-;;; ---------------------------------------------------------------------------
 ;;; Kernel Startup
 ;;; ---------------------------------------------------------------------------
-;;; This is the entry point for the kernel process, called after ACL2 has
-;;; initialized (via sbcl-restart → acl2-default-restart → LP → return-from-lp).
-;;; It starts the Jupyter kernel event loop.
+;;; Same pattern as Bridge's start-fn:
+;;;   1. Start listener/kernel in a spawned thread
+;;;   2. Block main thread in main-thread-loop
 
 (defun start (&optional connection-file)
-  "Start the ACL2 Jupyter kernel event loop.
-   Called after ACL2 initialization is complete (LP has exited via
-   return-from-lp). CONNECTION-FILE is the path to the Jupyter
-   connection file. If not provided, it is taken from the first
-   command-line argument (set by {connection_file} in kernel.json argv)."
-  ;; Disable the SBCL debugger so errors don't hang the kernel process
-  ;; waiting for interactive input.
+  "Start the ACL2 Jupyter kernel."
+  ;; Turn off raw mode — we needed it only for LP to call this function.
+  (f-put-global 'acl2::acl2-raw-mode-p nil *the-live-state*)
   (sb-ext:disable-debugger)
+  (setq *kernel-shutdown* nil)
   (let ((conn (or connection-file
                   (first (uiop:command-line-arguments)))))
     (unless conn
       (error "No connection file provided"))
-    (jupyter:run-kernel 'kernel conn)))
+    ;; Start Jupyter in a thread (like Bridge starts its listener thread)
+    (bordeaux-threads:make-thread
+     (lambda ()
+       (unwind-protect
+           (jupyter:run-kernel 'kernel conn)
+         (setq *kernel-shutdown* t)
+         (bt-semaphore:signal-semaphore *main-thread-ready*)))
+     :name "jupyter-kernel")
+    ;; Block main thread in work loop (like Bridge's start-fn)
+    (main-thread-loop)))

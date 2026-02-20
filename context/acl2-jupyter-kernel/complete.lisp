@@ -4,7 +4,7 @@
 ;;;; Completes function names, macro names, theorem names, and other
 ;;;; ACL2 symbols.
 
-(in-package #:acl2-jupyter-kernel)
+(in-package #:acl2-jupyter)
 
 (defun symbol-type-string (sym)
   "Return a string describing what kind of ACL2 entity SYM is."

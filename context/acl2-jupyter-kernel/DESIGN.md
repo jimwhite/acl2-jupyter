@@ -21,7 +21,8 @@ uses pexpect to scrape a REPL) with a native Common Lisp kernel that runs
                │  ZeroMQ (Jupyter Wire Protocol v5.5)
                │  TCP or IPC sockets
 ┌──────────────┴──────────────────────────────────────────┐
-│  saved_acl2_jupyter_kernel  (SBCL core + ACL2 image)    │
+│  saved_acl2_jupyter  (shell script + .core from         │
+│                       ACL2's save-exec)                  │
 │                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
 │  │  common-lisp-jupyter  (pzmq, ZeroMQ, wire proto)   │  │
@@ -101,40 +102,20 @@ Problems with this approach:
 - Output scraping loses structure (all output is a flat string)
 - No way to distinguish stdout from proof output from errors
 
-### 3.4 saved_acl2_jupyter (existing CL kernel launcher)
-
-The file `context/extension/saved_acl2_jupyter` shows the pattern for
-launching the CL kernel today:
-
-```sh
-#!/bin/sh
-export SBCL_HOME='/usr/local/lib/sbcl/'
-exec "/usr/local/bin/sbcl" \
-  --tls-limit 16384 --dynamic-space-size 32000 --control-stack-size 64 \
-  --disable-ldb --core "/home/acl2/saved_acl2.core" \
-  ${SBCL_USER_ARGS} --end-runtime-options \
-  --load /home/jovyan/quicklisp/setup.lisp \
-  --eval "(ql:quickload :common-lisp-jupyter ...)" \
-  --eval "(jupyter:run-kernel 'jupyter/common-lisp:kernel)" \
-  --eval '(acl2::sbcl-restart)' "$@"
-```
-
-This loads the generic CL kernel into ACL2's image. Our approach will be
-similar but loading `acl2-jupyter-kernel` instead.
-
 ## 4. File Structure
 
 ```
 context/acl2-jupyter-kernel/
 ├── acl2-jupyter-kernel.asd   # ASDF system definition
 ├── packages.lisp             # Package definition (acl2-jupyter-kernel / jupyter/acl2)
-├── kernel.lisp               # Kernel class + evaluate-code + output routing
+├── kernel.lisp               # Kernel class + evaluate-code + output routing + start
 ├── complete.lisp             # ACL2 symbol completion
 ├── inspect.lisp              # ACL2 documentation inspection
-└── installer.lisp            # Kernelspec installer
+├── installer.lisp            # Kernelspec installer (generates kernel.json)
+├── build-kernel-image.sh     # Build script: creates saved_acl2_jupyter via save-exec
+├── install-kernelspec.sh     # Install script: writes kernel.json
+└── test_kernel.py            # 21 pytest tests (arithmetic, defun, defthm, etc.)
 ```
-
-Eventually this will move to `books/jupyter/` in the ACL2 community books.
 
 ## 5. Component Details
 
@@ -153,7 +134,7 @@ Eventually this will move to `books/jupyter/` in the ACL2 community books.
 - Reads in the ACL2 package
 - Handles three kinds of input:
   1. Standard s-expressions: `(defun foo (x) x)`
-  2. ACL2 keyword commands: `:pe append` (read as a list)
+  2. ACL2 keyword commands: `:pe append` → `(PE 'APPEND)`
   3. Comment lines: skipped
 - Returns a list of forms for sequential evaluation
 
@@ -166,7 +147,14 @@ Eventually this will move to `books/jupyter/` in the ACL2 community books.
 - Errors are caught and returned as `(values ename evalue traceback)`
 
 **Code completeness** (`code-is-complete`):
-- Tries to read the code; if `end-of-file` → "incomplete", if other error → "invalid"
+- Tries to read the code; if `end-of-file` → "incomplete", if other error →
+  "invalid", otherwise → "complete"
+
+**Startup** (`start`):
+- Entry point called after ACL2 initialization completes
+- Disables the SBCL debugger (so errors don't hang the kernel)
+- Reads the connection file path from `(uiop:command-line-arguments)`
+- Calls `(jupyter:run-kernel 'kernel conn)` to start the event loop
 
 ### 5.2 complete.lisp — Symbol Completion
 
@@ -192,111 +180,133 @@ Provides rich markdown documentation for ACL2 symbols:
 
 ### 5.4 installer.lisp — Kernelspec
 
-Generates a `kernel.json` that tells Jupyter to launch the kernel via:
+Generates a `kernel.json` that tells Jupyter to launch the kernel.
+The argv is simply:
 
 ```json
 {
   "argv": [
-    "saved_acl2_jupyter_kernel",
+    "path/to/saved_acl2_jupyter",
     "{connection_file}"
   ],
   "display_name": "ACL2",
   "language": "acl2",
-  "interrupt_mode": "message"
+  "interrupt_mode": "message",
+  "metadata": {}
 }
 ```
 
-The `saved_acl2_jupyter_kernel` script (see §6) handles all bootstrapping.
+The saved binary (shell script from `save-exec`) handles all bootstrapping —
+SBCL flags, ACL2 restart, and the kernel start eval are all baked in.
+No `env` dict is needed because the script already exports `SBCL_HOME`.
 
-## 6. The Saved Image: `saved_acl2_jupyter_kernel`
+## 6. The Saved Image: `saved_acl2_jupyter`
 
-### Why a Saved Image is Needed
+### Build via ACL2's `save-exec`
 
-The ACL2 binary (`saved_acl2`) launches SBCL with the ACL2 core and
-immediately enters `(acl2::sbcl-restart)` which starts the ACL2 read-eval-print
-loop. This REPL intercepts input and doesn't understand raw CL `--eval`
-arguments properly (as we discovered — ACL2 rejects `#P` pathnames, `REQUIRE`,
-etc.).
+The kernel binary is built using ACL2's own `save-exec` mechanism — the same
+one that creates `saved_acl2` itself. This is done by `build-kernel-image.sh`:
 
-We need a separate launcher script (like `saved_acl2_jupyter`) that:
+1. Start `saved_acl2` and exit the ACL2 read-eval-print loop (`:q`)
+2. Load Quicklisp and the `acl2-jupyter-kernel` ASDF system
+3. Call `save-exec` with `:return-from-lp` and `:toplevel-args`
 
-1. Uses the same SBCL binary and ACL2 core (`saved_acl2.core`)
-2. Does **not** call `(acl2::sbcl-restart)` immediately
-3. Instead loads Quicklisp, loads our kernel system, then starts the kernel
-4. The kernel's `evaluate-code` handles the ACL2 ↔ CL boundary
+```lisp
+(save-exec "saved_acl2_jupyter" nil
+           :return-from-lp '(value :q)
+           :toplevel-args "--eval '(acl2-jupyter-kernel:start)'")
+```
 
-### Launcher Script Pattern
+This produces two files:
+
+- **`saved_acl2_jupyter`** — a shell script (like `saved_acl2`)
+- **`saved_acl2_jupyter.core`** — the SBCL core image
+
+### Generated Shell Script
+
+The shell script that `save-exec` generates looks like:
 
 ```sh
 #!/bin/sh
 export SBCL_HOME='/usr/local/lib/sbcl/'
 exec "/usr/local/bin/sbcl" \
-  --tls-limit 16384 --dynamic-space-size 32000 --control-stack-size 64 \
+  --tls-limit 16384 \
+  --dynamic-space-size 32000 \
+  --control-stack-size 64 \
   --disable-ldb \
-  --core "/home/acl2/saved_acl2.core" \
-  ${SBCL_USER_ARGS} --end-runtime-options \
-  --load /home/jovyan/quicklisp/setup.lisp \
-  --eval "(ql:quickload :acl2-jupyter-kernel)" \
-  --eval "(acl2-jupyter-kernel:install)" \
-  --eval "(jupyter:run-kernel 'acl2-jupyter-kernel:kernel)" \
+  --core "saved_acl2_jupyter.core" \
+  ${SBCL_USER_ARGS} \
+  --end-runtime-options \
+  --no-userinit \
+  --eval '(acl2::sbcl-restart)' \
+  --eval '(acl2-jupyter-kernel:start)' \
   "$@"
 ```
 
-Or, for a pre-built saved image approach (faster startup):
+Key points:
 
-```lisp
-;; Build script: build-saved-image.lisp
-(require :sb-bsd-sockets)
-(load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
-(ql:quickload :acl2-jupyter-kernel)
-(acl2-jupyter-kernel:install)
-(sb-ext:save-lisp-and-die "saved_acl2_jupyter_kernel"
-  :toplevel (lambda ()
-              (jupyter:run-kernel 'acl2-jupyter-kernel:kernel
-                                  (first (uiop:command-line-arguments))))
-  :executable t)
+- **`--control-stack-size 64`**: Sets 64 MB control stack for ALL threads in
+  the SBCL process. This is critical — the Jupyter Shell thread (created by
+  bordeaux-threads via common-lisp-jupyter) inherits this setting. Without it,
+  threads get SBCL's default ~2 MB which is insufficient for ACL2's deep
+  recursion during `include-book`, proof search, etc.
+- **`--eval '(acl2::sbcl-restart)'`**: Initializes ACL2 (runs
+  `acl2-default-restart` → LP). Because `:return-from-lp` was set to
+  `'(value :q)`, LP exits immediately after initialization.
+- **`--eval '(acl2-jupyter-kernel:start)'`**: Runs after ACL2 init completes,
+  reads the connection file from the command-line args, and starts the Jupyter
+  kernel event loop.
+- **`"$@"`**: Passes through the `{connection_file}` argument from kernel.json.
+
+### Startup Flow
+
+```
+Jupyter launches: saved_acl2_jupyter /path/to/connection.json
+
+  → Shell script execs: sbcl --control-stack-size 64 ...
+      --eval '(acl2::sbcl-restart)'
+      --eval '(acl2-jupyter-kernel:start)'
+      /path/to/connection.json
+
+  → SBCL starts, loads saved_acl2_jupyter.core
+  → (acl2::sbcl-restart)
+    → (acl2-default-restart)
+      → (LP)
+        → *return-from-lp* = '(value :q) → LP exits immediately
+    → sbcl-restart returns
+
+  → (acl2-jupyter-kernel:start)
+    → (sb-ext:disable-debugger)
+    → conn = (first (uiop:command-line-arguments))
+           = "/path/to/connection.json"
+    → (jupyter:run-kernel 'kernel conn)
+      → Parses connection file (JSON: transport, IP, ports, key)
+      → Creates ZeroMQ sockets (shell, control, iopub, stdin, heartbeat)
+      → Spawns "Jupyter Shell" thread (bordeaux-threads)
+      → Spawns heartbeat thread
+      → Sends kernel_info_reply, status: idle
+      → Ready for execute_request messages
 ```
 
-### Alternative: Dockerfile Build Step
+### Why `save-exec`, Not `save-lisp-and-die`
 
-In the Dockerfile, after building ACL2 and certifying books:
+Earlier iterations tried using `sb-ext:save-lisp-and-die` to create just a
+`.core` file and then launching `sbcl --core ...` directly from kernel.json.
+This failed because:
 
-```dockerfile
-# Build the ACL2 Jupyter kernel saved image
-RUN /home/acl2/saved_acl2 --eval '...' # (raw Lisp eval to load QL and build)
-```
+1. **Thread stack size**: SBCL's `--control-stack-size` flag (set in the shell
+   script) controls the default stack for ALL threads. Without it, threads
+   spawned by bordeaux-threads get ~2 MB, which causes
+   `SB-KERNEL::CONTROL-STACK-EXHAUSTED` during ACL2 operations.
+   `sb-thread:make-thread` in SBCL 2.6.1 does **not** accept a `:stack-size`
+   keyword, so per-thread override is not possible.
 
-Or more practically, we create the launcher script during install:
+2. **Consistency**: Using `save-exec` produces the exact same structure as
+   `saved_acl2` — a shell script that sets `SBCL_HOME`, runtime flags, and
+   passes `"$@"`. This is the well-tested pattern used by ACL2 itself and
+   the ACL2 Bridge.
 
-```dockerfile
-# Install ACL2 Jupyter kernel
-RUN ln -s /workspaces/acl2-jupyter-stp/context/acl2-jupyter-kernel \
-          /home/jovyan/quicklisp/local-projects/acl2-jupyter-kernel
-RUN sbcl --core /home/acl2/saved_acl2.core --no-userinit \
-    --load /home/jovyan/quicklisp/setup.lisp \
-    --eval '(ql:quickload :acl2-jupyter-kernel)' \
-    --eval '(acl2-jupyter-kernel:install)' \
-    --eval '(sb-ext:exit)'
-```
-
-## 7. How It Runs
-
-### Startup Sequence
-
-1. Jupyter launches `saved_acl2_jupyter_kernel {connection_file}`
-2. SBCL starts with `saved_acl2.core` (ACL2 is loaded)
-3. Quicklisp loads; `acl2-jupyter-kernel` system loads (which pulls in
-   `common-lisp-jupyter` and all its ZeroMQ dependencies)
-4. `jupyter:run-kernel` is called with our `kernel` class and the connection file
-5. common-lisp-jupyter parses the connection file (JSON with transport, IP,
-   ports, key, signature scheme)
-6. ZeroMQ sockets are created for shell, control, iopub, stdin, heartbeat
-7. The control thread (current thread) enters `run-control` loop
-8. A shell thread is spawned for `run-shell` loop
-9. A heartbeat thread echoes pings
-10. Kernel sends `status: starting` then `status: idle` on iopub
-
-### Cell Execution Flow
+## 7. Cell Execution Flow
 
 1. User submits cell code (e.g., `(defun app (x y) ...)`)
 2. Jupyter frontend sends `execute_request` on shell channel
@@ -304,25 +314,11 @@ RUN sbcl --core /home/acl2/saved_acl2.core --no-userinit \
 4. Calls our `evaluate-code` method
 5. We parse the code into forms via `read-acl2-forms`
 6. For each form:
-   a. Bind `*standard-output*` → Jupyter's iopub stream
-   b. Redirect ACL2 channels via `with-acl2-output-to`
-   c. Eval with STATE bound: `(let ((state *the-live-state*)) ,form)`
-   d. Display results via `jupyter:execute-result`
+   a. Redirect all output via `with-acl2-output-to` (binds ACL2 channels
+      + CL streams to Jupyter's iopub stdout)
+   b. Eval with STATE bound: `(let ((state *the-live-state*)) ,form)`
+   c. Display results via `jupyter:execute-result`
 7. common-lisp-jupyter sends `execute_reply` on shell
-
-### Completion Flow
-
-1. User presses Tab after typing `app`
-2. Frontend sends `complete_request` with code and cursor position
-3. Our `complete-code` finds token `APP`, searches ACL2 package
-4. Returns matches with types (function/macro/variable)
-
-### Inspection Flow
-
-1. User presses Shift-Tab on `append`
-2. Frontend sends `inspect_request`
-3. Our `inspect-code` looks up `APPEND` in ACL2's world
-4. Returns markdown with signature, guard, documentation, type
 
 ## 8. Dependencies
 
@@ -358,8 +354,46 @@ RUN sbcl --core /home/acl2/saved_acl2.core --no-userinit \
 | `acl2::getpropc` | Read world triple properties |
 | `acl2::global-val` | Read global-table values from world |
 | `acl2::w` | Get the current ACL2 world from state |
+| `acl2::save-exec` | Build saved ACL2 binaries |
+| `acl2::*return-from-lp*` | Control LP exit behavior on restart |
 
-## 9. Comparison with Alternatives
+## 9. Build & Install
+
+### Prerequisites
+
+- `saved_acl2` (ACL2 built on SBCL) with Quicklisp installed
+- `libzmq` and `libczmq` system libraries
+- `common-lisp-jupyter` available via Quicklisp
+
+### Build
+
+```sh
+cd context/acl2-jupyter-kernel
+./build-kernel-image.sh
+```
+
+This creates `saved_acl2_jupyter` (shell script) and
+`saved_acl2_jupyter.core` in the same directory.
+
+### Install Kernelspec
+
+```sh
+./install-kernelspec.sh
+```
+
+This writes `kernel.json` to `~/.local/share/jupyter/kernels/acl2/`.
+
+### Test
+
+```sh
+python -m pytest test_kernel.py -v --timeout=120
+```
+
+21 tests covering arithmetic, lists, defun, defthm, keyword commands,
+defconst, CW output routing, code completeness, error handling, and
+kernel survivability.
+
+## 10. Comparison with Alternatives
 
 | Approach | Pros | Cons |
 |----------|------|------|
@@ -368,11 +402,8 @@ RUN sbcl --core /home/acl2/saved_acl2.core --no-userinit \
 | ACL2 Bridge + Python | Clean protocol, async | Extra process, extra protocol layer, no ZeroMQ integration |
 | Raw CL kernel (`common-lisp-jupyter`) | Already works | No ACL2-specific features, must use `(acl2::...)` prefixes |
 
-## 10. Future Work
+## 11. Future Work
 
-- **Debugger integration**: common-lisp-jupyter has full DAP support with
-  breakpoints, stepping, frame inspection. Our kernel class could override
-  `debug-*` methods to provide ACL2-aware debugging.
 - **Proof output formatting**: Route `proofs-co` output to a separate
   stream/display for structured proof display.
 - **XDOC rendering**: Render ACL2 XDOC documentation as HTML in inspect
@@ -380,37 +411,12 @@ RUN sbcl --core /home/acl2/saved_acl2.core --no-userinit \
 - **Book loading progress**: Report `include-book` progress via Jupyter
   status messages.
 - **Community books integration**: Move from `context/acl2-jupyter-kernel/`
-  to `books/jupyter/` with proper `cert.acl2`, `portcullis.acl2`, etc.
-- **CCL support**: The output routing code uses `#+sbcl` for
-  `sb-sys:without-interrupts` in the bridge, but our version avoids that.
-  Main concern is ZeroMQ (pzmq) support on CCL.
-- **Image-based install**: Pre-build a core with all dependencies baked in
-  for instant startup (no Quicklisp load time).
-
-## 11. Current Status
-
-### Files Created
-
-| File | Status | Description |
-|------|--------|-------------|
-| `acl2-jupyter-kernel.asd` | Done | ASDF system definition, depends on common-lisp-jupyter |
-| `packages.lisp` | Done | Package `acl2-jupyter-kernel` (nickname `jupyter/acl2`) |
-| `kernel.lisp` | Done | Kernel class, `evaluate-code`, output routing, form parsing |
-| `complete.lisp` | Done | Symbol completion across ACL2 packages |
-| `inspect.lisp` | Done | Documentation lookup with world property access |
-| `installer.lisp` | Done | Kernelspec installer (generates kernel.json) |
-
-### Not Yet Done
-
-- **Saved image / launcher script**: Need `saved_acl2_jupyter_kernel` script
-  that boots saved_acl2.core, loads Quicklisp + our system, and runs the kernel.
-  Cannot use bare `saved_acl2` because its `sbcl-restart` enters the ACL2 REPL
-  which intercepts `--eval` flags.
-- **Testing**: No load test yet. Plain SBCL can't load it (no ACL2 package).
-  Need the saved image to validate.
-- **Dockerfile integration**: Build step to create saved image and install
-  kernelspec.
-- **Logo/resources**: No ACL2 logo for the kernel picker UI.
+  to `books/jupyter/` in the ACL2 community books.
+- **Debugger integration**: common-lisp-jupyter has full DAP support with
+  breakpoints, stepping, frame inspection.
+- **CCL support**: The current implementation is SBCL-specific (uses
+  `sb-ext:disable-debugger`, `sb-introspect`, `save-exec` generates SBCL
+  flags). CCL would need a different save mechanism and ZeroMQ support.
 
 ## 12. Key Technical Decisions
 
@@ -422,19 +428,22 @@ RUN sbcl --core /home/acl2/saved_acl2.core --no-userinit \
    image gives us access to the world, proper output routing, and is simpler
    than managing a child process.
 
-3. **ASDF system, not ACL2 book (for now)**: ACL2 books use `include-book`
-   which doesn't make sense for CL library loading. The kernel loads via
-   Quicklisp/ASDF from raw Lisp, bypassing ACL2's book certification.
-   It will live under `books/jupyter/` but load via `include-raw` or
-   a trust-tag protected `progn!`.
+3. **`save-exec` for the binary**: ACL2's own `save-exec` creates a shell
+   script + core pair with all the right SBCL flags (`--control-stack-size 64`,
+   `--dynamic-space-size`, `--tls-limit`, etc.). This ensures all threads
+   get adequate stack space and the binary has exactly the same structure as
+   `saved_acl2` itself.
 
-4. **Reuse bridge's output routing pattern**: The `with-acl2-channels-bound`
+4. **ASDF system, not ACL2 book**: The kernel loads via Quicklisp/ASDF from
+   raw Lisp after `:q`, bypassing ACL2's book certification. ACL2 books use
+   `include-book` which doesn't make sense for CL library loading.
+
+5. **Reuse bridge's output routing pattern**: The `with-acl2-channels-bound`
    and `with-acl2-output-to` macros from `bridge-sbcl-raw.lsp` are proven
    to correctly capture all ACL2 output (CW, FMT, proofs-co, trace-co).
    We copy the pattern rather than depending on the bridge book.
 
-5. **Connection file via common-lisp-jupyter**: `jupyter:run-kernel` handles
-   parsing the connection file (JSON with transport/IP/ports/key) and setting
-   up ZeroMQ sockets. No need for us to handle TCP vs Unix sockets ourselves —
-   that's all inside pzmq via the transport URI (`tcp://ip:port` or
-   `ipc://path`).
+6. **Connection file via command-line args**: The `{connection_file}` from
+   kernel.json argv passes through the shell script's `"$@"` and becomes
+   available via `(uiop:command-line-arguments)`. This is the same mechanism
+   used by the standard CL SBCL kernel.

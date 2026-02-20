@@ -293,39 +293,53 @@
                         ((stringp raw-form)
                          (list 'acl2::in-package raw-form))
                         (t raw-form))))
-            ;; Evaluate via trans-eval -- full ACL2 event processing
-            (multiple-value-bind (erp trans-ans state)
-                (acl2::trans-eval-default-warning
-                 form 'acl2-jupyter state t)
-              (cond
-                (erp nil)
-                (t
-                 (let* ((stobjs-out  (car trans-ans))
-                        (replaced-val (cdr trans-ans)))
-                   (cond
-                     ((equal stobjs-out acl2::*error-triple-sig*)
-                      (let ((erp-flag (car replaced-val))
-                            (val      (cadr replaced-val)))
-                        (unless (or erp-flag (eq val :invisible))
-                          (jupyter:execute-result
-                           (jupyter:text
-                            (let ((*package* (find-package
-                                              (acl2::current-package
-                                               *the-live-state*)))
-                                  (*print-case* :downcase)
-                                  (*print-pretty* t))
-                              (prin1-to-string val)))))))
-                     (t
-                      (unless (and (= (length stobjs-out) 1)
-                                  (eq (car stobjs-out) 'acl2::state))
-                        (jupyter:execute-result
-                         (jupyter:text
-                          (let ((*package* (find-package
-                                            (acl2::current-package
-                                             *the-live-state*)))
-                                (*print-case* :downcase)
-                                (*print-pretty* t))
-                            (prin1-to-string replaced-val)))))))))))))))))
+            ;; Save world state before eval -- needed for command landmarks.
+            ;; This mirrors ld-fn0 which saves old-wrld and
+            ;; old-default-defun-mode before calling trans-eval.
+            (let* ((old-wrld (w state))
+                   (old-default-defun-mode (default-defun-mode old-wrld)))
+              (initialize-accumulated-warnings)
+              (f-put-global 'acl2::last-make-event-expansion nil state)
+              ;; Evaluate via trans-eval -- full ACL2 event processing
+              (multiple-value-bind (erp trans-ans state)
+                  (acl2::trans-eval-default-warning
+                   form 'acl2-jupyter state t)
+                (cond
+                  (erp nil)
+                  (t
+                   ;; Add command landmark if the world was extended.
+                   ;; This is what makes :pbt, :pe, :ubt etc. work.
+                   (multiple-value-bind (lm-erp lm-val state)
+                       (maybe-add-command-landmark
+                        old-wrld old-default-defun-mode
+                        form trans-ans state)
+                     (declare (ignore lm-erp lm-val))
+                     (let* ((stobjs-out  (car trans-ans))
+                            (replaced-val (cdr trans-ans)))
+                       (cond
+                         ((equal stobjs-out acl2::*error-triple-sig*)
+                          (let ((erp-flag (car replaced-val))
+                                (val      (cadr replaced-val)))
+                            (unless (or erp-flag (eq val :invisible))
+                              (jupyter:execute-result
+                               (jupyter:text
+                                (let ((*package* (find-package
+                                                  (acl2::current-package
+                                                   *the-live-state*)))
+                                      (*print-case* :downcase)
+                                      (*print-pretty* t))
+                                  (prin1-to-string val)))))))
+                         (t
+                          (unless (and (= (length stobjs-out) 1)
+                                      (eq (car stobjs-out) 'acl2::state))
+                            (jupyter:execute-result
+                             (jupyter:text
+                              (let ((*package* (find-package
+                                                (acl2::current-package
+                                                 *the-live-state*)))
+                                    (*print-case* :downcase)
+                                    (*print-pretty* t))
+                                (prin1-to-string replaced-val)))))))))))))))))))
 
 
 ;;; ---------------------------------------------------------------------------

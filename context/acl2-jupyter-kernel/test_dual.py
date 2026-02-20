@@ -312,3 +312,29 @@ class TestDual:
         assert error is None, f"error: {error}"
         output = (result or "") + stdout
         assert "2" in output, f"output: {output!r}"
+
+    def test_pbt_initial(self, backend):
+        """Before any defun in this session, :pbt :max should show
+        at least EXIT-BOOT-STRAP-MODE (the base event from boot-strap)
+        plus whatever include-books have already run."""
+        result, stdout, error = backend.eval(":pbt :max")
+        assert error is None, f"error: {error}"
+        output = (result or "") + stdout
+        # The last event must be something real, not just
+        # EXIT-BOOT-STRAP-MODE (event 0) -- prior tests already
+        # did include-book and defun.
+        assert "INCLUDE-BOOK" in output.upper() or "DEFUN" in output.upper(), \
+            f":pbt :max should show prior events, got: {output!r}"
+
+    def test_pbt_after_defun(self, backend):
+        """Define a function, then :pbt :max must show it."""
+        tag = backend.name
+        defun_name = f"pbt-test-{tag}"
+        result, stdout, error = backend.eval(
+            f"(defun {defun_name} (x) (+ x 1))")
+        assert error is None, f"defun error: {error}"
+        result2, stdout2, error2 = backend.eval(":pbt :max")
+        assert error2 is None, f":pbt error: {error2}"
+        output = (result2 or "") + stdout2
+        assert defun_name.upper() in output.upper(), \
+            f":pbt :max should show {defun_name}, got: {output!r}"

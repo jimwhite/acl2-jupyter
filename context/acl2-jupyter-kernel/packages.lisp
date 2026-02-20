@@ -30,6 +30,10 @@
                 #:formals
                 #:getpropc
                 #:macro-minimal-arity
+                ;; Command landmarks (for :pbt etc.)
+                #:maybe-add-command-landmark
+                #:default-defun-mode
+                #:initialize-accumulated-warnings
                 ;; Used in ld / eval
                 #:state)
   (:export #:kernel

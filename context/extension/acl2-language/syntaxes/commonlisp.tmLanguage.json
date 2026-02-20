@@ -1,0 +1,135 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Common Lisp",
+  "scopeName": "source.common-lisp",
+  "fileTypes": ["lisp", "cl", "asd", "lsp"],
+  "foldingStartMarker": "\\(",
+  "foldingStopMarker": "\\)",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#block-comment" },
+    { "include": "#string" },
+    { "include": "#definition" },
+    { "include": "#type-definition" },
+    { "include": "#variable-definition" },
+    { "include": "#lambda-list" },
+    { "include": "#character-literal" },
+    { "include": "#global-variable" },
+    { "include": "#keyword-symbol" },
+    { "include": "#builtin" },
+    { "include": "#constant" },
+    { "include": "#number" },
+    { "include": "#quoted" },
+    { "include": "#backquote" },
+    { "include": "#parentheses" }
+  ],
+  "repository": {
+    "comment": {
+      "match": "(;).*$\\n?",
+      "name": "comment.line.semicolon.common-lisp",
+      "captures": {
+        "1": { "name": "punctuation.definition.comment.common-lisp" }
+      }
+    },
+    "block-comment": {
+      "begin": "#\\|",
+      "end": "\\|#",
+      "name": "comment.block.common-lisp"
+    },
+    "string": {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.common-lisp",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.string.begin.common-lisp" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.common-lisp" }
+      },
+      "patterns": [
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape.common-lisp"
+        }
+      ]
+    },
+    "definition": {
+      "match": "(?:\\()((?i:defgeneric|define-compiler-macro|define-method-combination|define-modify-macro|define-setf-expander|defmacro|defmethod|defsetf|defun|define-\\S+))\\s+((?:\\w|[+\\-<>/*&=.?!$%:@\\[\\]^{}~#|])+)",
+      "captures": {
+        "1": { "name": "storage.type.function-type.common-lisp" },
+        "2": { "name": "entity.name.function.common-lisp" }
+      },
+      "name": "meta.function.common-lisp"
+    },
+    "type-definition": {
+      "match": "(?:\\()((?i:deftype|defstruct|define-condition|defpackage|defclass))\\s+((?:\\w|[+\\-<>/*&=.?!$%:@\\[\\]^{}~#|])+)",
+      "captures": {
+        "1": { "name": "storage.type.function-type.common-lisp" },
+        "2": { "name": "entity.name.type.common-lisp" }
+      }
+    },
+    "variable-definition": {
+      "match": "(?:\\()((?i:defvar|defconstant|defparameter|define-symbol-macro))\\s+((?:\\w|[+\\-<>/*&=.?!$%:@\\[\\]^{}~#|])+)",
+      "captures": {
+        "1": { "name": "storage.type.function-type.common-lisp" },
+        "2": { "name": "entity.name.variable.common-lisp" }
+      }
+    },
+    "lambda-list": {
+      "match": "(?<=\\s)(?i:&allow-other-keys|&aux|&body|&environment|&key|&optional|&rest|&whole)(?=\\s+)",
+      "name": "meta.function-parameters.common-lisp"
+    },
+    "character-literal": {
+      "match": "(#)(\\w|[\\\\+\\-=<>'\"&#])+",
+      "name": "constant.character.common-lisp",
+      "captures": {
+        "1": { "name": "punctuation.definition.constant.common-lisp" }
+      }
+    },
+    "global-variable": {
+      "match": "(?<=^|\\s|[()])(\\*)(\\S*)(\\*)(?=$|\\s|[()])",
+      "name": "variable.other.global.common-lisp",
+      "captures": {
+        "1": { "name": "punctuation.definition.variable.common-lisp" },
+        "3": { "name": "punctuation.definition.variable.common-lisp" }
+      }
+    },
+    "keyword-symbol": {
+      "match": "(?<=^|\\s|[()]):(?:\\w|[+\\-<>/*&=.?!$%:@\\[\\]^{}~#|])*",
+      "name": "keyword.constant.common-lisp"
+    },
+    "builtin": {
+      "match": "(?<=\\()(?i:and|block|case|catch|ccase|cond|ctypecase|decf|declaim|declare|do|do\\*|dolist|dotimes|ecase|error|etypecase|eval-when|flet|format|funcall|function|go|handler-bind|handler-case|if|ignore-errors|in-package|incf|labels|lambda|let|let\\*|locally|loop|macrolet|multiple-value-bind|multiple-value-call|multiple-value-prog1|multiple-value-setq|or|pop|print|princ|prin1|prog|prog\\*|prog1|prog2|progn|progv|psetf|psetq|push|pushnew|quote|return|return-from|rotatef|setf|setq|shiftf|signal|step|symbol-macrolet|tagbody|the|throw|time|trace|typecase|unless|unwind-protect|values|warn|when|with-accessors|with-compilation-unit|with-condition-restarts|with-hash-table-iterator|with-input-from-string|with-open-file|with-open-stream|with-output-to-string|with-package-iterator|with-simple-restart|with-slots|with-standard-io-syntax|apply|map|mapcar|mapcan|mapc|mapcon|mapl|maplist|reduce|every|some|notany|notevery|find|find-if|find-if-not|position|position-if|position-if-not|count|count-if|count-if-not|remove|remove-if|remove-if-not|delete|delete-if|delete-if-not|substitute|substitute-if|substitute-if-not|sort|stable-sort|merge|search|mismatch|concatenate|append|nconc|cons|list|list\\*|aref|nth|elt|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|car|cdr|caar|cadr|cdar|cddr|rest|last|length|reverse|nreverse|subseq|copy-seq|fill|replace|make-array|make-list|make-string|make-hash-table|gethash|remhash|clrhash|maphash|make-instance|slot-value|change-class|make-condition|type-of|typep|subtypep|coerce|eq|eql|equal|equalp|not|null|atom|listp|consp|numberp|symbolp|stringp|characterp|functionp|arrayp|vectorp|hash-table-p|packagep|complexp|realp|rationalp|integerp|floatp|zerop|plusp|minusp|evenp|oddp|boundp|fboundp|read|read-line|read-char|read-from-string|write|write-string|write-char|write-line|write-to-string|terpri|fresh-line|finish-output|force-output|clear-output|open|close|with-\\S+)(?=\\s+|\\))",
+      "name": "keyword.control.common-lisp"
+    },
+    "constant": {
+      "match": "(?<=^|\\s|[()])((?i:nil|t))(?=$|\\s|[()])",
+      "name": "constant.language.common-lisp"
+    },
+    "number": {
+      "match": "(?<=^|\\s|[()])[-+]?\\d+(?:\\.\\d*)?(?:[eEdDfFlLsS][-+]?\\d+)?(?=/|(?=$|\\s|[()]))(/\\d+)?",
+      "name": "constant.numeric.common-lisp"
+    },
+    "quoted": {
+      "match": "'",
+      "name": "keyword.operator.quote.common-lisp"
+    },
+    "backquote": {
+      "match": "[`,@]",
+      "name": "keyword.operator.backquote.common-lisp"
+    },
+    "parentheses": {
+      "begin": "\\(",
+      "end": "\\)",
+      "beginCaptures": {
+        "0": { "name": "punctuation.section.parens.begin.common-lisp" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.section.parens.end.common-lisp" }
+      },
+      "patterns": [
+        { "include": "$self" }
+      ]
+    }
+  }
+}

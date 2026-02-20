@@ -1,0 +1,54 @@
+{
+  "name": "acl2-language",
+  "displayName": "ACL2 & Common Lisp for Jupyter",
+  "description": "Language support for ACL2 and Common Lisp Jupyter kernels, with syntax highlighting and notebook renderer for ACL2 events.",
+  "version": "0.1.0",
+  "publisher": "acl2-jupyter",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Notebooks"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "acl2",
+        "aliases": ["ACL2", "acl2"],
+        "extensions": [".acl2", ".acl2s"],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "common-lisp",
+        "aliases": ["Common Lisp", "common-lisp", "commonlisp"],
+        "extensions": [".lisp", ".cl", ".asd", ".lsp"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "acl2",
+        "scopeName": "source.acl2",
+        "path": "./syntaxes/acl2.tmLanguage.json"
+      },
+      {
+        "language": "common-lisp",
+        "scopeName": "source.common-lisp",
+        "path": "./syntaxes/commonlisp.tmLanguage.json"
+      }
+    ],
+    "notebookRenderer": [
+      {
+        "id": "acl2-events-renderer",
+        "displayName": "ACL2 Events Renderer",
+        "entrypoint": "./renderer/index.js",
+        "mimeTypes": [
+          "application/vnd.acl2.events+json"
+        ],
+        "requiresMessaging": "optional"
+      }
+    ]
+  }
+}

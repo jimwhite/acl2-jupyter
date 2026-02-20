@@ -1,0 +1,149 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "ACL2",
+  "scopeName": "source.acl2",
+  "fileTypes": ["acl2", "acl2s"],
+  "foldingStartMarker": "\\(",
+  "foldingStopMarker": "\\)",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#block-comment" },
+    { "include": "#string" },
+    { "include": "#acl2-definition" },
+    { "include": "#definition" },
+    { "include": "#type-definition" },
+    { "include": "#variable-definition" },
+    { "include": "#lambda-list" },
+    { "include": "#character-literal" },
+    { "include": "#global-variable" },
+    { "include": "#keyword-symbol" },
+    { "include": "#acl2-builtin" },
+    { "include": "#builtin" },
+    { "include": "#constant" },
+    { "include": "#number" },
+    { "include": "#quoted" },
+    { "include": "#backquote" },
+    { "include": "#parentheses" }
+  ],
+  "repository": {
+    "comment": {
+      "match": "(;).*$\\n?",
+      "name": "comment.line.semicolon.acl2",
+      "captures": {
+        "1": { "name": "punctuation.definition.comment.acl2" }
+      }
+    },
+    "block-comment": {
+      "begin": "#\\|",
+      "end": "\\|#",
+      "name": "comment.block.acl2"
+    },
+    "string": {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.acl2",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.string.begin.acl2" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.acl2" }
+      },
+      "patterns": [
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape.acl2"
+        }
+      ]
+    },
+    "acl2-definition": {
+      "match": "(?:\\()((?i:defthm|defthmd|defund|defun-sk|defun-inline|defabbrev|defaxiom|defrule|defstobj|defabsstobj|mutual-recursion|encapsulate|defattach|defchoose|defpun|defp|defpkg|deflabel|defdoc|deftheory|defconst|defdata|definec|definec-sk|property|test\\?|check=|check-expect|defdata-attach|defintrange|defenum|defprod|defmap|deflist|defoption|defsumtype|defrecord|defunbc|defun\\$|defcontracts|sig))\\s+((?:\\w|[+\\-<>/*&=.?!$%:@\\[\\]^{}~#|])+)",
+      "captures": {
+        "1": { "name": "storage.type.function-type.acl2" },
+        "2": { "name": "entity.name.function.acl2" }
+      },
+      "name": "meta.function.acl2"
+    },
+    "definition": {
+      "match": "(?:\\()((?i:defgeneric|define-compiler-macro|define-method-combination|define-modify-macro|define-setf-expander|defmacro|defmethod|defsetf|defun|define-\\S+))\\s+((?:\\w|[+\\-<>/*&=.?!$%:@\\[\\]^{}~#|])+)",
+      "captures": {
+        "1": { "name": "storage.type.function-type.acl2" },
+        "2": { "name": "entity.name.function.acl2" }
+      },
+      "name": "meta.function.acl2"
+    },
+    "type-definition": {
+      "match": "(?:\\()((?i:deftype|defstruct|define-condition|defpackage|defclass))\\s+((?:\\w|[+\\-<>/*&=.?!$%:@\\[\\]^{}~#|])+)",
+      "captures": {
+        "1": { "name": "storage.type.function-type.acl2" },
+        "2": { "name": "entity.name.type.acl2" }
+      }
+    },
+    "variable-definition": {
+      "match": "(?:\\()((?i:defvar|defconstant|defparameter|define-symbol-macro|defconst))\\s+((?:\\w|[+\\-<>/*&=.?!$%:@\\[\\]^{}~#|])+)",
+      "captures": {
+        "1": { "name": "storage.type.function-type.acl2" },
+        "2": { "name": "entity.name.variable.acl2" }
+      }
+    },
+    "lambda-list": {
+      "match": "(?<=\\s)(?i:&allow-other-keys|&aux|&body|&environment|&key|&optional|&rest|&whole)(?=\\s+)",
+      "name": "meta.function-parameters.acl2"
+    },
+    "character-literal": {
+      "match": "(#)(\\w|[\\\\+\\-=<>'\"&#])+",
+      "name": "constant.character.acl2",
+      "captures": {
+        "1": { "name": "punctuation.definition.constant.acl2" }
+      }
+    },
+    "global-variable": {
+      "match": "(?<=^|\\s|[()])(\\*)(\\S*)(\\*)(?=$|\\s|[()])",
+      "name": "variable.other.global.acl2",
+      "captures": {
+        "1": { "name": "punctuation.definition.variable.acl2" },
+        "3": { "name": "punctuation.definition.variable.acl2" }
+      }
+    },
+    "keyword-symbol": {
+      "match": "(?<=^|\\s|[()]):(?:\\w|[+\\-<>/*&=.?!$%:@\\[\\]^{}~#|])*",
+      "name": "keyword.constant.acl2"
+    },
+    "acl2-builtin": {
+      "match": "(?<=\\()(?i:include-book|certify-book|local|in-theory|enable|disable|e/d|in-package|set-verify-guards-eagerness|verify-guards|verify-termination|make-event|make-flag|set-well-founded-relation|xdoc|defsection|comp|value-triple|must-succeed|must-fail|must-be-redundant|assert-event|assert!|thm|rule-classes|mv-let|mv|b\\*|er-let\\*|er-progn|progn|progn!|mv-nth|table|add-default-hints|set-default-hints|remove-default-hints|add-macro-alias|remove-macro-alias|add-invisible-fns|remove-invisible-fns|set-inhibit-output-lst|set-inhibit-warnings|set-ignore-ok|set-irrelevant-formals-ok|set-state-ok|set-guard-checking|set-enforce-redundancy|set-bogus-defun-hints-ok|set-bogus-mutual-recursion-ok|set-measure-function|set-well-founded-relation|logic|program|set-body|mbe|mbt|the-fixnum|the-fixnat|ec-call|good-bye|quit|lp|ld|time\\$|with-guard-checking|cw|er|hard|soft|ctx|fmt|fms|fmt1|fms1|state|implies|iff|xor|mv-let|acl2-count|o<|o-p|o-finp|o-first-expt|o-first-coeff|o-rst|make-ord|natp|posp|zp|zip|zpf|fix|nfix|ifix|rfix|bfix|fix-true-list|true-listp|string-listp|symbol-listp|character-listp|integer-listp|rational-listp|nat-listp|pos-listp|pseudo-termp|pseudo-term-listp|alistp|symbol-alistp|eqlable-alistp|keyword-value-listp|plist-worldp|32-bit-integerp|signed-byte-p|unsigned-byte-p|assoc-equal|assoc-eq|member-equal|member-eq|subsetp-equal|no-duplicatesp-equal|intersectp-equal|union-equal|set-difference-equal|put-assoc-equal|remove-equal|remove-duplicates-equal|strip-cars|strip-cdrs|pairlis\\$|kwote|kwote-lst|packn|pack\\$|intern-in-package-of-symbol|w|getprop|putprop|world|current-package|cbd|include-book-dir|with-output|cw-gstack|comp-gcl|set-compile-fns)(?=\\s+|\\))",
+      "name": "keyword.control.acl2"
+    },
+    "builtin": {
+      "match": "(?<=\\()(?i:and|block|case|catch|ccase|cond|ctypecase|decf|declaim|declare|do|dolist|dotimes|ecase|error|etypecase|eval-when|flet|format|funcall|function|go|handler-bind|handler-case|if|ignore-errors|incf|labels|lambda|let|let\\*|locally|loop|macrolet|multiple-value-bind|or|pop|print|princ|prin1|progn|push|pushnew|quote|return|return-from|setf|setq|signal|tagbody|the|throw|time|trace|typecase|unless|unwind-protect|values|warn|when|apply|mapcar|mapcan|mapc|append|nconc|cons|list|list\\*|aref|nth|elt|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|car|cdr|caar|cadr|cdar|cddr|rest|last|length|reverse|nreverse|subseq|copy-seq|fill|replace|make-list|type-of|typep|coerce|eq|eql|equal|not|null|atom|listp|consp|numberp|symbolp|stringp|characterp|arrayp|integerp|rationalp|zerop|plusp|minusp|evenp|oddp|boundp|read|write|open|close|+|-|\\*|/|=|/=|<|>|<=|>=|min|max|abs|expt|mod|rem|floor|ceiling|truncate|round|1\\+|1\\-|ash|logand|logior|logxor|lognot|char-code|code-char|char-upcase|char-downcase|string-upcase|string-downcase|string-append|coerce|intern|symbol-name|symbol-package-name|char|subst|assoc|rassoc|remove|position|count|sort|reverse|revappend|butlast|nthcdr|endp|binary-append|string-equal)(?=\\s+|\\))",
+      "name": "keyword.control.acl2"
+    },
+    "constant": {
+      "match": "(?<=^|\\s|[()])((?i:nil|t))(?=$|\\s|[()])",
+      "name": "constant.language.acl2"
+    },
+    "number": {
+      "match": "(?<=^|\\s|[()])[-+]?\\d+(?:\\.\\d*)?(?:[eEdDfFlLsS][-+]?\\d+)?(?=/|(?=$|\\s|[()]))(/\\d+)?",
+      "name": "constant.numeric.acl2"
+    },
+    "quoted": {
+      "match": "'",
+      "name": "keyword.operator.quote.acl2"
+    },
+    "backquote": {
+      "match": "[`,@]",
+      "name": "keyword.operator.backquote.acl2"
+    },
+    "parentheses": {
+      "begin": "\\(",
+      "end": "\\)",
+      "beginCaptures": {
+        "0": { "name": "punctuation.section.parens.begin.acl2" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.section.parens.end.acl2" }
+      },
+      "patterns": [
+        { "include": "$self" }
+      ]
+    }
+  }
+}

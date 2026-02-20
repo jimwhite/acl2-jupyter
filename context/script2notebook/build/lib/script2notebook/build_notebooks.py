@@ -122,22 +122,46 @@ def phase_convert(
     source_root: Path,
     output_root: Path,
     force: bool = False,
+    jobs: int = 1,
 ) -> tuple[int, int, int]:
     """Convert all source files.  Returns (converted, skipped, errors)."""
     sources = _find_source_files(source_root)
     log.info("Found %d source files under %s", len(sources), source_root)
 
     converted = skipped = errors = 0
-    for source in sources:
-        result = convert_one(source, source_root, output_root, force)
-        if result is None:
-            notebook = _notebook_path(source, source_root, output_root)
-            if notebook.exists():
-                skipped += 1
+
+    if jobs <= 1:
+        for source in sources:
+            result = convert_one(source, source_root, output_root, force)
+            if result is None:
+                notebook = _notebook_path(source, source_root, output_root)
+                if notebook.exists():
+                    skipped += 1
+                else:
+                    errors += 1
             else:
-                errors += 1
-        else:
-            converted += 1
+                converted += 1
+    else:
+        with ProcessPoolExecutor(max_workers=jobs) as pool:
+            futures = {
+                pool.submit(convert_one, source, source_root, output_root, force): source
+                for source in sources
+            }
+            for future in as_completed(futures):
+                source = futures[future]
+                try:
+                    result = future.result()
+                    if result is None:
+                        notebook = _notebook_path(source, source_root, output_root)
+                        if notebook.exists():
+                            skipped += 1
+                        else:
+                            errors += 1
+                    else:
+                        converted += 1
+                except Exception as exc:
+                    log.error("Convert %s: exception: %s", source, exc)
+                    errors += 1
 
     return converted, skipped, errors
 
@@ -333,6 +357,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "-o", "--output", type=Path, default=None,
         help="Output directory (default: same as source — in-place)",
     )
+    conv.add_argument(
+        "-j", "--jobs", type=int, default=1,
+        help="Number of parallel conversion workers (default: 1)",
+    )
     conv.add_argument("--force", action="store_true", help="Convert even if up-to-date")
     conv.add_argument("-v", "--verbose", action="store_true")
 
@@ -420,7 +448,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command in ("convert", "all"):
         log.info("=== Phase 1: Convert ===")
-        converted, skipped, errors = phase_convert(source, output, args.force)
+        jobs = getattr(args, "jobs", 1)
+        converted, skipped, errors = phase_convert(source, output, args.force, jobs=jobs)
         log.info("Convert done: %d converted, %d up-to-date, %d errors", converted, skipped, errors)
         total_errors += errors
 

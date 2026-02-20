@@ -7,34 +7,65 @@ export const activate = (context) => ({
     const events = acl2Data.events || [];
     const forms = acl2Data.forms || [];
     const pkg = acl2Data.package || "ACL2";
+    const hasContent = events.length > 0 || forms.length > 0;
 
     // Create container
     const container = document.createElement("div");
     container.style.fontFamily = "var(--vscode-editor-font-family, monospace)";
     container.style.fontSize = "var(--vscode-editor-font-size, 13px)";
     container.style.lineHeight = "1.5";
-    container.style.padding = "8px";
+
+    // Header row: package + counts + toggle (all on one line)
+    const headerRow = document.createElement("div");
+    headerRow.style.display = "flex";
+    headerRow.style.alignItems = "center";
+    headerRow.style.gap = "6px";
+    headerRow.style.padding = hasContent ? "4px 8px" : "0px 8px";
 
     // Package badge
-    const pkgBadge = document.createElement("div");
-    pkgBadge.style.marginBottom = "8px";
+    const pkgBadge = document.createElement("span");
     pkgBadge.style.display = "inline-block";
-    pkgBadge.style.padding = "2px 8px";
+    pkgBadge.style.padding = "1px 6px";
     pkgBadge.style.borderRadius = "4px";
     pkgBadge.style.backgroundColor = "var(--vscode-badge-background, #4d4d4d)";
     pkgBadge.style.color = "var(--vscode-badge-foreground, #fff)";
     pkgBadge.style.fontSize = "0.85em";
-    pkgBadge.textContent = `Package: ${pkg}`;
-    container.appendChild(pkgBadge);
+    pkgBadge.textContent = pkg;
+    headerRow.appendChild(pkgBadge);
 
-    if (events.length === 0 && forms.length === 0) {
-      const noEvents = document.createElement("div");
-      noEvents.style.color = "var(--vscode-descriptionForeground, #888)";
-      noEvents.style.fontStyle = "italic";
-      noEvents.textContent = "No events";
-      container.appendChild(noEvents);
-    } else {
-      // Show events
+    if (hasContent) {
+      // Counts
+      const countsEl = document.createElement("span");
+      countsEl.style.fontSize = "0.85em";
+      countsEl.style.color = "var(--vscode-descriptionForeground, #888)";
+      const parts = [];
+      if (forms.length > 0) parts.push(`${forms.length} form${forms.length !== 1 ? "s" : ""}`);
+      if (events.length > 0) parts.push(`${events.length} event${events.length !== 1 ? "s" : ""}`);
+      countsEl.textContent = parts.join(", ");
+      headerRow.appendChild(countsEl);
+
+      // Toggle button (right after counts)
+      const toggleBtn = document.createElement("span");
+      toggleBtn.style.cursor = "pointer";
+      toggleBtn.style.fontSize = "0.85em";
+      toggleBtn.style.color = "var(--vscode-textLink-foreground, #3794ff)";
+      toggleBtn.style.userSelect = "none";
+      toggleBtn.textContent = "▶ Show";
+      headerRow.appendChild(toggleBtn);
+
+      // Details container (hidden by default)
+      const detailsDiv = document.createElement("div");
+      detailsDiv.style.display = "none";
+      detailsDiv.style.padding = "0 8px 4px";
+
+      let expanded = false;
+      toggleBtn.addEventListener("click", () => {
+        expanded = !expanded;
+        detailsDiv.style.display = expanded ? "block" : "none";
+        toggleBtn.textContent = expanded ? "▼ Hide" : "▶ Show";
+      });
+
+      // Build event/form blocks
       const count = Math.max(events.length, forms.length);
       for (let i = 0; i < count; i++) {
         const eventBlock = document.createElement("div");
@@ -44,7 +75,7 @@ export const activate = (context) => ({
         eventBlock.style.backgroundColor = "var(--vscode-editor-background, #1e1e1e)";
         eventBlock.style.border = "1px solid var(--vscode-panel-border, #333)";
 
-        // If we have a form, show it
+        // Show form if present
         if (i < forms.length && forms[i]) {
           const formEl = document.createElement("div");
           formEl.style.color = "var(--vscode-editor-foreground, #d4d4d4)";
@@ -54,14 +85,13 @@ export const activate = (context) => ({
           eventBlock.appendChild(formEl);
         }
 
-        // Show the event landmark
+        // Show event landmark
         if (i < events.length && events[i]) {
           const eventEl = document.createElement("div");
           eventEl.style.color = "var(--vscode-textPreformat-foreground, #ce9178)";
           eventEl.style.whiteSpace = "pre-wrap";
           eventEl.style.wordBreak = "break-word";
           if (i < forms.length && forms[i]) {
-            // If we also showed a form, make the event smaller/lighter
             eventEl.style.fontSize = "0.9em";
             eventEl.style.marginTop = "4px";
             eventEl.style.color = "var(--vscode-descriptionForeground, #888)";
@@ -70,8 +100,14 @@ export const activate = (context) => ({
           eventBlock.appendChild(eventEl);
         }
 
-        container.appendChild(eventBlock);
+        detailsDiv.appendChild(eventBlock);
       }
+
+      container.appendChild(headerRow);
+      container.appendChild(detailsDiv);
+    } else {
+      // Zero events/forms: minimal footprint — just the header row with no padding
+      container.appendChild(headerRow);
     }
 
     element.innerHTML = "";

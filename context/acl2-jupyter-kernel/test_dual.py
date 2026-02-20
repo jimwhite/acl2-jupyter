@@ -338,3 +338,21 @@ class TestDual:
         output = (result2 or "") + stdout2
         assert defun_name.upper() in output.upper(), \
             f":pbt :max should show {defun_name}, got: {output!r}"
+
+    def test_undo(self, backend):
+        """Define a function, undo it with :U, then verify the kernel
+        is still in a valid state (no package lock errors)."""
+        tag = backend.name
+        undo_name = f"undo-test-{tag}"
+        # Define
+        result, stdout, error = backend.eval(
+            f"(defun {undo_name} (x) (+ x 99))")
+        assert error is None, f"defun error: {error}"
+        # Undo
+        result2, stdout2, error2 = backend.eval(":u")
+        assert error2 is None, f":u error: {error2}"
+        # Verify state is valid -- arithmetic still works
+        result3, stdout3, error3 = backend.eval("(+ 10 20)")
+        assert error3 is None, f"post-undo eval error: {error3}"
+        output = (result3 or "") + stdout3
+        assert "30" in output, f"post-undo output: {output!r}"

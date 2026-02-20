@@ -353,11 +353,15 @@
       (handler-case
           (in-main-thread
             ;; ---- Everything below runs on the main thread ----
-            (with-acl2-output-to *standard-output*
+            ;; with-suppression unlocks COMMON-LISP package (on SBCL)
+            ;; so that pkg-witness can intern into it during undo etc.
+            ;; This mirrors lp which wraps ld-fn in with-suppression.
+            (acl2::with-suppression
+             (with-acl2-output-to *standard-output*
               (let ((channel (make-string-input-channel trimmed)))
                 (unwind-protect
                     (jupyter-read-eval-print-loop channel *the-live-state*)
-                  (close-string-input-channel channel)))))
+                  (close-string-input-channel channel))))))
         (error (c)
           (values (symbol-name (type-of c))
                   (format nil "~A" c)

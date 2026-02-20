@@ -83,7 +83,9 @@
 ;;; JUPYTER_CONNECTION_FILE environment variable (in kernel.json env).
 
 (defun make-sbcl-argv (core-path)
-  "Build the argv list for launching sbcl with the kernel core."
+  "Build the argv list for launching sbcl with the kernel core.
+   The {connection_file} placeholder goes last, just like the CL SBCL kernel.
+   run-kernel picks it up via (first (uiop:command-line-arguments))."
   (list +sbcl-program+
         "--tls-limit" "16384"
         "--dynamic-space-size" +dynamic-space-size+
@@ -93,7 +95,8 @@
         "--end-runtime-options"
         "--no-userinit"
         "--eval" "(acl2::sbcl-restart)"
-        "--eval" "(acl2-jupyter-kernel:start)"))
+        "--eval" "(acl2-jupyter-kernel:start)"
+        "{connection_file}"))
 
 (defmethod jupyter:command-line ((instance acl2-user-installer))
   "Get the command line for a user installation."
@@ -128,8 +131,7 @@
           "language" (jupyter:installer-language instance)
           "interrupt_mode" "message"
           "env" (list :object-plist
-                  "SBCL_HOME" +sbcl-home+
-                  "JUPYTER_CONNECTION_FILE" "{connection_file}")
+                  "SBCL_HOME" +sbcl-home+)
           "metadata" :empty-object)
         stream))))
 

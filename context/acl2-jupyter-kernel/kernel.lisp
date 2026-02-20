@@ -251,13 +251,13 @@
   "Start the ACL2 Jupyter kernel event loop.
    Called after ACL2 initialization is complete (LP has exited via
    return-from-lp). CONNECTION-FILE is the path to the Jupyter
-   connection file. If not provided, it is read from the
-   JUPYTER_CONNECTION_FILE environment variable."
+   connection file. If not provided, it is taken from the first
+   command-line argument (set by {connection_file} in kernel.json argv)."
   ;; Disable the SBCL debugger so errors don't hang the kernel process
   ;; waiting for interactive input.
   (sb-ext:disable-debugger)
   (let ((conn (or connection-file
-                  (uiop:getenv "JUPYTER_CONNECTION_FILE"))))
+                  (first (uiop:command-line-arguments)))))
     (unless conn
-      (error "No connection file: pass as argument or set JUPYTER_CONNECTION_FILE"))
+      (error "No connection file provided"))
     (jupyter:run-kernel 'kernel conn)))

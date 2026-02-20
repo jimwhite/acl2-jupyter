@@ -93,22 +93,91 @@ def _has_cert(source: Path) -> bool:
 # ── Phase 1: Convert ────────────────────────────────────────────────
 
 
+# Conversion timeouts (seconds).
+CONVERT_WARN_TIMEOUT = 30    # Log a warning after this long.
+CONVERT_GIVE_UP_TIMEOUT = 300  # 5 minutes — write placeholder and move on.
+
+
+def _write_placeholder_notebook(notebook: Path, source: Path, reason: str) -> None:
+    """Write a minimal placeholder .ipynb so the file isn't retried."""
+    import json
+    nb = {
+        "nbformat": 4,
+        "nbformat_minor": 5,
+        "metadata": {
+            "kernelspec": {
+                "display_name": "ACL2",
+                "language": "acl2",
+                "name": "acl2",
+            },
+            "placeholder": True,
+            "placeholder_reason": reason,
+            "source_file": str(source),
+        },
+        "cells": [
+            {
+                "cell_type": "markdown",
+                "metadata": {},
+                "source": [
+                    f"**Placeholder** — conversion of `{source.name}` was skipped.\n",
+                    f"\n",
+                    f"Reason: {reason}\n",
+                ],
+            }
+        ],
+    }
+    notebook.parent.mkdir(parents=True, exist_ok=True)
+    with open(notebook, "w") as f:
+        json.dump(nb, f, indent=1)
+
+
 def _do_convert(source: Path, source_root: Path, output_root: Path) -> Path | None:
     """Run script2notebook on a single file.  Returns output path or None on error.
 
     Assumes staleness has already been checked and the parent dir exists.
+    Warns after 30s, gives up after 5 minutes and writes a placeholder.
     """
     notebook = _notebook_path(source, source_root, output_root)
     notebook.parent.mkdir(parents=True, exist_ok=True)
 
-    result = subprocess.run(
+    proc = subprocess.Popen(
         ["script2notebook", "--fenced", str(source), "-o", str(notebook)],
-        capture_output=True,
-        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
-    if result.returncode != 0:
-        log.error("convert failed: %s\n%s", source, result.stderr.strip())
-        return None
+
+    warned = False
+    try:
+        # First wait up to the warn threshold.
+        stdout, stderr = proc.communicate(timeout=CONVERT_WARN_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        warned = True
+        log.warning("convert slow (>%ds): %s — still waiting…", CONVERT_WARN_TIMEOUT, source)
+        remaining = CONVERT_GIVE_UP_TIMEOUT - CONVERT_WARN_TIMEOUT
+        try:
+            stdout, stderr = proc.communicate(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            log.error("convert timeout (>%ds) — writing placeholder: %s",
+                       CONVERT_GIVE_UP_TIMEOUT, source)
+            _write_placeholder_notebook(
+                notebook, source,
+                f"Conversion timed out after {CONVERT_GIVE_UP_TIMEOUT}s",
+            )
+            return notebook  # placeholder counts as "converted" so it won't retry
+
+    if proc.returncode != 0:
+        stderr_text = stderr.decode("utf-8", errors="replace").strip()
+        log.error("convert failed: %s\n%s", source, stderr_text)
+        _write_placeholder_notebook(
+            notebook, source,
+            f"Conversion failed: {stderr_text[:200]}",
+        )
+        return notebook  # placeholder so it won't retry
+
+    if warned:
+        log.info("convert finished (slow): %s", source)
 
     return notebook
 

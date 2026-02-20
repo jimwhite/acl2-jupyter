@@ -5,9 +5,9 @@ LABEL org.opencontainers.image.source="https://github.com/jimwhite/acl2-jupyter"
 LABEL org.opencontainers.image.description="A Docker image for running the ACL2 theorem proving system and books in JupyterLab"
 LABEL org.opencontainers.image.licenses=BSD-3-Clause
 
-ARG SBCL_VERSION=2.5.11
+ARG SBCL_VERSION=2.6.1
 
-ARG Z3_VERSION=4.15.4
+ARG Z3_VERSION=4.15.7
 
 # GitHub runner gets OOM running parallel build
 ARG STP_BUILD_JOBS="--parallel"
@@ -48,8 +48,6 @@ RUN echo 'jovyan ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers \
 #    6 | #include <zmq.h>
 # https://github.com/yitzchak/common-lisp-jupyter/blob/2df55291592943851d013c66af920e7c150b1de2/docs/install.md?plain=1#L18
 
-# pipx is for poetry install for acl2-kernel
-
 # nodejs and npm for Claude Code
 # TODO: Switch to Deno.
 
@@ -81,7 +79,6 @@ RUN apt-get update && \
         make \
         nodejs npm \
         perl \
-        pipx \
         pkg-config \
         retry \
         rlwrap \
@@ -134,7 +131,11 @@ RUN cd /root/stp \
 COPY quicklisp.lisp quicklisp.lisp
 COPY quicklisp quicklisp/
 
-COPY acl2-kernel acl2-kernel
+# ACL2 Jupyter kernel (Common Lisp, built on common-lisp-jupyter)
+COPY acl2-jupyter-kernel quicklisp/local-projects/acl2-jupyter-kernel
+
+# VSCode extension for ACL2/Common Lisp language support and notebook renderer
+COPY extension/acl2-language /opt/acl2/vscode-extensions/acl2-language
 
 ENV ACL2_HOME=/home/acl2
 ENV ACL2_SYSTEM_BOOKS="${ACL2_HOME}/books"
@@ -178,9 +179,9 @@ RUN cd ${ACL2_HOME}/books \
        >make-books.stdout.log 2> >(tee make-books.stderr.log >&2) ; \
     find * -type f -name "*.cert.out" | tar -czvf make-books-cert-out.tar.gz -T -
 
-RUN cd acl2-kernel \
-    && pipx install poetry \
-    && ~/.local/bin/poetry build \
-    && pip install --no-cache ./dist/acl2_kernel-*.whl \
-    && rm ./dist/acl2_kernel-*.whl \
-    && python3 -m acl2_kernel.install --acl2="${ACL2}"
+# Install ACL2 Jupyter kernelspec
+# The kernel system is in quicklisp/local-projects/acl2-jupyter-kernel
+# and gets loaded via Quicklisp when the kernel starts.
+# install-kernelspec.sh writes kernel.json with direct sbcl argv.
+COPY acl2-jupyter-kernel/install-kernelspec.sh /tmp/install-kernelspec.sh
+RUN chmod +x /tmp/install-kernelspec.sh && /tmp/install-kernelspec.sh && rm /tmp/install-kernelspec.sh

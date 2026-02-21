@@ -195,5 +195,5 @@ RUN cd ${ACL2_HOME}/books \
 # The kernel system is in quicklisp/local-projects/acl2-jupyter-kernel
 # and gets loaded via Quicklisp when the kernel starts.
 # install-kernelspec.sh writes kernel.json with direct sbcl argv.
-COPY acl2-jupyter-kernel/install-kernelspec.sh /tmp/install-kernelspec.sh
-RUN chmod +x /tmp/install-kernelspec.sh && /tmp/install-kernelspec.sh && rm /tmp/install-kernelspec.sh
+COPY --chown=${USER}:users --chmod=755 acl2-jupyter-kernel/install-kernelspec.sh /opt/acl2/bin/install-kernelspec.sh
+RUN /opt/acl2/bin/install-kernelspec.sh

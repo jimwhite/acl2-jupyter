@@ -56,6 +56,9 @@ DEFAULT_CELL_TIMEOUT = 600  # 10 minutes per cell
 # Default kernel startup timeout (seconds).  ACL2 kernel loads a big image.
 DEFAULT_STARTUP_TIMEOUT = 120
 
+# Default number of execution retries on failure (kernel died, etc.).
+DEFAULT_EXECUTE_RETRIES = 1
+
 
 # ── helpers ──────────────────────────────────────────────────────────
 
@@ -422,6 +425,31 @@ def _execute_notebook(
         return notebook, False, f"FAILED ({elapsed:.1f}s): {stderr_tail}"
 
 
+def _execute_with_retries(
+    notebook: Path,
+    kernel_name: str,
+    cell_timeout: int,
+    startup_timeout: int,
+    allow_errors: bool,
+    source_dir: Path | None,
+    retries: int,
+) -> tuple[Path, bool, str]:
+    """Execute *notebook* with up to *retries* retries on failure."""
+    for attempt in range(1 + retries):
+        path, ok, msg = _execute_notebook(
+            notebook, kernel_name, cell_timeout, startup_timeout,
+            allow_errors, source_dir=source_dir,
+        )
+        if ok:
+            if attempt > 0:
+                msg += f" (after {attempt + 1} attempts)"
+            return path, ok, msg
+        if attempt < retries:
+            log.warning("Execute %s: attempt %d/%d failed, retrying… %s",
+                        notebook, attempt + 1, 1 + retries, msg)
+    return path, ok, msg
+
+
 def _notebook_has_outputs(notebook: Path) -> bool:
     """Return True if *notebook* has any code cell with outputs.
 
@@ -499,6 +527,7 @@ def phase_execute(
     startup_timeout: int = DEFAULT_STARTUP_TIMEOUT,
     allow_errors: bool = True,
     force: bool = False,
+    retries: int = DEFAULT_EXECUTE_RETRIES,
 ) -> tuple[int, int, int]:
     """Execute certified notebooks.  Returns (executed, skipped, errors)."""
     pairs = _find_executable_notebooks(source_root, output_root, force)
@@ -519,9 +548,9 @@ def phase_execute(
     if jobs <= 1:
         for source, notebook in pairs:
             log.info("Executing %s", notebook)
-            path, ok, msg = _execute_notebook(
-                notebook, kernel_name, cell_timeout, startup_timeout, allow_errors,
-                source_dir=source.parent,
+            path, ok, msg = _execute_with_retries(
+                notebook, kernel_name, cell_timeout, startup_timeout,
+                allow_errors, source.parent, retries,
             )
             if ok:
                 log.info("  %s", msg)
@@ -530,17 +559,16 @@ def phase_execute(
                 log.error("  %s", msg)
                 errors += 1
     else:
-        # Items are (notebook, kernel_name, cell_timeout, startup_timeout,
-        #            allow_errors, source_dir) tuples for _execute_notebook.
+        # Items are tuples matching _execute_with_retries positional args.
         items = [
             (notebook, kernel_name, cell_timeout, startup_timeout,
-             allow_errors, source.parent)
+             allow_errors, source.parent, retries)
             for source, notebook in pairs
         ]
         max_pending = jobs * 2
         with ProcessPoolExecutor(max_workers=jobs) as pool:
             try:
-                for future, item in _bounded_as_completed(pool, _execute_notebook, items, max_pending):
+                for future, item in _bounded_as_completed(pool, _execute_with_retries, items, max_pending):
                     notebook = item[0]
                     try:
                         path, ok, msg = future.result()
@@ -619,6 +647,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-allow-errors", action="store_true",
         help="Stop on first cell error (default: continue past errors)",
     )
+    exe.add_argument(
+        "--retries", type=int, default=DEFAULT_EXECUTE_RETRIES,
+        help=f"Number of retries on execution failure (default: {DEFAULT_EXECUTE_RETRIES})",
+    )
     exe.add_argument("--force", action="store_true", help="Re-execute even if up-to-date")
     exe.add_argument("-v", "--verbose", action="store_true")
 
@@ -652,6 +684,10 @@ def _build_parser() -> argparse.ArgumentParser:
     both.add_argument(
         "--no-allow-errors", action="store_true",
         help="Stop on first cell error",
+    )
+    both.add_argument(
+        "--retries", type=int, default=DEFAULT_EXECUTE_RETRIES,
+        help=f"Number of retries on execution failure (default: {DEFAULT_EXECUTE_RETRIES})",
     )
     both.add_argument("--force", action="store_true", help="Rebuild everything")
     both.add_argument("-v", "--verbose", action="store_true")
@@ -696,6 +732,8 @@ def main(argv: list[str] | None = None) -> int:
         startup_timeout = getattr(args, "startup_timeout", DEFAULT_STARTUP_TIMEOUT)
         allow_errors = not getattr(args, "no_allow_errors", False)
 
+        retries = getattr(args, "retries", DEFAULT_EXECUTE_RETRIES)
+
         executed, skipped, errors = phase_execute(
             source, output,
             jobs=jobs,
@@ -704,6 +742,7 @@ def main(argv: list[str] | None = None) -> int:
             startup_timeout=startup_timeout,
             allow_errors=allow_errors,
             force=args.force,
+            retries=retries,
         )
         log.info("Execute done: %d executed, %d up-to-date, %d errors", executed, skipped, errors)
         total_errors += errors

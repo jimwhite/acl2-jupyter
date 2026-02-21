@@ -28,3 +28,4 @@
 [submodule "context/tree-sitter-commonlisp"]
 	path = context/tree-sitter-commonlisp
 	url = https://github.com/jimwhite/tree-sitter-commonlisp.git
+	branch = comment-fix-v0.4.2

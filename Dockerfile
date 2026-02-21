@@ -79,7 +79,9 @@ RUN apt-get update && \
         make \
         nodejs npm \
         perl \
+        pipx \
         pkg-config \
+        python3-dev \
         retry \
         rlwrap \
         sbcl \
@@ -131,20 +133,6 @@ RUN cd /root/stp \
 COPY quicklisp.lisp quicklisp.lisp
 COPY quicklisp quicklisp/
 
-# ACL2 Jupyter kernel (Common Lisp, built on common-lisp-jupyter)
-COPY acl2-jupyter-kernel quicklisp/local-projects/acl2-jupyter-kernel
-
-# script2notebook: tree-sitter-based .lisp → .ipynb converter
-# Uses local fork of tree-sitter-commonlisp with block comment fix (not on PyPI).
-COPY tree-sitter-commonlisp /tmp/tree-sitter-commonlisp
-COPY script2notebook /tmp/script2notebook
-RUN pipx install /tmp/script2notebook \
-    && pipx inject script2notebook /tmp/tree-sitter-commonlisp \
-    && rm -rf /tmp/script2notebook /tmp/tree-sitter-commonlisp
-
-# VSCode extension for ACL2/Common Lisp language support and notebook renderer
-COPY extension/acl2-language /opt/acl2/vscode-extensions/acl2-language
-
 ENV ACL2_HOME=/home/acl2
 ENV ACL2_SYSTEM_BOOKS="${ACL2_HOME}/books"
 
@@ -172,6 +160,22 @@ RUN mkdir -p /opt/acl2/bin \
     && ln -s ${ACL2_HOME}/books/build/critpath.pl /opt/acl2/bin/critpath.pl
 
 USER ${USER}
+
+# ACL2 Jupyter kernel (Common Lisp, built on common-lisp-jupyter)
+COPY acl2-jupyter-kernel quicklisp/local-projects/acl2-jupyter-kernel
+
+# script2notebook sources are copied to /tmp for install as jovyan later
+COPY --chown=${USER}:users tree-sitter-commonlisp /tmp/tree-sitter-commonlisp
+COPY --chown=${USER}:users script2notebook /tmp/script2notebook
+
+# VSCode extension for ACL2/Common Lisp language support and notebook renderer
+COPY extension/acl2-language /opt/acl2/vscode-extensions/acl2-language
+
+# script2notebook: tree-sitter-based .lisp → .ipynb converter
+# Uses local fork of tree-sitter-commonlisp with block comment fix (not on PyPI).
+RUN pipx install /tmp/script2notebook \
+    && pipx inject script2notebook /tmp/tree-sitter-commonlisp \
+    && rm -rf /tmp/script2notebook /tmp/tree-sitter-commonlisp
 
 RUN sbcl --non-interactive --load quicklisp.lisp \
       --eval "(quicklisp-quickstart:install)" --eval "(ql-util:without-prompting (ql:add-to-init-file))" \

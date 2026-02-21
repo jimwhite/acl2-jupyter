@@ -1,6 +1,6 @@
 {
     "name": "ACL2-Jupyter",
-    "image": "acl2-jupyter:latest",
+    "image": "ghcr.io/jimwhite/acl2-jupyter:latest",
     "forwardPorts": [
         8888
     ],

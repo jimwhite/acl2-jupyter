@@ -47,7 +47,8 @@ from pathlib import Path
 log = logging.getLogger("build-notebooks")
 
 # Extensions handled by script2notebook (from its EXTENSION_MAP).
-SOURCE_EXTENSIONS = {".lisp", ".lsp", ".acl2"}
+# .acl2 files are portcullis companions, not standalone sources.
+SOURCE_EXTENSIONS = {".lisp", ".lsp"}
 
 # Default cell execution timeout (seconds).  ACL2 proofs can be slow.
 DEFAULT_CELL_TIMEOUT = 600  # 10 minutes per cell
@@ -68,6 +69,64 @@ def _find_source_files(source_dir: Path) -> list[Path]:
             if p.suffix in SOURCE_EXTENSIONS:
                 files.append(p)
     return files
+
+
+def _acl2_companion_files(source: Path) -> list[tuple[str, str]]:
+    """Find ACL2 portcullis companion files for *source*.
+
+    ACL2 uses ``.acl2`` files to specify *portcullis commands* that must
+    be evaluated before certifying a book.  Two naming conventions:
+
+    * ``book-name.acl2`` — per-book companion (matched by stem).
+    * ``cert.acl2`` — directory-wide default applied to every book in
+      the directory that does not have its own ``.acl2`` file.
+
+    Returns a list of ``(label, content)`` pairs, e.g.
+    ``[("cert.acl2", "…"), ("foo.acl2", "…")]``.
+    The per-book companion, if present, takes precedence in ACL2's
+    certification process, but we record all that exist for
+    documentation purposes.
+    """
+    companions = []
+    cert_acl2 = source.parent / "cert.acl2"
+    book_acl2 = source.with_suffix(".acl2")
+    for path in (cert_acl2, book_acl2):
+        if path.is_file():
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+                companions.append((path.name, text))
+            except OSError:
+                pass
+    return companions
+
+
+def _inject_acl2_metadata(notebook: Path, source: Path) -> None:
+    """Add ``.acl2`` portcullis companion content to notebook metadata.
+
+    Reads the notebook JSON, adds an ``acl2_portcullis`` key to the
+    top-level metadata with a dict mapping companion filenames to their
+    text content, then writes it back.  No-op if no companions exist.
+    """
+    import json
+
+    companions = _acl2_companion_files(source)
+    if not companions:
+        return
+
+    try:
+        with open(notebook) as f:
+            nb = json.load(f)
+    except (json.JSONDecodeError, OSError) as exc:
+        log.warning("Cannot patch metadata for %s: %s", notebook, exc)
+        return
+
+    nb.setdefault("metadata", {})["acl2_portcullis"] = {
+        name: content for name, content in companions
+    }
+
+    with open(notebook, "w") as f:
+        json.dump(nb, f, indent=1)
+        f.write("\n")
 
 
 def _notebook_path(source: Path, source_root: Path, output_root: Path) -> Path:
@@ -131,11 +190,13 @@ def _write_placeholder_notebook(notebook: Path, source: Path, reason: str) -> No
         json.dump(nb, f, indent=1)
 
 
-def _do_convert(source: Path, source_root: Path, output_root: Path) -> Path | None:
+def _do_convert(source: Path, source_root: Path, output_root: Path,
+                convert_timeout: int = CONVERT_GIVE_UP_TIMEOUT) -> Path | None:
     """Run script2notebook on a single file.  Returns output path or None on error.
 
     Assumes staleness has already been checked and the parent dir exists.
-    Warns after 30s, gives up after 5 minutes and writes a placeholder.
+    Warns after 30s, gives up after *convert_timeout* seconds and writes a
+    placeholder.  Set *convert_timeout* to 0 to disable the timeout.
     """
     notebook = _notebook_path(source, source_root, output_root)
     notebook.parent.mkdir(parents=True, exist_ok=True)
@@ -146,26 +207,37 @@ def _do_convert(source: Path, source_root: Path, output_root: Path) -> Path | No
         stderr=subprocess.PIPE,
     )
 
-    warned = False
-    try:
-        # First wait up to the warn threshold.
-        stdout, stderr = proc.communicate(timeout=CONVERT_WARN_TIMEOUT)
-    except subprocess.TimeoutExpired:
-        warned = True
-        log.warning("convert slow (>%ds): %s — still waiting…", CONVERT_WARN_TIMEOUT, source)
-        remaining = CONVERT_GIVE_UP_TIMEOUT - CONVERT_WARN_TIMEOUT
+    if convert_timeout == 0:
+        # No timeout — just wait with periodic warnings.
+        warned = False
         try:
-            stdout, stderr = proc.communicate(timeout=remaining)
+            stdout, stderr = proc.communicate(timeout=CONVERT_WARN_TIMEOUT)
         except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-            log.error("convert timeout (>%ds) — writing placeholder: %s",
-                       CONVERT_GIVE_UP_TIMEOUT, source)
-            _write_placeholder_notebook(
-                notebook, source,
-                f"Conversion timed out after {CONVERT_GIVE_UP_TIMEOUT}s",
-            )
-            return notebook  # placeholder counts as "converted" so it won't retry
+            warned = True
+            log.warning("convert slow (>%ds): %s — no timeout, waiting…",
+                        CONVERT_WARN_TIMEOUT, source)
+            stdout, stderr = proc.communicate()  # wait forever
+    else:
+        warned = False
+        try:
+            stdout, stderr = proc.communicate(timeout=CONVERT_WARN_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            warned = True
+            log.warning("convert slow (>%ds): %s — still waiting…",
+                        CONVERT_WARN_TIMEOUT, source)
+            remaining = max(1, convert_timeout - CONVERT_WARN_TIMEOUT)
+            try:
+                stdout, stderr = proc.communicate(timeout=remaining)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+                log.error("convert timeout (>%ds) — writing placeholder: %s",
+                           convert_timeout, source)
+                _write_placeholder_notebook(
+                    notebook, source,
+                    f"Conversion timed out after {convert_timeout}s",
+                )
+                return notebook
 
     if proc.returncode != 0:
         stderr_text = stderr.decode("utf-8", errors="replace").strip()
@@ -178,6 +250,9 @@ def _do_convert(source: Path, source_root: Path, output_root: Path) -> Path | No
 
     if warned:
         log.info("convert finished (slow): %s", source)
+
+    # Patch notebook metadata with .acl2 portcullis companion info.
+    _inject_acl2_metadata(notebook, source)
 
     return notebook
 
@@ -229,6 +304,7 @@ def phase_convert(
     output_root: Path,
     force: bool = False,
     jobs: int = 1,
+    convert_timeout: int = CONVERT_GIVE_UP_TIMEOUT,
 ) -> tuple[int, int, int]:
     """Convert all source files.  Returns (converted, skipped, errors)."""
     sources = _find_source_files(source_root)
@@ -261,7 +337,7 @@ def phase_convert(
     if jobs <= 1:
         t_last = time.monotonic()
         for i, source in enumerate(stale):
-            result = _do_convert(source, source_root, output_root)
+            result = _do_convert(source, source_root, output_root, convert_timeout)
             if result is None:
                 errors += 1
             else:
@@ -271,8 +347,8 @@ def phase_convert(
                 t_last = now
                 log.info("  converting: %d/%d (errors %d)", i + 1, n_stale, errors)
     else:
-        # Items are (source, source_root, output_root) tuples for _do_convert.
-        items = [(source, source_root, output_root) for source in stale]
+        # Items are (source, source_root, output_root, convert_timeout) tuples.
+        items = [(source, source_root, output_root, convert_timeout) for source in stale]
         max_pending = jobs * 2
         with ProcessPoolExecutor(max_workers=jobs) as pool:
             try:
@@ -386,20 +462,19 @@ def _find_executable_notebooks(
     log.info("Scanning %d certified sources for notebooks needing execution…", len(certified))
 
     pairs = []
+    missing = 0
     checked = 0
     t_last = time.monotonic()
     for source, cert in certified:
         notebook = _notebook_path(source, source_root, output_root)
         if not notebook.exists():
-            log.warning("Notebook missing for certified source %s — run convert first", source)
+            missing += 1
             checked += 1
             continue
 
         if _is_stale(cert, notebook, force) or _is_stale(source, notebook, force):
             pairs.append((source, notebook))
         elif not _notebook_has_outputs(notebook):
-            # Notebook was converted but never executed.
-            log.debug("Notebook %s has no outputs — needs execution", notebook)
             pairs.append((source, notebook))
 
         checked += 1
@@ -408,6 +483,9 @@ def _find_executable_notebooks(
             t_last = now
             log.info("  scan progress: %d/%d checked, %d need execution",
                      checked, len(certified), len(pairs))
+
+    if missing:
+        log.warning("%d certified sources have no notebook — run convert first", missing)
 
     return pairs
 
@@ -507,6 +585,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "-j", "--jobs", type=int, default=1,
         help="Number of parallel conversion workers (default: 1)",
     )
+    conv.add_argument(
+        "--convert-timeout", type=int, default=CONVERT_GIVE_UP_TIMEOUT,
+        help=f"Per-file conversion timeout in seconds; 0=no limit (default: {CONVERT_GIVE_UP_TIMEOUT})",
+    )
     conv.add_argument("--force", action="store_true", help="Convert even if up-to-date")
     conv.add_argument("-v", "--verbose", action="store_true")
 
@@ -552,6 +634,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Number of parallel execution workers (default: 1)",
     )
     both.add_argument(
+        "--convert-timeout", type=int, default=CONVERT_GIVE_UP_TIMEOUT,
+        help=f"Per-file conversion timeout in seconds; 0=no limit (default: {CONVERT_GIVE_UP_TIMEOUT})",
+    )
+    both.add_argument(
         "--kernel", default="acl2",
         help="Jupyter kernel name (default: acl2)",
     )
@@ -595,7 +681,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command in ("convert", "all"):
         log.info("=== Phase 1: Convert ===")
         jobs = getattr(args, "jobs", 1)
-        converted, skipped, errors = phase_convert(source, output, args.force, jobs=jobs)
+        convert_timeout = getattr(args, "convert_timeout", CONVERT_GIVE_UP_TIMEOUT)
+        converted, skipped, errors = phase_convert(
+            source, output, args.force, jobs=jobs, convert_timeout=convert_timeout,
+        )
         log.info("Convert done: %d converted, %d up-to-date, %d errors", converted, skipped, errors)
         total_errors += errors
 

@@ -59,6 +59,9 @@ DEFAULT_STARTUP_TIMEOUT = 120
 # Default number of execution retries on failure (kernel died, etc.).
 DEFAULT_EXECUTE_RETRIES = 1
 
+# Default directory for kernel log files (None = don't redirect).
+DEFAULT_LOG_DIR: Path | None = None
+
 
 # ── helpers ──────────────────────────────────────────────────────────
 
@@ -391,12 +394,18 @@ def _execute_notebook(
     startup_timeout: int,
     allow_errors: bool,
     source_dir: Path | None = None,
+    log_dir: Path | None = None,
+    source_root: Path | None = None,
 ) -> tuple[Path, bool, str]:
     """Execute a single notebook in-place.  Returns (path, success, message).
 
     *source_dir*, when given, sets the kernel working directory so that
     relative ``include-book`` paths resolve against the original source
     tree rather than the output directory.
+
+    *log_dir*, when given, redirects kernel log files out of the source
+    tree via ``XDG_RUNTIME_DIR`` and names them after the notebook via
+    ``JUPYTER_LOG_NAME``.
     """
     cmd = [
         "jupyter", "nbconvert",
@@ -413,8 +422,24 @@ def _execute_notebook(
         cmd.append("--ExecutePreprocessor.allow_errors=True")
     cmd.append(str(notebook))
 
+    env = None
+    if log_dir is not None:
+        env = os.environ.copy()
+        # Mirror source tree structure under log_dir.
+        if source_root and source_dir:
+            try:
+                rel = source_dir.relative_to(source_root)
+                runtime_dir = log_dir / rel
+            except ValueError:
+                runtime_dir = log_dir
+        else:
+            runtime_dir = log_dir
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        env["XDG_RUNTIME_DIR"] = str(runtime_dir)
+        env["JUPYTER_LOG_NAME"] = notebook.stem
+
     t0 = time.monotonic()
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
     elapsed = time.monotonic() - t0
 
     if result.returncode == 0:
@@ -433,12 +458,15 @@ def _execute_with_retries(
     allow_errors: bool,
     source_dir: Path | None,
     retries: int,
+    log_dir: Path | None = None,
+    source_root: Path | None = None,
 ) -> tuple[Path, bool, str]:
     """Execute *notebook* with up to *retries* retries on failure."""
     for attempt in range(1 + retries):
         path, ok, msg = _execute_notebook(
             notebook, kernel_name, cell_timeout, startup_timeout,
             allow_errors, source_dir=source_dir,
+            log_dir=log_dir, source_root=source_root,
         )
         if ok:
             if attempt > 0:
@@ -528,6 +556,7 @@ def phase_execute(
     allow_errors: bool = True,
     force: bool = False,
     retries: int = DEFAULT_EXECUTE_RETRIES,
+    log_dir: Path | None = DEFAULT_LOG_DIR,
 ) -> tuple[int, int, int]:
     """Execute certified notebooks.  Returns (executed, skipped, errors)."""
     pairs = _find_executable_notebooks(source_root, output_root, force)
@@ -543,6 +572,9 @@ def phase_execute(
     if not pairs:
         return 0, total_certified, 0
 
+    if log_dir is not None:
+        log.info("Kernel logs → %s", log_dir)
+
     executed = errors = 0
 
     if jobs <= 1:
@@ -551,6 +583,7 @@ def phase_execute(
             path, ok, msg = _execute_with_retries(
                 notebook, kernel_name, cell_timeout, startup_timeout,
                 allow_errors, source.parent, retries,
+                log_dir=log_dir, source_root=source_root,
             )
             if ok:
                 log.info("  %s", msg)
@@ -562,7 +595,7 @@ def phase_execute(
         # Items are tuples matching _execute_with_retries positional args.
         items = [
             (notebook, kernel_name, cell_timeout, startup_timeout,
-             allow_errors, source.parent, retries)
+             allow_errors, source.parent, retries, log_dir, source_root)
             for source, notebook in pairs
         ]
         max_pending = jobs * 2
@@ -651,6 +684,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--retries", type=int, default=DEFAULT_EXECUTE_RETRIES,
         help=f"Number of retries on execution failure (default: {DEFAULT_EXECUTE_RETRIES})",
     )
+    exe.add_argument(
+        "--log-dir", type=Path, default=DEFAULT_LOG_DIR,
+        help="Directory for kernel log files (default: logs in source tree)",
+    )
     exe.add_argument("--force", action="store_true", help="Re-execute even if up-to-date")
     exe.add_argument("-v", "--verbose", action="store_true")
 
@@ -688,6 +725,10 @@ def _build_parser() -> argparse.ArgumentParser:
     both.add_argument(
         "--retries", type=int, default=DEFAULT_EXECUTE_RETRIES,
         help=f"Number of retries on execution failure (default: {DEFAULT_EXECUTE_RETRIES})",
+    )
+    both.add_argument(
+        "--log-dir", type=Path, default=DEFAULT_LOG_DIR,
+        help="Directory for kernel log files (default: logs in source tree)",
     )
     both.add_argument("--force", action="store_true", help="Rebuild everything")
     both.add_argument("-v", "--verbose", action="store_true")
@@ -733,6 +774,7 @@ def main(argv: list[str] | None = None) -> int:
         allow_errors = not getattr(args, "no_allow_errors", False)
 
         retries = getattr(args, "retries", DEFAULT_EXECUTE_RETRIES)
+        log_dir = getattr(args, "log_dir", DEFAULT_LOG_DIR)
 
         executed, skipped, errors = phase_execute(
             source, output,
@@ -743,6 +785,7 @@ def main(argv: list[str] | None = None) -> int:
             allow_errors=allow_errors,
             force=args.force,
             retries=retries,
+            log_dir=log_dir,
         )
         log.info("Execute done: %d executed, %d up-to-date, %d errors", executed, skipped, errors)
         total_errors += errors

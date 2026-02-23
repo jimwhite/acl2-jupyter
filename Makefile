@@ -234,15 +234,32 @@ lisp2nb-force: lisp2nb
 
 BOOTSTRAP_SCRIPT := $(PWD)/context/script2notebook/build_boot_strap.py
 BOOTSTRAP_STARTUP_TIMEOUT ?= 1200
+KERNEL_SRC := $(PWD)/context/acl2-jupyter-kernel
+KERNEL_DST := $(HOME)/quicklisp/local-projects/acl2-jupyter-kernel
 
-.PHONY: bootstrap-pass2
+.PHONY: bootstrap-pass2 deploy-kernel bootstrap
 
+# Deploy kernel source to quicklisp local-projects and clear FASL cache
+deploy-kernel:
+	@for f in kernel.lisp packages.lisp complete.lisp inspect.lisp installer.lisp \
+	          acl2-jupyter-kernel.asd start-kernel-bootstrap.sh; do \
+		if [ -f "$(KERNEL_SRC)/$$f" ]; then \
+			sudo cp "$(KERNEL_SRC)/$$f" "$(KERNEL_DST)/$$f"; \
+		fi; \
+	done
+	rm -rf $(HOME)/.cache/common-lisp/sbcl-*/home/jovyan/quicklisp/local-projects/acl2-jupyter-kernel/
+	@echo "Kernel deployed and FASL cache cleared."
+
+# Execute pass-2 notebooks (pass 1 runs inside kernel via ld-fn)
 bootstrap-pass2: install-script2notebook
 	$(VENV_PYTHON) $(BOOTSTRAP_SCRIPT) $(ACL2_HOME) \
 		--pass2-only \
 		--cell-timeout $(NOTEBOOK_CELL_TIMEOUT) \
 		--startup-timeout $(BOOTSTRAP_STARTUP_TIMEOUT) \
 		-v 2>&1
+
+# Full pipeline: deploy kernel → convert .lisp → execute pass-2 notebooks
+bootstrap: deploy-kernel lisp2nb bootstrap-pass2
 
 # =============================================================================
 # Rust and Parinfer Setup

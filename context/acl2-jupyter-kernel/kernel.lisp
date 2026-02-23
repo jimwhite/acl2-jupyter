@@ -767,6 +767,72 @@
 ;;; This avoids the *1* function errors and PROGN!-FN problems that occur
 ;;; when our simplified bootstrap REPL handles pass 1, while still giving
 ;;; us a proper pass-2 world for capturing notebook execution metadata.
+;;;
+;;; Pass-1 metadata capture:
+;;; After each file's ld-fn, we diff the world to extract event tuples
+;;; and forms, writing per-file JSON to PASS1_EVENTS_DIR so the build
+;;; script can inject them into notebooks.
+
+(defvar *pass1-events-dir* "/tmp/pass1-events/"
+  "Directory where per-file pass-1 event metadata JSON is written.")
+
+(defun json-escape-string (s)
+  "Escape S for JSON: backslash, double-quote, and control characters."
+  (with-output-to-string (out)
+    (write-char #\" out)
+    (loop for ch across s
+          do (cond ((char= ch #\\) (write-string "\\\\" out))
+                   ((char= ch #\") (write-string "\\\"" out))
+                   ((char= ch #\Newline) (write-string "\\n" out))
+                   ((char= ch #\Return) (write-string "\\r" out))
+                   ((char= ch #\Tab) (write-string "\\t" out))
+                   ((char< ch #\Space)
+                    (format out "\\u~4,'0x" (char-code ch)))
+                   (t (write-char ch out))))
+    (write-char #\" out)))
+
+(defun write-pass1-file-events (stem world-before world-after)
+  "Extract events from (ldiff WORLD-AFTER WORLD-BEFORE) and write
+   to *pass1-events-dir*/<STEM>.json.
+   JSON format mirrors the cell metadata: {events: [...], forms: [...], package: ...}"
+  (let* ((scan (if world-before
+                   (ldiff world-after world-before)
+                   world-after))
+         (tuples (extract-event-tuples scan nil))
+         (events (format-event-tuples tuples nil))
+         (forms (format-event-forms tuples))
+         (pkg (acl2::current-package *the-live-state*))
+         (path (merge-pathnames
+                (make-pathname :name stem :type "json")
+                (parse-namestring *pass1-events-dir*))))
+    (ensure-directories-exist path)
+    (with-open-file (out path :direction :output
+                         :if-exists :supersede
+                         :external-format :utf-8)
+      ;; Write JSON with proper escaping.
+      (let ((*print-pretty* nil)
+            (*print-right-margin* nil))
+        (format out "{~%")
+        (format out "  \"stem\": ~a,~%" (json-escape-string stem))
+        (format out "  \"package\": ~a,~%" (json-escape-string pkg))
+        (format out "  \"event_count\": ~d,~%" (length events))
+        (format out "  \"events\": [~%")
+        (loop for ev in events
+              for i from 0
+              do (format out "    ~a~:[,~;~]~%"
+                         (json-escape-string ev)
+                         (= i (1- (length events)))))
+        (format out "  ],~%")
+        (format out "  \"forms\": [~%")
+        (loop for fm in forms
+              for i from 0
+              do (format out "    ~a~:[,~;~]~%"
+                         (json-escape-string fm)
+                         (= i (1- (length forms)))))
+        (format out "  ]~%")
+        (format out "}~%")))
+    (format t "~&;; [pass 1] ~a: ~d events → ~a~%"
+            stem (length events) path)))
 
 (defun start-boot-strap-pass2 (&optional connection-file)
   "Start an ACL2 Jupyter kernel in pass-2-only mode.
@@ -791,7 +857,8 @@
                      (acl2::raw-source-name-p fl)))
         (format t "~&;; [pass 1] ~a~%" fl)
         (force-output)
-        (let ((fname (concatenate 'string fl "." acl2::*lisp-extension*)))
+        (let ((fname (concatenate 'string fl "." acl2::*lisp-extension*))
+              (world-before (w state)))
           (multiple-value-bind (er val st)
               (acl2::ld-fn
                (acl2::ld-alist-raw fname
@@ -800,7 +867,13 @@
                state nil)
             (declare (ignore val st))
             (when er
-              (error "[boot-strap-pass2] Pass 1 error on ~a" fl))))))
+              (error "[boot-strap-pass2] Pass 1 error on ~a" fl))
+            ;; Capture pass-1 metadata for this file
+            (handler-case
+                (write-pass1-file-events fl world-before (w state))
+              (error (c)
+                (format t "~&;; [pass 1] WARNING: metadata capture failed for ~a: ~a~%"
+                        fl c)))))))
     ;; --- Transition to pass 2 ---
     ;; enter-boot-strap-pass-2 sets boot-strap-pass-2 = t, initializes
     ;; memoization, and switches default-defun-mode to :logic.

@@ -351,6 +351,93 @@ def execute_pass(kc, pass_num: int, stems: list[str], acl2_home: Path,
                     sum(1 for c in nb.cells if c.cell_type == "code"))
 
 
+# ── Pass-1 metadata injection ────────────────────────────────────────────────
+
+PASS1_EVENTS_DIR = Path("/tmp/pass1-events")
+
+
+def inject_pass1_metadata(pass1_stems: list[str], acl2_home: Path):
+    """Inject pass-1 event metadata into pass-1-only notebooks.
+    
+    For each stem, reads the per-file JSON written by the kernel's
+    write-pass1-file-events, and injects the events as a display_data
+    output on the notebook's metadata (notebook-level, not per-cell).
+    For stems that are also in pass 2, pass-2 execution already
+    captured per-cell metadata so we skip those.
+    """
+    pass2_set = set(PASS2_STEMS)
+    injected = 0
+    
+    for stem in pass1_stems:
+        json_path = PASS1_EVENTS_DIR / f"{stem}.json"
+        nb_path = acl2_home / f"{stem}.ipynb"
+        
+        if not json_path.exists():
+            log.debug("  No pass-1 metadata for %s", stem)
+            continue
+        if not nb_path.exists():
+            continue
+        
+        try:
+            with open(json_path) as f:
+                meta = json.load(f)
+        except Exception as e:
+            log.warning("  Failed to read %s: %s", json_path, e)
+            continue
+        
+        n_events = meta.get("event_count", len(meta.get("events", [])))
+        if n_events == 0:
+            log.debug("  %s: 0 events, skipping", stem)
+            continue
+        
+        nb = nbformat.read(str(nb_path), as_version=4)
+        
+        # Build the events output matching the pass-2 cell metadata format
+        events_data = {
+            "events": meta.get("events", []),
+            "package": meta.get("package", "ACL2"),
+        }
+        if meta.get("forms"):
+            events_data["forms"] = meta["forms"]
+        
+        # Check if notebook already has pass-1 metadata injected
+        # (from a previous run) — look for a cell with our marker
+        marker = "pass-1-metadata"
+        existing_idx = None
+        for i, cell in enumerate(nb.cells):
+            if cell.cell_type == "code" and cell.source.strip() == f"; {marker}":
+                existing_idx = i
+                break
+        
+        # Create a synthetic code cell with the metadata as output
+        metadata_cell = nbformat.v4.new_code_cell(source=f"; {marker}")
+        metadata_cell.outputs = [nbformat.v4.new_output(
+            output_type="display_data",
+            data={
+                EVENTS_MIME: events_data,
+                "text/plain": (
+                    f"Pass 1 metadata: {n_events} events"
+                    f" (package: {meta.get('package', 'ACL2')})"
+                ),
+            },
+            metadata={"pass": 1},
+        )]
+        
+        if existing_idx is not None:
+            nb.cells[existing_idx] = metadata_cell
+        else:
+            nb.cells.append(metadata_cell)
+        
+        nbformat.write(nb, str(nb_path))
+        in_pass2 = " (also in pass 2)" if stem in pass2_set else ""
+        log.info("  %s: injected %d pass-1 events%s", stem, n_events, in_pass2)
+        injected += 1
+    
+    log.info("Injected pass-1 metadata into %d notebooks.", injected)
+
+
+# ── Build orchestration ──────────────────────────────────────────────────────
+
 def run_build(pass1_stems: list[str], pass2_stems: list[str],
               acl2_home: Path, dry_run: bool = False,
               cell_timeout: int = 300, only_stem: str | None = None,
@@ -401,6 +488,10 @@ def run_build(pass1_stems: list[str], pass2_stems: list[str],
             km.cleanup_resources()
         except Exception:
             pass
+    
+    # Inject pass-1 metadata into notebooks (after kernel is shut down)
+    if pass2_only and not dry_run:
+        inject_pass1_metadata(pass1_stems, acl2_home)
 
 
 def main():

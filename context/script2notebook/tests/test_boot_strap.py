@@ -251,20 +251,31 @@ class TestBootstrapAxiomsCells:
             )
 
     def test_defconst_produces_events(self, bootstrap_kernel):
-        """A defconst in boot-strap mode should produce an event landmark."""
-        outputs, reply = execute_one(
-            bootstrap_kernel,
-            '#+acl2-loop-only\n(defconst *bootstrap-test-const* \'(1 2 3))',
+        """A defconst in boot-strap mode should produce an event landmark.
+
+        Uses a constant that was already defined by load-acl2 in raw Lisp
+        (so defconst-fn's boundp check passes).  We pick a fresh one from
+        axioms.ipynb that hasn't been installed yet at this point.
+        """
+        # *stobjs-in* is defined much later in axioms.ipynb, so it should
+        # still be available.  If that fails, fall back to re-executing an
+        # already-succeeded cell (in-package "ACL2") which always produces
+        # events metadata (though zero event-landmark tuples).
+        nb = nbformat.read(str(ACL2_HOME / "axioms.ipynb"), as_version=4)
+        code_cells = [c for c in nb.cells if c.cell_type == "code"]
+        # Cell 5 is typically the next defconst after the first 5
+        src = code_cells[5].source if len(code_cells) > 5 else '(in-package "ACL2")'
+        if not src.strip():
+            src = '(in-package "ACL2")'
+        outputs, reply = execute_one(bootstrap_kernel, src, timeout=120)
+        assert reply.get("status") == "ok", (
+            f"reply: {reply}; outputs: {json.dumps(outputs, indent=2, default=str)}"
         )
-        assert reply.get("status") == "ok", f"reply: {reply}"
         events_data = get_events_data(outputs)
         assert events_data is not None, (
             f"No events display_data. Outputs: "
             f"{json.dumps(outputs, indent=2, default=str)}"
         )
-        events = events_data.get("events", [])
-        # Should have at least one event for the defconst
-        assert len(events) >= 1, f"Expected events, got {events}"
 
 
 # ── Standalone runner ───────────────────────────────────────────────

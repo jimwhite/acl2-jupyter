@@ -366,6 +366,7 @@
           (when eofp (return))
           (let ((form raw-form))
             (initialize-accumulated-warnings)
+            (acl2::initialize-timers state)
             (f-put-global 'acl2::last-make-event-expansion nil state)
             (multiple-value-bind (erp trans-ans state)
                 (acl2::trans-eval-default-warning
@@ -413,6 +414,7 @@
             (let* ((old-wrld (w state))
                    (old-default-defun-mode (default-defun-mode old-wrld)))
               (initialize-accumulated-warnings)
+              (acl2::initialize-timers state)
               (f-put-global 'acl2::last-make-event-expansion nil state)
               ;; Evaluate via trans-eval -- full ACL2 event processing
               (multiple-value-bind (erp trans-ans state)
@@ -533,15 +535,15 @@
    Runs on the main thread inside with-suppression.
    Returns (values) on success so evaluate-code sees no ename."
   (acl2::with-suppression
-    (with-acl2-output-to *standard-output*
-      (let ((channel (make-string-input-channel trimmed)))
-        (unwind-protect
-            (if (bootstrap-p k)
-                (bootstrap-read-eval-print-loop channel *the-live-state*)
-                (jupyter-read-eval-print-loop channel *the-live-state*))
-          (close-string-input-channel channel))))
-    (collect-cell-events k)
-    (values)))
+      (with-acl2-output-to *standard-output*
+        (let ((channel (make-string-input-channel trimmed)))
+          (unwind-protect
+              (if (bootstrap-p k)
+                  (bootstrap-read-eval-print-loop channel *the-live-state*)
+                  (jupyter-read-eval-print-loop channel *the-live-state*))
+            (close-string-input-channel channel))))
+      (collect-cell-events k)
+      (values)))
 
 (defmethod jupyter:evaluate-code ((k kernel) code &optional source-path breakpoints)
   (declare (ignore source-path breakpoints))

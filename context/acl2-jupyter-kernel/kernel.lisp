@@ -569,3 +569,92 @@
           ;; Cleanup LP context on exit
           (f-put-global 'acl2::ld-level 0 state)
           (acl2::acl2-unwind 0 nil))))))
+
+
+;;; ---------------------------------------------------------------------------
+;;; Boot-Strap Kernel Startup
+;;; ---------------------------------------------------------------------------
+;;; Like start, but replicates the boot-strap process from initialize-acl2:
+;;;   1. load-acl2  (raw CL compilation artefacts)
+;;;   2. enter-boot-strap-mode  (primordial world, :acl2-loop-only feature)
+;;;   3. Set ld-skip-proofsp for the pass (initialize-acl2 or include-book)
+;;;
+;;; This is launched from init.lisp (NOT saved_acl2.core) since the boot-strap
+;;; builds the world from scratch.
+;;;
+;;; Pass 1 kernel: evaluates all non-raw, non-pass-2 files.
+;;; Pass 2 kernel: starts from the post-pass-1 state, calls
+;;;   enter-boot-strap-pass-2, then evaluates pass-2 files.
+;;;
+;;; The Python build script (build_boot_strap.py) drives execution by
+;;; opening each .ipynb and executing cells one at a time against this
+;;; kernel, collecting the per-cell display_data (events + forms).
+
+(defun start-boot-strap (&optional connection-file
+                          &key (pass 1))
+  "Start an ACL2 Jupyter kernel in boot-strap mode.
+   PASS 1: enter-boot-strap-mode, ld-skip-proofsp = initialize-acl2.
+   PASS 2: enter-boot-strap-mode, ld-skip-proofsp = include-book.
+
+   Prerequisite: load-acl2 must have been called before the kernel package
+   is loaded.  The boot-strap kernel.json argv handles this by including
+     --eval \"(acl2::load-acl2 :load-acl2-proclaims acl2::*do-proclaims*)\"
+   before quickloading the kernel."
+
+  ;; Step 1: Enter boot-strap mode (primordial world)
+  (format t "~&;; [boot-strap pass ~D] Entering boot-strap mode ...~%" pass)
+  (push :acl2-loop-only *features*)
+  (let ((state *the-live-state*))
+    (acl2::set-initial-cbd)
+    (makunbound 'acl2::*copy-of-common-lisp-symbols-from-main-lisp-package*)
+    (acl2::enter-boot-strap-mode nil (acl2::get-os))
+
+    ;; Step 3: Set ld-skip-proofsp for this pass
+    (cond
+      ((= pass 1)
+       (f-put-global 'acl2::ld-skip-proofsp 'acl2::initialize-acl2 state))
+      ((= pass 2)
+       ;; Pass 2 needs the full pass 1 world first.
+       ;; The build script must execute all pass-1 notebooks before
+       ;; starting a pass-2 kernel.  For a single-kernel approach,
+       ;; pass-2 transition happens via enter-boot-strap-pass-2.
+       (f-put-global 'acl2::ld-skip-proofsp 'acl2::include-book state))
+      (t (error "Invalid pass number ~D (must be 1 or 2)" pass)))
+
+    (format t "~&;; [boot-strap pass ~D] Kernel ready.~%" pass)
+
+    ;; Now start the kernel exactly like normal start, but skip
+    ;; acl2-default-restart (no saved image) and LP first-entry
+    ;; (enter-boot-strap-mode already set up the world).
+    (f-put-global 'acl2::acl2-raw-mode-p nil state)
+    (f-put-global 'acl2::ld-error-action :continue state)
+    (sb-ext:disable-debugger)
+    (eval '(acl2::set-slow-alist-action nil))
+    (f-put-global 'acl2::slow-array-action nil state)
+    (setq acl2::*lp-ever-entered-p* t)
+    (setq *kernel-shutdown* nil)
+    ;; Diff-only mode: baseline = current world
+    (setq *initial-world-baseline* (w state))
+    (setq *initial-event-forms-p* t)    ; always capture forms in boot-strap
+    (setq *initial-deep-events-p* nil)  ; top-level events only
+
+    (let ((conn (or connection-file
+                    (first (uiop:command-line-arguments)))))
+      (unless conn
+        (error "No connection file provided"))
+      (acl2::acl2-unwind acl2::*ld-level* nil)
+      (push nil acl2::*acl2-unwind-protect-stack*)
+      (let ((acl2::*ld-level* 1))
+        (f-put-global 'acl2::ld-level 1 state)
+        (unwind-protect
+            (progn
+              (bordeaux-threads:make-thread
+               (lambda ()
+                 (unwind-protect
+                     (jupyter:run-kernel 'kernel conn)
+                   (setq *kernel-shutdown* t)
+                   (bt-semaphore:signal-semaphore *main-thread-ready*)))
+               :name "jupyter-kernel-bootstrap")
+              (main-thread-loop))
+          (f-put-global 'acl2::ld-level 0 state)
+          (acl2::acl2-unwind 0 nil))))))

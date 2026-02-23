@@ -164,103 +164,128 @@ def match_events_to_cells(
     *,
     forms: list[str] | None = None,
 ) -> list[list[str]] | tuple[list[list[str]], list[list[str]]]:
-    """Assign events to code cells by name-anchored sequential matching.
+    """Assign events to code cells by sequential form-based matching.
 
-    *events* are in world order (newest first).  We reverse them to
-    source order, then walk through cells and events together.
+    When *forms* is provided (the usual case for boot-strap metadata),
+    matching uses the original submitted forms which have the same
+    syntax as cell source text.  Both are passed through
+    ``extract_cell_name`` to get a canonical name, then walked in
+    parallel:
 
-    The algorithm is greedy and resilient to macro-expansion mismatches:
+    1. Reverse events/forms from world order to source order.
+    2. Walk forms and cells together.  When a form's name matches
+       the current cell's name, anchor that form (and its event)
+       to that cell.  Advance to the next cell.
+    3. Forms whose names don't match the current cell are sub-events
+       of a macro expansion — they stay attached to the last anchored
+       cell.
+    4. Cells with no matching forms get empty lists.
 
-    1. Build a cell-name index and an event-name sequence.
-    2. Walk events in source order.  For each event, scan forward in
-       cells to find a name match.  If found, anchor the event there
-       and assign any intervening unmatched events to the *preceding*
-       anchored cell (they are sub-events of a macro expansion).
-    3. After all events are processed, any trailing unmatched events
-       go to the last anchored cell.
+    When *forms* is ``None``, falls back to event-name matching using
+    ``extract_event_name`` on the UPCASE event tuples (legacy path).
 
-    If *forms* is provided (parallel list, same length as *events*),
-    returns ``(event_assignments, form_assignments)`` — two parallel
-    lists-of-lists.  Otherwise returns just *event_assignments*.
-
-    Each returned list is parallel to *code_cells* where each element
-    is the list of strings assigned to that cell (may be empty).
+    Returns ``(event_assignments, form_assignments)`` when *forms* is
+    provided, otherwise just *event_assignments*.  Each is a list
+    parallel to *code_cells* where each element is the list of strings
+    assigned to that cell.
     """
     rev_events = list(reversed(events))
     rev_forms = list(reversed(forms)) if forms is not None else None
     n_events = len(rev_events)
 
-    # Pre-compute cell names (uppercased, package-stripped).
+    # Pre-compute cell names.
     cell_names: list[str | None] = []
     for c in code_cells:
         src = "".join(c["source"]) if isinstance(c["source"], list) else c["source"]
         cell_names.append(extract_cell_name(src))
 
-    # Build a map from name → list of cell indices (in order) for fast lookup.
-    from collections import defaultdict
-    name_to_cells: dict[str, list[int]] = defaultdict(list)
-    for ci, cname in enumerate(cell_names):
-        if cname is not None:
-            name_to_cells[cname].append(ci)
-
-    # For each cell name, track how many we've consumed (pointer into list).
-    name_cursor: dict[str, int] = defaultdict(int)
-
     event_assignments: list[list[str]] = [[] for _ in code_cells]
     form_assignments: list[list[str]] = [[] for _ in code_cells] if rev_forms is not None else []
-
-    # Phase 1: anchor events to cells by name match.
-    # For each event, find the earliest unused cell with matching name
-    # that comes after the last anchor point.
-    anchors: list[tuple[int, int]] = []  # (event_idx, cell_idx)
-    last_anchor_ci = -1
-
-    for ei in range(n_events):
-        ename = extract_event_name(rev_events[ei])
-        if ename is None:
-            continue
-        candidates = name_to_cells.get(ename, [])
-        cursor = name_cursor.get(ename, 0)
-        # Find first candidate cell after last_anchor_ci
-        matched_ci = None
-        for idx in range(cursor, len(candidates)):
-            ci = candidates[idx]
-            if ci > last_anchor_ci:
-                matched_ci = ci
-                name_cursor[ename] = idx + 1
-                break
-        if matched_ci is not None:
-            anchors.append((ei, matched_ci))
-            last_anchor_ci = matched_ci
 
     def _assign(ci: int, ei: int):
         event_assignments[ci].append(rev_events[ei])
         if rev_forms is not None:
             form_assignments[ci].append(rev_forms[ei])
 
-    # Phase 2: assign events to cells based on anchors.
-    # Events between two anchors go to the first anchor's cell
-    # (they are macro-expansion sub-events of that cell's form).
-    if not anchors:
-        # No anchors at all — put everything in cell 0 if there is one
-        if code_cells:
-            for ei in range(n_events):
+    if rev_forms is not None:
+        # --- Form-based matching (preferred) ---
+        # Forms are in source order (after reversal) and their names
+        # align sequentially with cell names.  Walk both in parallel:
+        # scan forward through cells for each form's name match,
+        # attaching unmatched forms to the last anchored cell.
+        form_names: list[str | None] = [
+            extract_cell_name(f) for f in rev_forms
+        ]
+
+        ci = 0  # current cell cursor
+        last_anchored_ci = -1
+
+        for ei in range(n_events):
+            fname = form_names[ei]
+
+            # Try to match this form to a cell at or after the cursor.
+            matched_ci = None
+            if fname is not None:
+                for scan_ci in range(ci, len(code_cells)):
+                    if cell_names[scan_ci] == fname:
+                        matched_ci = scan_ci
+                        break
+
+            if matched_ci is not None:
+                _assign(matched_ci, ei)
+                last_anchored_ci = matched_ci
+                ci = matched_ci + 1
+            elif last_anchored_ci >= 0:
+                # Sub-event of the last anchored cell's macro expansion.
+                _assign(last_anchored_ci, ei)
+            elif code_cells:
                 _assign(0, ei)
-        if rev_forms is not None:
-            return event_assignments, form_assignments
-        return event_assignments
+                last_anchored_ci = 0
+    else:
+        # --- Legacy event-name matching (no forms available) ---
+        event_names: list[str | None] = [
+            extract_event_name(e) for e in rev_events
+        ]
 
-    # Events before first anchor → first anchor's cell
-    first_anchor_ei, first_anchor_ci = anchors[0]
-    for ei in range(first_anchor_ei):
-        _assign(first_anchor_ci, ei)
+        from collections import defaultdict
+        name_to_cells: dict[str, list[int]] = defaultdict(list)
+        for ci, cname in enumerate(cell_names):
+            if cname is not None:
+                name_to_cells[cname].append(ci)
+        name_cursor: dict[str, int] = defaultdict(int)
 
-    # Events at and between anchors
-    for ai in range(len(anchors)):
-        anchor_ei, anchor_ci = anchors[ai]
-        next_ei = anchors[ai + 1][0] if ai + 1 < len(anchors) else n_events
-        for ei in range(anchor_ei, next_ei):
-            _assign(anchor_ci, ei)
+        anchors: list[tuple[int, int]] = []
+        last_anchor_ci = -1
+
+        for ei in range(n_events):
+            ename = event_names[ei]
+            if ename is None:
+                continue
+            candidates = name_to_cells.get(ename, [])
+            cursor = name_cursor.get(ename, 0)
+            while cursor < len(candidates) and candidates[cursor] <= last_anchor_ci:
+                cursor += 1
+            name_cursor[ename] = cursor
+            if cursor >= len(candidates):
+                continue
+            ci = candidates[cursor]
+            anchors.append((ei, ci))
+            last_anchor_ci = ci
+            name_cursor[ename] = cursor + 1
+
+        if not anchors:
+            if code_cells:
+                for ei in range(n_events):
+                    _assign(0, ei)
+        else:
+            first_anchor_ei, first_anchor_ci = anchors[0]
+            for ei in range(first_anchor_ei):
+                _assign(first_anchor_ci, ei)
+            for ai in range(len(anchors)):
+                anchor_ei, anchor_ci = anchors[ai]
+                next_ei = anchors[ai + 1][0] if ai + 1 < len(anchors) else n_events
+                for ei in range(anchor_ei, next_ei):
+                    _assign(anchor_ci, ei)
 
     if rev_forms is not None:
         return event_assignments, form_assignments

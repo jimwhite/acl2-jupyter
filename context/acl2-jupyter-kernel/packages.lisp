@@ -38,5 +38,6 @@
                 #:state)
   (:export #:kernel
            #:start
+           #:start-boot-strap
            #:install
            #:install-image))

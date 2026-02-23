@@ -122,7 +122,9 @@ Two new Make targets:
 |------|------|
 | `context/acl2-jupyter-kernel/capture-boot-metadata-loader.lisp` | **NEW** — Bootstrap loader |
 | `context/acl2-jupyter-kernel/capture-boot-metadata.lisp` | **NEW** — Main capture script |
-| `context/script2notebook/build_notebooks.py` | **MODIFIED** — Boot metadata injection |
+| `context/script2notebook/event_matching.py` | **NEW** — Event/form-to-cell matching |
+| `context/script2notebook/inject_boot_metadata.py` | **NEW** — Boot metadata injection |
+| `context/script2notebook/test_event_matching.py` | **NEW** — Tests for matching + forms |
 | `Makefile` | **MODIFIED** — Venv support + new targets |
 
 ### 1. Lisp capture: two-file architecture
@@ -178,16 +180,27 @@ Mirrors the kernel's algorithm:
                 (eq (cadr triple) 'acl2::global-value))
       collect (cddr triple))
 ```
-Then filters for depth-0 events and `prin1-to-string`s them with
-`*package*` bound to `ACL2`.
+Then filters for depth-0 events and produces two parallel arrays via
+`(VALUES events forms)`:
+- **events**: `prin1-to-string` of each event tuple with
+  `*print-case* :upcase` — the full event landmark including type
+  prefix (e.g., `(DEFUN FOO ...)` or `(((DEFUN . T) FOO . :CLC) ...)`).
+- **forms**: `prin1-to-string` of `(access-event-tuple-form et)` with
+  `*print-case* :downcase` — the original submitted source form,
+  stripped of `LOCAL` wrappers via `remove-local` (e.g.,
+  `(defun foo ...)`).
+
+This matches the dual output produced by the ACL2 Jupyter kernel
+(`kernel.lisp` lines ~400–480).
 
 **Per-file capture** (`capture-file-ld`):
 1. Snapshots `(w *the-live-state*)` and `max-absolute-event-number`.
 2. Calls `(ld-fn (ld-alist-raw filename skip-proofsp :error) state nil)`.
 3. Snapshots again.
-4. Calls `extract-events-since` on the before/after worlds.
+4. Calls `extract-events-since` on the before/after worlds, receiving
+   `(VALUES events forms)`.
 5. Records an alist of metadata (source file, stem, pass, position,
-   timing, event counts, event strings, current package).
+   timing, event counts, event strings, form strings, current package).
 6. Returns `T` on success, `NIL` on error.
 
 **Main orchestrator** (`run-capture`):
@@ -246,9 +259,19 @@ with no functional difference for our metadata capture use case.
     "(DEFUN STRICT-TABLE-GUARD (X) (DECLARE (XARGS :GUARD T)) X)",
     "(DEFUN ZPF (X) (DECLARE (TYPE (UNSIGNED-BYTE 60) X)) (IF ..."
   ],
+  "forms": [
+    "(defun strict-table-guard (x) (declare (xargs :guard t)) x)",
+    "(defun zpf (x) (declare (type (unsigned-byte 60) x)) (if ..."
+  ],
   "package": "ACL2"
 }
 ```
+
+The `events` and `forms` arrays are parallel (same length, same order).
+Events are printed with `*print-case* :upcase` and include the full
+event-tuple prefix. Forms are printed with `*print-case* :downcase` and
+contain the original submitted code as extracted by
+`access-event-tuple-form`.
 
 #### Manifest (`manifest.json`)
 
@@ -305,6 +328,7 @@ For each pass's metadata:
      "data": {
        "application/vnd.acl2.events+json": {
          "events": ["(DEFUN FOO ...)", ...],
+         "forms": ["(defun foo ...)", ...],
          "package": "ACL2",
          "source": "boot-strap-capture",
          "pass": 1,

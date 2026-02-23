@@ -210,10 +210,18 @@ def _inject_into_notebook(
             continue
         pass_num = entry.get("pass", 1)
         pkg = entry.get("package", "ACL2")
+        forms = entry.get("forms", [])
+        has_forms = len(forms) == len(events)
 
         # match_events_to_cells expects world-order (newest first) which
         # is what the capture script stores.
-        assignments = match_events_to_cells(events, code_cells)
+        if has_forms:
+            assignments, form_assignments = match_events_to_cells(
+                events, code_cells, forms=forms,
+            )
+        else:
+            assignments = match_events_to_cells(events, code_cells)
+            form_assignments = None
 
         assigned_count = 0
         cells_with_events = 0
@@ -225,16 +233,22 @@ def _inject_into_notebook(
             cell_idx = code_cell_indices[idx_in_code]
             cell = cells[cell_idx]
 
+            mime_payload = {
+                "events": cell_events,
+                "package": pkg,
+                "source": "boot-strap-capture",
+                "pass": pass_num,
+                "stem": stem,
+            }
+            if form_assignments is not None:
+                cell_forms = form_assignments[idx_in_code]
+                if cell_forms:
+                    mime_payload["forms"] = cell_forms
+
             display_data_output = {
                 "output_type": "display_data",
                 "data": {
-                    EVENTS_MIME: {
-                        "events": cell_events,
-                        "package": pkg,
-                        "source": "boot-strap-capture",
-                        "pass": pass_num,
-                        "stem": stem,
-                    }
+                    EVENTS_MIME: mime_payload,
                 },
                 "metadata": {},
             }

@@ -105,8 +105,13 @@
 ;;; Mirrors the logic in kernel.lisp evaluate-code.
 
 (defun extract-events-since (baseline-world current-world)
-  "Return a list of depth-0 event-landmark tuple strings from the
-   world triples added since BASELINE-WORLD."
+  "Return (VALUES events forms) — parallel lists of depth-0
+   event-landmark tuple strings and form strings from the world
+   triples added since BASELINE-WORLD.
+
+   EVENTS are printed with *print-case* :upcase (matching event tuples).
+   FORMS are the original submitted code via access-event-tuple-form,
+   printed with *print-case* :downcase (matching the kernel's forms output)."
   (let* ((scan (if baseline-world
                    (ldiff current-world baseline-world)
                    current-world))
@@ -123,14 +128,22 @@
                 (integerp (car inner))))
             event-tuples)))
     (let ((*package* (find-package "ACL2"))
-          (*print-case* :upcase)
           (*print-pretty* nil)
           (*print-length* nil)
           (*print-level* nil))
-      (mapcar (lambda (et)
-                (let ((inner (if (eq (car et) 'acl2::local) (cdr et) et)))
-                  (prin1-to-string (cdr inner))))
-              top-level))))
+      (values
+       ;; events: uppercase print of tuple (stripped of event number)
+       (let ((*print-case* :upcase))
+         (mapcar (lambda (et)
+                   (let ((inner (if (eq (car et) 'acl2::local) (cdr et) et)))
+                     (prin1-to-string (cdr inner))))
+                 top-level))
+       ;; forms: lowercase print of the original submitted code
+       (let ((*print-case* :downcase))
+         (mapcar (lambda (et)
+                   (prin1-to-string
+                    (acl2::access-event-tuple-form et)))
+                 top-level))))))
 
 (defun current-event-number ()
   "Return the current max absolute event number."
@@ -160,47 +173,49 @@
            state
            nil)
         (declare (ignore val st))
-        (let* ((elapsed (/ (- (get-internal-real-time) t0)
-                           (float internal-time-units-per-second)))
-               (world-after (acl2::w state))
-               (event-after (current-event-number))
-               (events (extract-events-since world-before world-after))
-               (pkg (acl2::current-package state)))
-          (cond
-            (er
-             (format t "~&;; ERROR loading ~A (pass ~D)~%" file-stem pass)
-             (let ((meta `(("source_file" . ,(concatenate 'string file-stem "."
-                                                          acl2::*lisp-extension*))
-                           ("stem" . ,file-stem)
-                           ("pass" . ,pass)
-                           ("position" . ,position)
-                           ("error" . t)
-                           ("elapsed_seconds" . ,(round elapsed))
-                           ("baseline_event_number" . ,event-before)
-                           ("final_event_number" . ,event-after)
-                           ("event_count" . ,(length events))
-                           ("events" . ,events)
-                           ("package" . ,pkg))))
-               (push (cons (format nil "~A-pass~D" file-stem pass) meta)
-                     *capture-results*))
-             nil)
-            (t
-             (format t "~&;; OK ~A: ~D events (~,1Fs)~%"
-                     file-stem (length events) elapsed)
-             (let ((meta `(("source_file" . ,(concatenate 'string file-stem "."
-                                                          acl2::*lisp-extension*))
-                           ("stem" . ,file-stem)
-                           ("pass" . ,pass)
-                           ("position" . ,position)
-                           ("elapsed_seconds" . ,(round elapsed))
-                           ("baseline_event_number" . ,event-before)
-                           ("final_event_number" . ,event-after)
-                           ("event_count" . ,(length events))
-                           ("events" . ,events)
-                           ("package" . ,pkg))))
-               (push (cons (format nil "~A-pass~D" file-stem pass) meta)
-                     *capture-results*))
-             t)))))))
+        (multiple-value-bind (events forms)
+            (extract-events-since world-before (acl2::w state))
+          (let* ((elapsed (/ (- (get-internal-real-time) t0)
+                             (float internal-time-units-per-second)))
+                 (event-after (current-event-number))
+                 (pkg (acl2::current-package state)))
+            (cond
+              (er
+               (format t "~&;; ERROR loading ~A (pass ~D)~%" file-stem pass)
+               (let ((meta `(("source_file" . ,(concatenate 'string file-stem "."
+                                                             acl2::*lisp-extension*))
+                             ("stem" . ,file-stem)
+                             ("pass" . ,pass)
+                             ("position" . ,position)
+                             ("error" . t)
+                             ("elapsed_seconds" . ,(round elapsed))
+                             ("baseline_event_number" . ,event-before)
+                             ("final_event_number" . ,event-after)
+                             ("event_count" . ,(length events))
+                             ("events" . ,events)
+                             ("forms" . ,forms)
+                             ("package" . ,pkg))))
+                 (push (cons (format nil "~A-pass~D" file-stem pass) meta)
+                       *capture-results*))
+               nil)
+              (t
+               (format t "~&;; OK ~A: ~D events (~,1Fs)~%"
+                       file-stem (length events) elapsed)
+               (let ((meta `(("source_file" . ,(concatenate 'string file-stem "."
+                                                             acl2::*lisp-extension*))
+                             ("stem" . ,file-stem)
+                             ("pass" . ,pass)
+                             ("position" . ,position)
+                             ("elapsed_seconds" . ,(round elapsed))
+                             ("baseline_event_number" . ,event-before)
+                             ("final_event_number" . ,event-after)
+                             ("event_count" . ,(length events))
+                             ("events" . ,events)
+                             ("forms" . ,forms)
+                             ("package" . ,pkg))))
+                 (push (cons (format nil "~A-pass~D" file-stem pass) meta)
+                       *capture-results*))
+               t))))))))
 
 (defun write-results ()
   "Write all captured metadata to JSON files and a manifest."

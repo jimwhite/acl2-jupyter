@@ -211,10 +211,17 @@ notebooks-inject-boot-metadata: install-script2notebook
 
 LISP2NB := $(PWD)/context/script2notebook/lisp2nb.lisp
 
-.PHONY: lisp2nb lisp2nb-force
+.PHONY: lisp2nb lisp2nb-force sanitize-lisp
+
+# Rename non-source .lisp files so they are not picked up by the *.lisp glob
+sanitize-lisp:
+	@if [ -f "$(ACL2_HOME)/mcl-acl2-startup.lisp" ]; then \
+		mv "$(ACL2_HOME)/mcl-acl2-startup.lisp" "$(ACL2_HOME)/mcl-acl2-startup.lisp.txt"; \
+		echo "Renamed mcl-acl2-startup.lisp → mcl-acl2-startup.lisp.txt"; \
+	fi
 
 # Convert all ACL2 source files to notebooks using the CL converter
-lisp2nb:
+lisp2nb: sanitize-lisp
 	cd $(ACL2_HOME) && sbcl --noinform --non-interactive --disable-debugger --load "$(LISP2NB)" --eval '(let ((ok 0) (fail 0)) (dolist (f (directory #p"$(ACL2_HOME)/*.lisp")) (handler-case (progn (lisp2nb:convert-file f :markdown-bracket :fenced) (incf ok)) (error (e) (incf fail) (format t "FAIL ~A: ~A~%" (pathname-name f) e)))) (format t "OK: ~D  FAIL: ~D~%" ok fail) (uiop:quit (if (> fail 0) 1 0)))' 2>&1
 
 # Force reconvert (same as lisp2nb since CL converter always overwrites)
@@ -237,7 +244,7 @@ BOOTSTRAP_STARTUP_TIMEOUT ?= 1200
 KERNEL_SRC := $(PWD)/context/acl2-jupyter-kernel
 KERNEL_DST := $(HOME)/quicklisp/local-projects/acl2-jupyter-kernel
 
-.PHONY: bootstrap-pass2 deploy-kernel bootstrap
+.PHONY: bootstrap-pass2 deploy-kernel bootstrap notebooks-tar
 
 # Deploy kernel source to quicklisp local-projects and clear FASL cache
 deploy-kernel:
@@ -260,6 +267,9 @@ bootstrap-pass2: install-script2notebook
 
 # Full pipeline: deploy kernel → convert .lisp → execute pass-2 notebooks
 bootstrap: deploy-kernel lisp2nb bootstrap-pass2
+
+notebooks-tar:
+	find $(ACL2_HOME) -name '*.ipynb' -print0 | tar -czvf notebooks.tar.gz --null --files-from -
 
 # =============================================================================
 # Rust and Parinfer Setup

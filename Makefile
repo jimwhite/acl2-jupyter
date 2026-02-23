@@ -203,6 +203,31 @@ notebooks-inject-boot-metadata: install-script2notebook
 	$(INJECT_BOOT_METADATA) $(ACL2_HOME) -v --force
 
 # =============================================================================
+# CL-based .lisp → .ipynb Conversion (using rewrite-cl)
+# =============================================================================
+# Uses SBCL + rewrite-cl to parse .lisp files into notebooks.
+# This replaces the tree-sitter based Python converter, which has grammar bugs
+# that cause split cells on certain ACL2 source constructs.
+
+LISP2NB := $(PWD)/context/script2notebook/lisp2nb.lisp
+
+.PHONY: lisp2nb lisp2nb-force
+
+# Convert all ACL2 source files to notebooks using the CL converter
+lisp2nb:
+	cd $(ACL2_HOME) && sbcl --noinform --non-interactive --disable-debugger \
+		--load "$(LISP2NB)" \
+		--eval '(let ((ok 0) (fail 0)) \
+			(dolist (f (directory #p"$(ACL2_HOME)/*.lisp")) \
+				(handler-case (progn (lisp2nb:convert-file f :markdown-bracket :fenced) (incf ok)) \
+					(error (e) (incf fail) (format t "FAIL ~A: ~A~%" (pathname-name f) e)))) \
+			(format t "OK: ~D  FAIL: ~D~%" ok fail) \
+			(uiop:quit (if (> fail 0) 1 0)))' 2>&1
+
+# Force reconvert (same as lisp2nb since CL converter always overwrites)
+lisp2nb-force: lisp2nb
+
+# =============================================================================
 # Rust and Parinfer Setup
 # =============================================================================
 

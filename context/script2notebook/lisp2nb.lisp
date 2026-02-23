@@ -1,7 +1,7 @@
 ;;;; lisp2nb.lisp — Convert .lisp source to .ipynb using rewrite-cl
 ;;;;
 ;;;; Usage:
-;;;;   sbcl --load lisp2nb.lisp -- [--force] INPUT.lisp [INPUT2.lisp ...] [-o DIR]
+;;;;   sbcl --load lisp2nb.lisp -- [--force] [--fenced] INPUT.lisp [INPUT2.lisp ...] [-o DIR]
 ;;;;
 ;;;; This replaces the tree-sitter based Python converter for ACL2 .lisp
 ;;;; files.  It uses rewrite-cl (a CL-native source parser) which handles
@@ -27,6 +27,27 @@
   (:export #:convert-file #:main))
 
 (in-package #:lisp2nb)
+
+;;; ─── Markdown bracket styles ────────────────────────────────────────
+
+(defvar *markdown-bracket* :none
+  "How to bracket comment text in markdown cells.
+:NONE — bare text, :FENCED — wrapped in ``` fenced code block,
+:PRE — wrapped in <pre>…</pre>.")
+
+(defun format-markdown-source (text)
+  "Wrap TEXT according to *MARKDOWN-BRACKET*."  
+  (ecase *markdown-bracket*
+    (:none text)
+    (:fenced (format nil "```~%~A~%```" text))
+    (:pre (format nil "<pre>~%~A~%</pre>" text))))
+
+(defun bracket-prefix-len ()
+  "Number of characters the bracket prefix adds."
+  (ecase *markdown-bracket*
+    (:none 0)
+    (:fenced 4)   ; "```\n"
+    (:pre 6)))    ; "<pre>\n"
 
 ;;; ─── Node classification ───────────────────────────────────────────
 
@@ -322,10 +343,14 @@ a newline except the last."
                   ;; cell_type
                   (yason:encode-object-element "cell_type" (cell-type c))
                   ;; source (as array of lines)
-                  (yason:with-object-element ("source")
-                    (yason:with-array ()
-                      (dolist (line (split-source-lines (cell-source c)))
-                        (yason:encode-array-element line))))
+                  (let ((display-source
+                          (if (string= (cell-type c) "markdown")
+                            (format-markdown-source (cell-source c))
+                            (cell-source c))))
+                    (yason:with-object-element ("source")
+                      (yason:with-array ()
+                        (dolist (line (split-source-lines display-source))
+                          (yason:encode-array-element line)))))
                   ;; metadata with provenance
                   (yason:with-object-element ("metadata")
                     (yason:with-object ()
@@ -336,11 +361,14 @@ a newline except the last."
                           (yason:encode-object-element "end"
                                                        (cell-end-byte c))
                           (when (> (cell-comment-chars c) 0)
-                            (yason:with-object-element ("comment")
-                              (yason:with-array ()
-                                (yason:encode-array-element 0)
-                                (yason:encode-array-element
-                                 (cell-comment-chars c)))))))))
+                            (let ((prefix (if (string= (cell-type c) "markdown")
+                                            (bracket-prefix-len)
+                                            0)))
+                              (yason:with-object-element ("comment")
+                                (yason:with-array ()
+                                  (yason:encode-array-element prefix)
+                                  (yason:encode-array-element
+                                   (+ prefix (cell-comment-chars c)))))))))))
                   ;; outputs (empty for code cells, absent for markdown)
                   (when (string= (cell-type c) "code")
                     (yason:with-object-element ("outputs")
@@ -358,12 +386,15 @@ a newline except the last."
       (read-sequence buf in)
       buf)))
 
-(defun convert-file (input-path &optional output-path)
+(defun convert-file (input-path &optional output-path
+                     &key (markdown-bracket :none))
   "Convert INPUT-PATH (.lisp) to OUTPUT-PATH (.ipynb).
+MARKDOWN-BRACKET can be :NONE, :FENCED, or :PRE.
 Returns the output pathname."
   (let* ((input (pathname input-path))
          (output (or output-path
                      (make-pathname :defaults input :type "ipynb")))
+         (*markdown-bracket* markdown-bracket)
          (source-bytes (read-file-into-byte-vector input))
          (nodes (rewrite-cl:parse-file-all input))
          (classified (classify-top-level-nodes nodes))
@@ -378,6 +409,7 @@ Returns the output pathname."
   (let* ((args (uiop:command-line-arguments))
          (force nil)
          (output-dir nil)
+         (markdown-bracket :none)
          (inputs '()))
 
     ;; Parse args.
@@ -385,6 +417,9 @@ Returns the output pathname."
       (let ((arg (pop args)))
         (cond
           ((string= arg "--force") (setf force t))
+          ((string= arg "--fenced") (setf markdown-bracket :fenced))
+          ((string= arg "--pre") (setf markdown-bracket :pre))
+          ((string= arg "--plain") (setf markdown-bracket :none))
           ((string= arg "-o")
            (setf output-dir (pop args)))
           ((string= arg "--"))
@@ -419,7 +454,8 @@ Returns the output pathname."
                        (file-write-date output)))
             (handler-case
                 (progn
-                  (convert-file input output)
+                  (convert-file input output
+                               :markdown-bracket markdown-bracket)
                   (format t "Wrote ~A~%" output)
                   (incf converted))
               (error (e)

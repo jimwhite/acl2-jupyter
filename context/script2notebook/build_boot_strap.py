@@ -60,9 +60,17 @@ def get_file_lists() -> tuple[list[str], list[str]]:
 
 # ── Kernel management ───────────────────────────────────────────────────────
 
+# Sentinel code sent to the kernel to trigger the pass-2 transition.
+# Matched literally in kernel.lisp eval-cell.
+PASS2_DIRECTIVE = ":bootstrap-enter-pass-2"
 
-def make_kernel_json(pass_num: int, acl2_home: Path) -> dict:
-    """Build a kernel.json spec for boot-strap mode."""
+
+def make_kernel_json(acl2_home: Path) -> dict:
+    """Build a kernel.json spec for boot-strap mode.
+
+    A single kernel handles both passes.  It starts in pass 1 mode;
+    the build script sends PASS2_DIRECTIVE between passes.
+    """
     quicklisp = Path.home() / "quicklisp" / "setup.lisp"
     sbcl_home = os.environ.get("SBCL_HOME", "/usr/local/lib/sbcl/")
     
@@ -80,9 +88,9 @@ def make_kernel_json(pass_num: int, acl2_home: Path) -> dict:
             "--eval", "(acl2::load-acl2 :load-acl2-proclaims acl2::*do-proclaims*)",
             "--load", str(quicklisp),
             "--eval", "(ql:quickload :acl2-jupyter-kernel :silent t)",
-            "--eval", f'(acl2-jupyter-kernel:start-boot-strap "{{connection_file}}" :pass {pass_num})',
+            "--eval", f'(acl2-jupyter-kernel:start-boot-strap "{{connection_file}}")',
         ],
-        "display_name": f"ACL2 Boot-strap Pass {pass_num}",
+        "display_name": "ACL2 Boot-strap",
         "language": "acl2",
         "interrupt_mode": "message",
         "metadata": {},
@@ -92,15 +100,15 @@ def make_kernel_json(pass_num: int, acl2_home: Path) -> dict:
     }
 
 
-def install_bootstrap_kernelspec(pass_num: int, acl2_home: Path) -> str:
+def install_bootstrap_kernelspec(acl2_home: Path) -> str:
     """Install a temporary kernelspec for boot-strap mode.
     
     Returns the kernel name.
     """
     from jupyter_client.kernelspec import KernelSpecManager
     
-    kernel_name = f"acl2-bootstrap-pass{pass_num}"
-    spec = make_kernel_json(pass_num, acl2_home)
+    kernel_name = "acl2-bootstrap"
+    spec = make_kernel_json(acl2_home)
     
     with tempfile.TemporaryDirectory() as tmpdir:
         spec_dir = Path(tmpdir) / kernel_name
@@ -265,50 +273,110 @@ def execute_notebook(kc, nb_path: Path, dry_run: bool = False,
     return nb
 
 
-# ── Main ─────────────────────────────────────────────────────────────────────
+# ── Pass-2 transition ────────────────────────────────────────────────────────
 
-def run_pass(pass_num: int, stems: list[str], acl2_home: Path,
-             dry_run: bool = False, cell_timeout: int = 300,
-             only_stem: str | None = None):
-    """Run one pass of the boot-strap build."""
+def send_pass2_transition(kc, timeout: int = 60):
+    """Send the pass-2 transition directive to the running kernel.
+    
+    This switches the kernel from pass 1 (ld-skip-proofsp = initialize-acl2)
+    to pass 2 (ld-skip-proofsp = include-book, default-defun-mode = :logic).
+    """
+    log.info("=== Transitioning to pass 2 ===")
+    msg_id = kc.execute(PASS2_DIRECTIVE)
+    
+    # Drain iopub until idle
+    while True:
+        try:
+            msg = kc.get_iopub_msg(timeout=timeout)
+        except Exception:
+            raise RuntimeError("Timeout waiting for pass-2 transition")
+        parent_id = msg["parent_header"].get("msg_id", "")
+        if parent_id != msg_id:
+            continue
+        mt = msg["header"]["msg_type"]
+        if mt == "stream":
+            log.debug("  transition: %s", msg["content"].get("text", "").strip())
+        if mt == "status" and msg["content"].get("execution_state") == "idle":
+            break
+    
+    # Wait for execute_reply
+    reply = kc.get_shell_msg(timeout=timeout)
+    if reply["content"].get("status") == "error":
+        raise RuntimeError(
+            f"Pass-2 transition failed: {reply['content'].get('evalue', '?')}")
+    
+    log.info("Pass-2 transition complete.")
+
+
+# ── Build orchestration ──────────────────────────────────────────────────────
+
+def execute_pass(kc, pass_num: int, stems: list[str], acl2_home: Path,
+                 dry_run: bool = False, cell_timeout: int = 300,
+                 only_stem: str | None = None):
+    """Execute all notebooks for one pass (without managing the kernel)."""
     if only_stem:
         if only_stem not in stems:
-            log.warning("Stem %r not in pass %d file list — skipping pass", only_stem, pass_num)
+            log.warning("Stem %r not in pass %d file list — skipping pass",
+                       only_stem, pass_num)
             return
-        # Execute all files up to and including the target
         stems = stems[: stems.index(only_stem) + 1]
-
+    
     log.info("=== Pass %d: %d notebooks ===", pass_num, len(stems))
     
-    # Install kernelspec
-    kernel_name = install_bootstrap_kernelspec(pass_num, acl2_home)
+    for i, stem in enumerate(stems):
+        nb_path = acl2_home / f"{stem}.ipynb"
+        if not nb_path.exists():
+            log.warning("  SKIP %s: no .ipynb found", stem)
+            continue
+        
+        log.info("[%d/%d] %s", i + 1, len(stems), stem)
+        t0 = time.time()
+        
+        nb = execute_notebook(kc, nb_path, dry_run=dry_run,
+                              cell_timeout=cell_timeout)
+        
+        elapsed = time.time() - t0
+        
+        if not dry_run:
+            nbformat.write(nb, str(nb_path))
+            log.info("  %s: done (%.1fs)", stem, elapsed)
+        else:
+            log.info("  %s: would execute %d code cells",
+                    stem,
+                    sum(1 for c in nb.cells if c.cell_type == "code"))
+
+
+def run_build(pass1_stems: list[str], pass2_stems: list[str],
+              acl2_home: Path, dry_run: bool = False,
+              cell_timeout: int = 300, only_stem: str | None = None,
+              pass_num: int | None = None):
+    """Run the full bootstrap build with a single kernel.
     
-    # Start kernel
+    --pass 1: pass 1 only
+    --pass 2: pass 1 + transition + pass 2 (pass 2 requires pass 1 state)
+    No --pass: same as --pass 2 (full build)
+    """
+    do_pass1 = True
+    do_pass2 = (pass_num is None or pass_num == 2)
+    
+    # Install kernelspec and start one kernel
+    kernel_name = install_bootstrap_kernelspec(acl2_home)
     km, kc = start_kernel(kernel_name, cwd=acl2_home)
     
     try:
-        for i, stem in enumerate(stems):
-            nb_path = acl2_home / f"{stem}.ipynb"
-            if not nb_path.exists():
-                log.warning("  SKIP %s: no .ipynb found", stem)
-                continue
-            
-            log.info("[%d/%d] %s", i + 1, len(stems), stem)
-            t0 = time.time()
-            
-            nb = execute_notebook(kc, nb_path, dry_run=dry_run,
-                                  cell_timeout=cell_timeout)
-            
-            elapsed = time.time() - t0
-            
+        # Pass 1
+        execute_pass(kc, 1, pass1_stems, acl2_home,
+                     dry_run=dry_run, cell_timeout=cell_timeout,
+                     only_stem=only_stem if not do_pass2 else None)
+        
+        # Transition + Pass 2
+        if do_pass2:
             if not dry_run:
-                # Write notebook with outputs
-                nbformat.write(nb, str(nb_path))
-                log.info("  %s: done (%.1fs)", stem, elapsed)
-            else:
-                log.info("  %s: would execute %d code cells",
-                        stem,
-                        sum(1 for c in nb.cells if c.cell_type == "code"))
+                send_pass2_transition(kc)
+            
+            execute_pass(kc, 2, pass2_stems, acl2_home,
+                         dry_run=dry_run, cell_timeout=cell_timeout,
+                         only_stem=only_stem)
     
     except KeyboardInterrupt:
         log.warning("Interrupted! Shutting down kernel ...")
@@ -316,7 +384,6 @@ def run_pass(pass_num: int, stems: list[str], acl2_home: Path,
         log.info("Shutting down kernel ...")
         kc.stop_channels()
         km.shutdown_kernel(now=False)
-        # Give it a moment, then force
         try:
             km.cleanup_resources()
         except Exception:
@@ -326,7 +393,7 @@ def run_pass(pass_num: int, stems: list[str], acl2_home: Path,
 def main():
     parser = argparse.ArgumentParser(
         description="Build ACL2 boot-strap notebooks by executing cells "
-                    "against boot-strap kernels.",
+                    "against a single boot-strap kernel.",
     )
     parser.add_argument(
         "acl2_home", type=Path,
@@ -334,7 +401,7 @@ def main():
     )
     parser.add_argument(
         "--pass", dest="pass_num", type=int, choices=[1, 2], default=None,
-        help="Run only pass 1 or pass 2 (default: both)",
+        help="1=pass 1 only, 2=full build (default: full build)",
     )
     parser.add_argument(
         "--stem", type=str, default=None,
@@ -367,15 +434,9 @@ def main():
     
     pass1_stems, pass2_stems = get_file_lists()
     
-    if args.pass_num is None or args.pass_num == 1:
-        run_pass(1, pass1_stems, acl2_home,
-                dry_run=args.dry_run, cell_timeout=args.cell_timeout,
-                only_stem=args.stem)
-    
-    if args.pass_num is None or args.pass_num == 2:
-        run_pass(2, pass2_stems, acl2_home,
-                dry_run=args.dry_run, cell_timeout=args.cell_timeout,
-                only_stem=args.stem)
+    run_build(pass1_stems, pass2_stems, acl2_home,
+              dry_run=args.dry_run, cell_timeout=args.cell_timeout,
+              only_stem=args.stem, pass_num=args.pass_num)
     
     log.info("Build complete.")
 

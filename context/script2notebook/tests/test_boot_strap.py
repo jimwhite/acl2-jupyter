@@ -38,7 +38,7 @@ EVENTS_MIME = "application/vnd.acl2.events+json"
 # ── Kernel setup helpers ────────────────────────────────────────────
 
 
-def make_kernel_json(acl2_home: Path, pass_num: int = 1) -> dict:
+def make_kernel_json(acl2_home: Path) -> dict:
     quicklisp = Path.home() / "quicklisp" / "setup.lisp"
     sbcl_home = os.environ.get("SBCL_HOME", "/usr/local/lib/sbcl/")
     return {
@@ -56,9 +56,9 @@ def make_kernel_json(acl2_home: Path, pass_num: int = 1) -> dict:
             "--load", str(quicklisp),
             "--eval", "(ql:quickload :acl2-jupyter-kernel :silent t)",
             "--eval",
-            f'(acl2-jupyter-kernel:start-boot-strap "{{connection_file}}" :pass {pass_num})',
+            f'(acl2-jupyter-kernel:start-boot-strap "{{connection_file}}")',
         ],
-        "display_name": f"ACL2 Boot-strap Pass {pass_num}",
+        "display_name": "ACL2 Boot-strap",
         "language": "acl2",
         "interrupt_mode": "message",
         "metadata": {},
@@ -66,11 +66,11 @@ def make_kernel_json(acl2_home: Path, pass_num: int = 1) -> dict:
     }
 
 
-def install_kernelspec(acl2_home: Path, pass_num: int = 1) -> str:
+def install_kernelspec(acl2_home: Path) -> str:
     from jupyter_client.kernelspec import KernelSpecManager
 
-    name = f"acl2-bootstrap-pass{pass_num}"
-    spec = make_kernel_json(acl2_home, pass_num)
+    name = "acl2-bootstrap"
+    spec = make_kernel_json(acl2_home)
     with tempfile.TemporaryDirectory() as tmpdir:
         d = Path(tmpdir) / name
         d.mkdir()
@@ -174,7 +174,7 @@ def bootstrap_kernel():
     if not ACL2_HOME.exists():
         pytest.skip("ACL2 source not available")
 
-    kernel_name = install_kernelspec(ACL2_HOME, pass_num=1)
+    kernel_name = install_kernelspec(ACL2_HOME)
     km = KernelManager(kernel_name=kernel_name)
     km.start_kernel(cwd=str(ACL2_HOME))
     kc = km.client()

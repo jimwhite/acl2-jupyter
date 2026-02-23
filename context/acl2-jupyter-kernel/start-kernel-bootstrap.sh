@@ -6,19 +6,17 @@
 # from init.lisp and builds the ACL2 world from scratch.
 #
 # Usage:
-#   start-kernel-bootstrap.sh <connection-file> [pass]
+#   start-kernel-bootstrap.sh <connection-file>
 #
-# pass: 1 (default) or 2
-#   Pass 1: load-acl2, enter-boot-strap-mode, ld-skip-proofsp=initialize-acl2
-#   Pass 2: same + enter-boot-strap-pass-2, ld-skip-proofsp=include-book
+# The kernel always starts in pass 1 mode.  The Python build script
+# sends the :bootstrap-enter-pass-2 directive to transition to pass 2.
 
 set -e
 
 CONNECTION_FILE="$1"
-PASS="${2:-1}"
 
 if [ -z "${CONNECTION_FILE}" ]; then
-    echo "Usage: $0 <connection-file> [pass]" >&2
+    echo "Usage: $0 <connection-file>" >&2
     exit 1
 fi
 
@@ -38,4 +36,4 @@ exec /usr/local/bin/sbcl \
     --eval '(acl2::load-acl2 :load-acl2-proclaims acl2::*do-proclaims*)' \
     --load "${QUICKLISP_SETUP}" \
     --eval '(ql:quickload :acl2-jupyter-kernel :silent t)' \
-    --eval "(acl2-jupyter-kernel:start-boot-strap \"${CONNECTION_FILE}\" :pass ${PASS})"
+    --eval "(acl2-jupyter-kernel:start-boot-strap \"${CONNECTION_FILE}\")"

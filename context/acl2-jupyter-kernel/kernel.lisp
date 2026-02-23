@@ -529,11 +529,63 @@
 ;;; evaluate-code -- dispatches to main thread
 ;;; ---------------------------------------------------------------------------
 
+(defvar *bootstrap-pass2-directive* ":bootstrap-enter-pass-2"
+  "Sentinel string sent by build_boot_strap.py to trigger pass-2 transition.
+   Matched literally in eval-cell before dispatching to the REPL.")
+
+(defun bootstrap-enter-pass-2 (state)
+  "Transition from pass 1 to pass 2 during bootstrap.
+   Replicates the effects of ACL2's enter-boot-strap-pass-2 without calling
+   ld-fn (which would fail due to missing command landmarks in our bootstrap
+   world that bypasses ld).  Mirrors initialize-acl2's inter-pass logic:
+     1. Set boot-strap-pass-2 = t in the world
+     2. Initialize memoization tables
+     3. Switch default-defun-mode to :logic
+     4. Change ld-skip-proofsp from initialize-acl2 to include-book"
+  (format t "~&;; [boot-strap] Transitioning to pass 2 ...~%")
+  ;; Debug: check *1* functions  
+  (handler-case
+      (with-open-file (dbg "/tmp/bootstrap-pass2-debug.log"
+                           :direction :output :if-exists :supersede)
+        (let ((test-fns '(acl2::in-package-fn acl2::defconst-fn acl2::defmacro-fn
+                          acl2::legal-variablep acl2::defun-fn
+                          acl2::defuns-fn acl2::encapsulate-fn)))
+          (dolist (fn test-fns)
+            (let ((*1*sym (acl2::*1*-symbol fn)))
+              (format dbg "*1* ~a [~a] => ~a~%" fn *1*sym
+                      (if (fboundp *1*sym) "DEFINED" "MISSING")))))
+        ;; Count total *1* symbols
+        (let ((total 0) (defined 0))
+          (do-symbols (sym (find-package "ACL2_*1*_ACL2"))
+            (incf total)
+            (when (fboundp sym) (incf defined)))
+          (format dbg "~%Total *1* symbols: ~a, Defined: ~a~%" total defined)))
+    (error (c) (format t "~&;; [boot-strap] Debug error: ~a~%" c)))
+  ;; Same as enter-boot-strap-pass-2 minus the ld-fn call:
+  (push nil acl2::*acl2-unwind-protect-stack*)
+  (acl2::set-w 'acl2::extension
+               (acl2::global-set 'acl2::boot-strap-pass-2 t (w state))
+               state)
+  (acl2::acl2-unwind acl2::*ld-level* nil)
+  ;; Initialize memoization (needed for memoize calls in boot-strap-pass-2-b)
+  (acl2::memoize-init)
+  ;; Switch to :logic default-defun-mode (equivalent to ld of (logic))
+  (f-put-global 'acl2::default-defun-mode :logic state)
+  ;; Change ld-skip-proofsp for pass 2
+  (f-put-global 'acl2::ld-skip-proofsp 'acl2::include-book state)
+  (format t "~&;; [boot-strap] Pass 2 ready (default-defun-mode = :logic, ld-skip-proofsp = include-book).~%"))
+
 (defun eval-cell (k trimmed)
   "Evaluate TRIMMED code string through the appropriate REPL loop.
    Captures cell metadata (events, forms, package) into kernel K.
    Runs on the main thread inside with-suppression.
    Returns (values) on success so evaluate-code sees no ename."
+  ;; Bootstrap pass-2 transition directive (sent by build_boot_strap.py)
+  (when (and (bootstrap-p k)
+             (string= trimmed *bootstrap-pass2-directive*))
+    (bootstrap-enter-pass-2 *the-live-state*)
+    (collect-cell-events k)
+    (return-from eval-cell (values)))
   (acl2::with-suppression
       (with-acl2-output-to *standard-output*
         (let ((channel (make-string-input-channel trimmed)))
@@ -661,42 +713,37 @@
 ;;; Like start, but replicates the boot-strap process from initialize-acl2:
 ;;;   1. load-acl2  (raw CL compilation artefacts)
 ;;;   2. enter-boot-strap-mode  (primordial world, :acl2-loop-only feature)
-;;;   3. Set ld-skip-proofsp for the pass (initialize-acl2 or include-book)
+;;;   3. Set ld-skip-proofsp = initialize-acl2  (pass 1)
 ;;;
 ;;; This is launched from init.lisp (NOT saved_acl2.core) since the boot-strap
 ;;; builds the world from scratch.
 ;;;
-;;; Pass 1 kernel: evaluates all non-raw, non-pass-2 files.
-;;; Pass 2 kernel: starts from the post-pass-1 state, calls
-;;;   enter-boot-strap-pass-2, then evaluates pass-2 files.
+;;; A SINGLE kernel handles both passes.  It starts in pass 1 mode.
+;;; The Python build script sends the :bootstrap-enter-pass-2 directive
+;;; between passes, which triggers bootstrap-enter-pass-2 to switch to
+;;; pass 2 (ld-skip-proofsp = include-book, default-defun-mode = :logic).
 ;;;
 ;;; The Python build script (build_boot_strap.py) drives execution by
 ;;; opening each .ipynb and executing cells one at a time against this
 ;;; kernel, collecting the per-cell display_data (events + forms).
 
-(defun start-boot-strap (&optional connection-file
-                          &key (pass 1))
+(defun start-boot-strap (&optional connection-file)
   "Start an ACL2 Jupyter kernel in boot-strap mode.
-   PASS 1: enter-boot-strap-mode, ld-skip-proofsp = initialize-acl2.
-   PASS 2: enter-boot-strap-mode, ld-skip-proofsp = include-book.
+   Always starts in pass 1: enter-boot-strap-mode, ld-skip-proofsp = initialize-acl2.
+   The build script sends :bootstrap-enter-pass-2 to transition to pass 2.
 
    Prerequisite: load-acl2 must have been called before the kernel package
    is loaded.  The boot-strap kernel.json argv handles this by including
      --eval \"(acl2::load-acl2 :load-acl2-proclaims acl2::*do-proclaims*)\"
    before quickloading the kernel."
-  (format t "~&;; [boot-strap pass ~D] Entering boot-strap mode ...~%" pass)
+  (format t "~&;; [boot-strap] Entering boot-strap mode (pass 1) ...~%")
   (push :acl2-loop-only *features*)
   (let ((state *the-live-state*))
     (acl2::set-initial-cbd)
     (makunbound 'acl2::*copy-of-common-lisp-symbols-from-main-lisp-package*)
     (acl2::enter-boot-strap-mode nil (acl2::get-os))
-    (cond
-      ((= pass 1)
-       (f-put-global 'acl2::ld-skip-proofsp 'acl2::initialize-acl2 state))
-      ((= pass 2)
-       (f-put-global 'acl2::ld-skip-proofsp 'acl2::include-book state))
-      (t (error "Invalid pass number ~D (must be 1 or 2)" pass)))
-    (format t "~&;; [boot-strap pass ~D] Kernel ready.~%" pass)
+    (f-put-global 'acl2::ld-skip-proofsp 'acl2::initialize-acl2 state)
+    (format t "~&;; [boot-strap] Kernel ready (pass 1).~%")
     (setq acl2::*lp-ever-entered-p* t)
     (prepare-kernel-state state)
     (setq *initial-world-baseline* (w state))

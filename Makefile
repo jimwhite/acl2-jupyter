@@ -110,7 +110,8 @@ run:
 # certified ones through the ACL2 kernel to capture proof output.
 # By default notebooks are placed alongside the source .lisp files (in-place).
 
-.PHONY: notebooks notebooks-convert notebooks-execute install-script2notebook
+.PHONY: notebooks notebooks-convert notebooks-execute install-script2notebook \
+       boot-metadata notebooks-inject-boot-metadata
 
 # Source directory
 ACL2_HOME ?= /home/acl2
@@ -118,39 +119,49 @@ NOTEBOOK_JOBS ?= 1
 NOTEBOOK_CELL_TIMEOUT ?= 600
 NOTEBOOK_STARTUP_TIMEOUT ?= 120
 
-# Ensure script2notebook and build-notebooks are available
-# Uses local tree-sitter-commonlisp fork with block comment fix.
-install-script2notebook:
-	@if ! command -v build-notebooks >/dev/null 2>&1; then \
-		echo "Installing script2notebook via pipx..."; \
-		pipx install $(PWD)/context/script2notebook/; \
-		echo "Injecting local tree-sitter-commonlisp..."; \
-		pipx inject script2notebook $(PWD)/context/tree-sitter-commonlisp/; \
+# Workspace Python venv — all Python/pip commands run through this.
+VENV ?= $(PWD)/.venv
+VENV_PYTHON := $(VENV)/bin/python
+VENV_PIP := $(VENV)/bin/pip
+BUILD_NOTEBOOKS := $(VENV)/bin/build-notebooks
+
+# Ensure the venv exists and script2notebook is installed into it.
+install-script2notebook: $(VENV)/bin/activate
+	@if [ ! -x "$(BUILD_NOTEBOOKS)" ]; then \
+		echo "Installing script2notebook into venv..."; \
+		$(VENV_PIP) install -e $(PWD)/context/script2notebook/; \
+		$(VENV_PIP) install $(PWD)/context/tree-sitter-commonlisp/; \
 	else \
-		echo "build-notebooks already installed"; \
+		echo "build-notebooks already installed in venv"; \
+	fi
+
+$(VENV)/bin/activate:
+	@if [ ! -f "$(VENV)/bin/activate" ]; then \
+		echo "Creating venv at $(VENV)..."; \
+		python3 -m venv $(VENV); \
 	fi
 
 # Convert all ACL2 source files to notebooks (incremental, in-place)
 notebooks-convert: install-script2notebook
-	build-notebooks convert $(ACL2_HOME) -v
+	$(BUILD_NOTEBOOKS) convert $(ACL2_HOME) -v
 
 # Execute certified notebooks through ACL2 kernel (incremental, in-place)
 notebooks-execute: install-script2notebook
-	build-notebooks execute $(ACL2_HOME) -v \
+	$(BUILD_NOTEBOOKS) execute $(ACL2_HOME) -v \
 		-j $(NOTEBOOK_JOBS) \
 		--cell-timeout $(NOTEBOOK_CELL_TIMEOUT) \
 		--startup-timeout $(NOTEBOOK_STARTUP_TIMEOUT)
 
 # Convert + execute in one step (in-place)
 notebooks: install-script2notebook
-	build-notebooks all $(ACL2_HOME) -v \
+	$(BUILD_NOTEBOOKS) all $(ACL2_HOME) -v \
 		-j $(NOTEBOOK_JOBS) \
 		--cell-timeout $(NOTEBOOK_CELL_TIMEOUT) \
 		--startup-timeout $(NOTEBOOK_STARTUP_TIMEOUT)
 
 # Force rebuild everything
 notebooks-force: install-script2notebook
-	build-notebooks all $(ACL2_HOME) -v --force \
+	$(BUILD_NOTEBOOKS) all $(ACL2_HOME) -v --force \
 		-j $(NOTEBOOK_JOBS) \
 		--cell-timeout $(NOTEBOOK_CELL_TIMEOUT) \
 		--startup-timeout $(NOTEBOOK_STARTUP_TIMEOUT)
@@ -158,10 +169,37 @@ notebooks-force: install-script2notebook
 # Convert + execute a single directory (usage: make notebooks-dir DIR=/home/acl2/books/defsort)
 notebooks-dir: install-script2notebook
 	@if [ -z "$(DIR)" ]; then echo "Usage: make notebooks-dir DIR=/home/acl2/books/some-dir"; exit 1; fi
-	build-notebooks all $(DIR) -v \
+	$(BUILD_NOTEBOOKS) all $(DIR) -v \
 		-j $(NOTEBOOK_JOBS) \
 		--cell-timeout $(NOTEBOOK_CELL_TIMEOUT) \
 		--startup-timeout $(NOTEBOOK_STARTUP_TIMEOUT)
+
+# =============================================================================
+# ACL2 Source Boot-strap Metadata Capture
+# =============================================================================
+# The ACL2 source files (axioms.lisp, basis-a.lisp, etc.) are NOT certifiable
+# books — they built the saved_acl2 image via a two-pass boot-strap process.
+# This target re-runs that process with instrumentation to capture per-file
+# event metadata (event landmarks, package state) into .boot-metadata/ JSON.
+#
+# Prerequisites: ACL2 must have been compiled (make compile / make full).
+# Runtime: roughly the same as 'make init' (~10-20 min).
+
+CAPTURE_LOADER := $(PWD)/context/acl2-jupyter-kernel/capture-boot-metadata-loader.lisp
+
+# Capture boot-strap metadata from ACL2 source files
+boot-metadata:
+	cd $(ACL2_HOME) && sbcl \
+		--dynamic-space-size 32000 \
+		--control-stack-size 64 \
+		--disable-ldb \
+		--disable-debugger \
+		--no-userinit \
+		--load "$(CAPTURE_LOADER)"
+
+# Inject captured boot-strap metadata into source notebooks
+notebooks-inject-boot-metadata: install-script2notebook
+	$(BUILD_NOTEBOOKS) inject-boot-metadata $(ACL2_HOME) -v
 
 # =============================================================================
 # Rust and Parinfer Setup

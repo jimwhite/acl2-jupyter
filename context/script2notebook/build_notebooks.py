@@ -35,12 +35,14 @@ from __future__ import annotations
 
 import argparse
 import itertools
+import json
 import logging
 import os
 import shutil
 import subprocess
 import sys
 import time
+import uuid
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -113,8 +115,6 @@ def _inject_acl2_metadata(notebook: Path, source: Path) -> None:
     top-level metadata with a dict mapping companion filenames to their
     text content, then writes it back.  No-op if no companions exist.
     """
-    import json
-
     companions = _acl2_companion_files(source)
     if not companions:
         return
@@ -153,9 +153,6 @@ def _inject_port_file_cell(notebook: Path, source: Path) -> bool:
 
     Returns True if a cell was injected, False otherwise.
     """
-    import json
-    import uuid
-
     source_abs = str(source.resolve())
     port_path = source.resolve().with_suffix(".port")
 
@@ -218,6 +215,269 @@ def _has_cert(source: Path) -> bool:
     return source.with_suffix(".cert").exists()
 
 
+# ── Boot-strap metadata helpers ─────────────────────────────────────
+
+# Name of the sub-directory produced by capture-boot-metadata.lisp.
+BOOT_METADATA_DIR = ".boot-metadata"
+
+# ACL2 source files whose names end in "-raw" — these are pure Common
+# Lisp loaded by CL LOAD, never processed through ACL2's LD.  They
+# have no ACL2 events.
+def _is_raw_source(stem: str) -> bool:
+    return stem.endswith("-raw")
+
+# ACL2 build infrastructure files that live alongside the source files
+# but are not part of *acl2-files*.
+_ACL2_INFRA_STEMS = frozenset({
+    "acl2", "acl2-check", "acl2-fns", "acl2-init", "acl2r",
+    "acl2-proclaims", "akcl-acl2-trace", "allegro-acl2-trace",
+    "openmcl-acl2-trace",
+})
+
+
+def _load_boot_manifest(source_root: Path) -> dict | None:
+    """Load the boot-strap metadata manifest, if it exists.
+
+    Returns the parsed manifest dict or None.
+    """
+    manifest_path = source_root / BOOT_METADATA_DIR / "manifest.json"
+    if not manifest_path.is_file():
+        return None
+    try:
+        with open(manifest_path) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError) as exc:
+        log.warning("Cannot load boot manifest %s: %s", manifest_path, exc)
+        return None
+
+
+def _load_boot_file_metadata(source_root: Path, key: str) -> dict | None:
+    """Load per-file boot-strap metadata JSON for *key* (e.g. 'axioms-pass1')."""
+    path = source_root / BOOT_METADATA_DIR / f"{key}.json"
+    if not path.is_file():
+        return None
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError) as exc:
+        log.warning("Cannot load boot metadata %s: %s", path, exc)
+        return None
+
+
+def _is_acl2_source_file(source: Path, source_root: Path) -> bool:
+    """Return True if *source* is a top-level ACL2 source file (not a book)."""
+    # Must be directly under source_root (not in a subdirectory like books/)
+    return source.parent.resolve() == source_root.resolve()
+
+
+def _inject_boot_metadata_into_notebook(
+    notebook: Path,
+    metadata_entries: list[dict],
+    source: Path,
+) -> bool:
+    """Inject boot-strap event metadata into *notebook*.
+
+    Adds ``display_data`` outputs with the same MIME type used by the
+    ACL2 Jupyter kernel (``application/vnd.acl2.events+json``) so
+    downstream KG tools see a uniform format.
+
+    Also sets notebook-level ``acl2_boot_strap`` metadata.
+
+    *metadata_entries* is a list of per-pass metadata dicts (usually 1,
+    sometimes 2 for files in both pass 1 and pass 2).
+
+    Returns True if the notebook was modified, False otherwise.
+    """
+    try:
+        with open(notebook) as f:
+            nb = json.load(f)
+    except (json.JSONDecodeError, OSError) as exc:
+        log.warning("Cannot read notebook %s for boot metadata injection: %s",
+                     notebook, exc)
+        return False
+
+    # Check if already injected (idempotent).
+    existing_meta = nb.get("metadata", {}).get("acl2_boot_strap")
+    if existing_meta:
+        return False
+
+    # Add notebook-level metadata.
+    stem = metadata_entries[0].get("stem", source.stem)
+    is_raw = _is_raw_source(stem)
+
+    boot_meta: dict = {
+        "source_type": "raw_common_lisp" if is_raw else "acl2_source",
+        "stem": stem,
+    }
+    if not is_raw:
+        boot_meta["passes"] = []
+        for entry in metadata_entries:
+            boot_meta["passes"].append({
+                "pass": entry.get("pass"),
+                "position": entry.get("position"),
+                "event_count": entry.get("event_count", 0),
+                "baseline_event_number": entry.get("baseline_event_number"),
+                "final_event_number": entry.get("final_event_number"),
+            })
+
+    nb.setdefault("metadata", {})["acl2_boot_strap"] = boot_meta
+
+    if is_raw:
+        # Raw CL files — just mark metadata, no event injection.
+        with open(notebook, "w") as f:
+            json.dump(nb, f, indent=1)
+            f.write("\n")
+        return True
+
+    # Inject display_data outputs into the first code cell for each pass.
+    # We create a dedicated metadata cell at the top of the notebook.
+    for entry in metadata_entries:
+        events = entry.get("events", [])
+        if not events:
+            continue
+
+        pass_num = entry.get("pass", 1)
+        pkg = entry.get("package", "ACL2")
+
+        display_data_output = {
+            "output_type": "display_data",
+            "data": {
+                "application/vnd.acl2.events+json": {
+                    "events": events,
+                    "package": pkg,
+                    "source": "boot-strap-capture",
+                    "pass": pass_num,
+                    "stem": stem,
+                }
+            },
+            "metadata": {},
+        }
+
+        # Create a metadata-only code cell.
+        meta_cell = {
+            "cell_type": "code",
+            "metadata": {
+                "provenance": {
+                    "boot_strap": True,
+                    "pass": pass_num,
+                    "stem": stem,
+                },
+            },
+            "source": [
+                f"; Boot-strap pass {pass_num} metadata"
+                f" — {len(events)} event(s) captured",
+            ],
+            "execution_count": None,
+            "outputs": [display_data_output],
+            "id": uuid.uuid4().hex[:8],
+        }
+
+        # Prepend.
+        nb["cells"] = [meta_cell] + nb.get("cells", [])
+
+    with open(notebook, "w") as f:
+        json.dump(nb, f, indent=1)
+        f.write("\n")
+
+    return True
+
+
+def phase_inject_boot_metadata(
+    source_root: Path,
+    output_root: Path,
+    force: bool = False,
+) -> tuple[int, int, int]:
+    """Inject boot-strap metadata into ACL2 source notebooks.
+
+    Looks for ``.boot-metadata/manifest.json`` under *source_root* and
+    injects per-file event metadata into the corresponding notebooks.
+
+    Returns (injected, skipped, errors).
+    """
+    manifest = _load_boot_manifest(source_root)
+    if manifest is None:
+        log.info("No boot-strap metadata found at %s/%s — skipping injection",
+                 source_root, BOOT_METADATA_DIR)
+        return 0, 0, 0
+
+    # Build stem → [manifest entries] mapping
+    file_entries = manifest.get("files", [])
+    stem_keys: dict[str, list[dict]] = {}
+    for entry in file_entries:
+        stem = entry.get("stem", "")
+        stem_keys.setdefault(stem, []).append(entry)
+
+    # Also handle raw files (they aren't in manifest but are top-level .lisp)
+    acl2_files_set = set(manifest.get("acl2_files", []))
+
+    injected = skipped = errors = 0
+
+    # Process every top-level .lisp file under source_root
+    for source in sorted(source_root.iterdir()):
+        if source.suffix != ".lisp" or not source.is_file():
+            continue
+        if not _is_acl2_source_file(source, source_root):
+            continue
+
+        stem = source.stem
+        notebook = _notebook_path(source, source_root, output_root)
+        if not notebook.exists():
+            continue
+
+        # Skip infra files
+        if stem in _ACL2_INFRA_STEMS:
+            skipped += 1
+            continue
+
+        # Gather metadata entries for this stem
+        keys = stem_keys.get(stem, [])
+        if not keys and stem not in acl2_files_set and not _is_raw_source(stem):
+            skipped += 1
+            continue
+
+        # Load full metadata (with events) for each pass
+        metadata_entries = []
+        for entry in keys:
+            key = entry.get("key", f"{stem}-pass{entry.get('pass', 1)}")
+            full = _load_boot_file_metadata(source_root, key)
+            if full:
+                metadata_entries.append(full)
+
+        # For raw files, create a stub entry
+        if _is_raw_source(stem) and not metadata_entries:
+            metadata_entries = [{"stem": stem, "pass": 0, "events": []}]
+
+        if not metadata_entries and not _is_raw_source(stem):
+            log.debug("No boot metadata for %s — skipping", stem)
+            skipped += 1
+            continue
+
+        # Check if already injected (unless --force)
+        if not force:
+            try:
+                with open(notebook) as f:
+                    nb = json.load(f)
+                if nb.get("metadata", {}).get("acl2_boot_strap"):
+                    skipped += 1
+                    continue
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        try:
+            if _inject_boot_metadata_into_notebook(notebook, metadata_entries, source):
+                log.info("Injected boot metadata: %s (%d entries)",
+                         notebook.name, len(metadata_entries))
+                injected += 1
+            else:
+                skipped += 1
+        except Exception as exc:
+            log.error("Failed to inject boot metadata into %s: %s",
+                       notebook.name, exc)
+            errors += 1
+
+    return injected, skipped, errors
+
+
 # ── Phase 1: Convert ────────────────────────────────────────────────
 
 
@@ -228,7 +488,6 @@ CONVERT_GIVE_UP_TIMEOUT = 300  # 5 minutes — write placeholder and move on.
 
 def _write_placeholder_notebook(notebook: Path, source: Path, reason: str) -> None:
     """Write a minimal placeholder .ipynb so the file isn't retried."""
-    import json
     nb = {
         "nbformat": 4,
         "nbformat_minor": 5,
@@ -548,7 +807,6 @@ def _notebook_has_outputs(notebook: Path) -> bool:
     After execution, cells gain outputs.  This is a cheap heuristic to
     detect whether execution has been run.
     """
-    import json
     try:
         with open(notebook) as f:
             nb = json.load(f)
@@ -804,6 +1062,20 @@ def _build_parser() -> argparse.ArgumentParser:
     both.add_argument("--force", action="store_true", help="Rebuild everything")
     both.add_argument("-v", "--verbose", action="store_true")
 
+    # -- inject-boot-metadata --
+    boot = sub.add_parser(
+        "inject-boot-metadata",
+        help="Inject boot-strap capture metadata into ACL2 source notebooks",
+    )
+    boot.add_argument("source", type=Path, help="Root directory of ACL2 sources")
+    boot.add_argument(
+        "-o", "--output", type=Path, default=None,
+        help="Output directory (default: same as source — in-place)",
+    )
+    boot.add_argument("--force", action="store_true",
+                      help="Re-inject even if already present")
+    boot.add_argument("-v", "--verbose", action="store_true")
+
     return p
 
 
@@ -834,6 +1106,15 @@ def main(argv: list[str] | None = None) -> int:
             source, output, args.force, jobs=jobs, convert_timeout=convert_timeout,
         )
         log.info("Convert done: %d converted, %d up-to-date, %d errors", converted, skipped, errors)
+        total_errors += errors
+
+    if args.command in ("inject-boot-metadata", "all"):
+        log.info("=== Phase 1b: Inject boot-strap metadata ===")
+        injected, skipped, errors = phase_inject_boot_metadata(
+            source, output, force=args.force,
+        )
+        log.info("Boot metadata: %d injected, %d skipped, %d errors",
+                 injected, skipped, errors)
         total_errors += errors
 
     if args.command in ("execute", "all"):

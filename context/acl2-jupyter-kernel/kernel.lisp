@@ -754,3 +754,69 @@
                     (first (uiop:command-line-arguments)))))
       (unless conn (error "No connection file provided"))
       (run-kernel-with-lp-context conn "jupyter-kernel-bootstrap" state))))
+
+
+;;; ---------------------------------------------------------------------------
+;;; Boot-Strap Pass-2-Only Kernel Startup
+;;; ---------------------------------------------------------------------------
+;;; Like start-boot-strap, but runs pass 1 internally via ACL2's own ld-fn
+;;; (which correctly handles *1* function compilation, command landmarks,
+;;; and all event processing).  The kernel starts already in pass 2 state,
+;;; so the build script only needs to execute pass-2 notebooks.
+;;;
+;;; This avoids the *1* function errors and PROGN!-FN problems that occur
+;;; when our simplified bootstrap REPL handles pass 1, while still giving
+;;; us a proper pass-2 world for capturing notebook execution metadata.
+
+(defun start-boot-strap-pass2 (&optional connection-file)
+  "Start an ACL2 Jupyter kernel in pass-2-only mode.
+   Runs pass 1 internally via ACL2's ld-fn, then transitions to pass 2.
+   Only pass-2 notebooks need execution by the build script.
+
+   Prerequisite: same as start-boot-strap (load-acl2 must have been called)."
+  (format t "~&;; [boot-strap-pass2] Entering boot-strap mode ...~%")
+  (push :acl2-loop-only *features*)
+  (let ((state *the-live-state*))
+    (acl2::set-initial-cbd)
+    (makunbound 'acl2::*copy-of-common-lisp-symbols-from-main-lisp-package*)
+    (acl2::enter-boot-strap-mode nil (acl2::get-os))
+    ;; --- Pass 1 via ld-fn (mirrors initialize-acl2) ---
+    ;; Each non-raw, non-pass-2 file is processed with
+    ;; ld-skip-proofsp = initialize-acl2, exactly as in initialize-acl2.
+    (format t "~&;; [boot-strap-pass2] Running pass 1 via ld-fn ...~%")
+    (force-output)
+    (dolist (fl acl2::*acl2-files*)
+      (when (not (or (equal fl "boot-strap-pass-2-a")
+                     (equal fl "boot-strap-pass-2-b")
+                     (acl2::raw-source-name-p fl)))
+        (format t "~&;; [pass 1] ~a~%" fl)
+        (force-output)
+        (let ((fname (concatenate 'string fl "." acl2::*lisp-extension*)))
+          (multiple-value-bind (er val st)
+              (acl2::ld-fn
+               (acl2::ld-alist-raw fname
+                                   'acl2::initialize-acl2
+                                   :error)
+               state nil)
+            (declare (ignore val st))
+            (when er
+              (error "[boot-strap-pass2] Pass 1 error on ~a" fl))))))
+    ;; --- Transition to pass 2 ---
+    ;; enter-boot-strap-pass-2 sets boot-strap-pass-2 = t, initializes
+    ;; memoization, and switches default-defun-mode to :logic.
+    (format t "~&;; [boot-strap-pass2] Transitioning to pass 2 ...~%")
+    (acl2::enter-boot-strap-pass-2)
+    ;; Set ld-skip-proofsp for our REPL (enter-boot-strap-pass-2 sets
+    ;; it per-ld-call, but our trans-eval reads the global value).
+    (f-put-global 'acl2::ld-skip-proofsp 'acl2::include-book state)
+    (format t "~&;; [boot-strap-pass2] Kernel ready (pass 2).~%")
+    (setq acl2::*lp-ever-entered-p* t)
+    (prepare-kernel-state state)
+    (setq *initial-world-baseline* (w state))
+    (setq *initial-bootstrap-p* t)
+    (setq *initial-event-forms-p* t)
+    (setq *initial-deep-events-p* nil)
+    (let ((conn (or connection-file
+                    (first (uiop:command-line-arguments)))))
+      (unless conn (error "No connection file provided"))
+      (run-kernel-with-lp-context conn "jupyter-kernel-bootstrap-pass2" state))))

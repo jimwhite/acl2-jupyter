@@ -39,5 +39,6 @@
   (:export #:kernel
            #:start
            #:start-boot-strap
+           #:start-boot-strap-pass2
            #:install
            #:install-image))

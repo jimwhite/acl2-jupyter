@@ -65,14 +65,18 @@ def get_file_lists() -> tuple[list[str], list[str]]:
 PASS2_DIRECTIVE = ":bootstrap-enter-pass-2"
 
 
-def make_kernel_json(acl2_home: Path) -> dict:
+def make_kernel_json(acl2_home: Path, pass2_only: bool = False) -> dict:
     """Build a kernel.json spec for boot-strap mode.
 
-    A single kernel handles both passes.  It starts in pass 1 mode;
-    the build script sends PASS2_DIRECTIVE between passes.
+    pass2_only=False (default): starts in pass 1 mode, build script drives
+        both passes with PASS2_DIRECTIVE between them.
+    pass2_only=True: runs pass 1 internally via ACL2's ld-fn during startup,
+        kernel starts already in pass 2 state.
     """
     quicklisp = Path.home() / "quicklisp" / "setup.lisp"
     sbcl_home = os.environ.get("SBCL_HOME", "/usr/local/lib/sbcl/")
+    start_fn = "start-boot-strap-pass2" if pass2_only else "start-boot-strap"
+    display = "ACL2 Boot-strap Pass 2" if pass2_only else "ACL2 Boot-strap"
     
     return {
         "argv": [
@@ -88,9 +92,9 @@ def make_kernel_json(acl2_home: Path) -> dict:
             "--eval", "(acl2::load-acl2 :load-acl2-proclaims acl2::*do-proclaims*)",
             "--load", str(quicklisp),
             "--eval", "(ql:quickload :acl2-jupyter-kernel :silent t)",
-            "--eval", f'(acl2-jupyter-kernel:start-boot-strap "{{connection_file}}")',
+            "--eval", f'(acl2-jupyter-kernel:{start_fn} "{{connection_file}}")',
         ],
-        "display_name": "ACL2 Boot-strap",
+        "display_name": display,
         "language": "acl2",
         "interrupt_mode": "message",
         "metadata": {},
@@ -100,15 +104,16 @@ def make_kernel_json(acl2_home: Path) -> dict:
     }
 
 
-def install_bootstrap_kernelspec(acl2_home: Path) -> str:
+def install_bootstrap_kernelspec(acl2_home: Path,
+                                 pass2_only: bool = False) -> str:
     """Install a temporary kernelspec for boot-strap mode.
     
     Returns the kernel name.
     """
     from jupyter_client.kernelspec import KernelSpecManager
     
-    kernel_name = "acl2-bootstrap"
-    spec = make_kernel_json(acl2_home)
+    kernel_name = "acl2-bootstrap-pass2" if pass2_only else "acl2-bootstrap"
+    spec = make_kernel_json(acl2_home, pass2_only=pass2_only)
     
     with tempfile.TemporaryDirectory() as tmpdir:
         spec_dir = Path(tmpdir) / kernel_name
@@ -349,29 +354,37 @@ def execute_pass(kc, pass_num: int, stems: list[str], acl2_home: Path,
 def run_build(pass1_stems: list[str], pass2_stems: list[str],
               acl2_home: Path, dry_run: bool = False,
               cell_timeout: int = 300, only_stem: str | None = None,
-              pass_num: int | None = None):
-    """Run the full bootstrap build with a single kernel.
+              pass_num: int | None = None, pass2_only: bool = False,
+              startup_timeout: int = 600):
+    """Run the bootstrap build with a single kernel.
     
-    --pass 1: pass 1 only
-    --pass 2: pass 1 + transition + pass 2 (pass 2 requires pass 1 state)
+    --pass2-only: pass 1 runs inside the kernel via ld-fn, only pass 2
+        notebooks are executed.  Kernel startup is slower but avoids
+        *1* function errors.
+    --pass 1: pass 1 only (original bootstrap kernel)
+    --pass 2: pass 1 + transition + pass 2 (original bootstrap kernel)
     No --pass: same as --pass 2 (full build)
     """
-    do_pass1 = True
-    do_pass2 = (pass_num is None or pass_num == 2)
+    do_pass2 = (pass_num is None or pass_num == 2 or pass2_only)
     
-    # Install kernelspec and start one kernel
-    kernel_name = install_bootstrap_kernelspec(acl2_home)
-    km, kc = start_kernel(kernel_name, cwd=acl2_home)
+    # Install kernelspec and start kernel
+    kernel_name = install_bootstrap_kernelspec(acl2_home,
+                                               pass2_only=pass2_only)
+    # Pass-2-only startup is slower (runs pass 1 via ld-fn internally)
+    actual_timeout = max(startup_timeout, 1200) if pass2_only else startup_timeout
+    km, kc = start_kernel(kernel_name, cwd=acl2_home,
+                          startup_timeout=actual_timeout)
     
     try:
-        # Pass 1
-        execute_pass(kc, 1, pass1_stems, acl2_home,
-                     dry_run=dry_run, cell_timeout=cell_timeout,
-                     only_stem=only_stem if not do_pass2 else None)
+        if not pass2_only:
+            # Pass 1 via our REPL
+            execute_pass(kc, 1, pass1_stems, acl2_home,
+                         dry_run=dry_run, cell_timeout=cell_timeout,
+                         only_stem=only_stem if not do_pass2 else None)
         
         # Transition + Pass 2
         if do_pass2:
-            if not dry_run:
+            if not pass2_only and not dry_run:
                 send_pass2_transition(kc)
             
             execute_pass(kc, 2, pass2_stems, acl2_home,
@@ -408,8 +421,19 @@ def main():
         help="Run only up to and including this stem (for debugging)",
     )
     parser.add_argument(
+        "--pass2-only", action="store_true",
+        help="Pass-2-only mode: pass 1 runs via ld-fn during kernel startup, "
+             "only pass-2 notebooks are executed through the REPL. "
+             "Avoids *1* function errors from the simplified bootstrap REPL.",
+    )
+    parser.add_argument(
         "--cell-timeout", type=int, default=300,
         help="Timeout per cell in seconds (default: 300)",
+    )
+    parser.add_argument(
+        "--startup-timeout", type=int, default=600,
+        help="Timeout for kernel startup in seconds (default: 600, "
+             "pass2-only uses at least 1200)",
     )
     parser.add_argument(
         "--dry-run", action="store_true",
@@ -436,7 +460,9 @@ def main():
     
     run_build(pass1_stems, pass2_stems, acl2_home,
               dry_run=args.dry_run, cell_timeout=args.cell_timeout,
-              only_stem=args.stem, pass_num=args.pass_num)
+              only_stem=args.stem, pass_num=args.pass_num,
+              pass2_only=args.pass2_only,
+              startup_timeout=args.startup_timeout)
     
     log.info("Build complete.")
 

@@ -221,6 +221,30 @@ lisp2nb:
 lisp2nb-force: lisp2nb
 
 # =============================================================================
+# ACL2 Boot-strap Notebook Execution (Pass-2-Only)
+# =============================================================================
+# Runs pass 1 internally via ACL2's ld-fn (correctly handling *1* functions,
+# command landmarks, etc.), then executes pass-2 notebooks through the kernel
+# REPL to capture per-cell events and forms.
+#
+# Prerequisites:
+#   - ACL2 compiled (saved_acl2 built, but we start from init.lisp)
+#   - Notebooks converted from .lisp via lisp2nb
+#   - script2notebook installed in venv
+
+BOOTSTRAP_SCRIPT := $(PWD)/context/script2notebook/build_boot_strap.py
+BOOTSTRAP_STARTUP_TIMEOUT ?= 1200
+
+.PHONY: bootstrap-pass2
+
+bootstrap-pass2: install-script2notebook
+	$(VENV_PYTHON) $(BOOTSTRAP_SCRIPT) $(ACL2_HOME) \
+		--pass2-only \
+		--cell-timeout $(NOTEBOOK_CELL_TIMEOUT) \
+		--startup-timeout $(BOOTSTRAP_STARTUP_TIMEOUT) \
+		-v 2>&1
+
+# =============================================================================
 # Rust and Parinfer Setup
 # =============================================================================
 

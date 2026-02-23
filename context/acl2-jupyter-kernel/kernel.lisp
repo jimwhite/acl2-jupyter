@@ -39,6 +39,12 @@
    NIL means full-world mode (first cell gets entire world).
    A world value means diff-only mode.")
 
+(defvar *initial-bootstrap-p* nil
+  "When T, the kernel is running in boot-strap mode.
+   Set by start-boot-strap.  Causes evaluate-code to use the
+   simplified bootstrap-read-eval-print-loop instead of the
+   normal interactive REPL loop.")
+
 (defvar *initial-event-forms-p* nil
   "When T, each cell's display_data includes a 'forms' array of the
    original ACL2 event forms (the code as submitted), enabling the
@@ -203,7 +209,12 @@
                     :accessor deep-events-p
                     :documentation "When NIL, only top-level events
    (depth=0) are included and event numbers are stripped.  When T,
-   all events including embedded sub-events with full tuples."))
+   all events including embedded sub-events with full tuples.")
+   (bootstrap-p     :initform *initial-bootstrap-p*
+                    :accessor bootstrap-p
+                    :documentation "When T, kernel is in boot-strap mode.
+   Uses simplified REPL loop: no keyword commands, no string-as-in-package,
+   no command landmarks."))
   (:default-initargs
     :name "acl2"
     :package (find-package "ACL2")
@@ -298,6 +309,72 @@
 
 
 ;;; ---------------------------------------------------------------------------
+;;; Result Display Helpers
+;;; ---------------------------------------------------------------------------
+
+(defun format-acl2-value (val)
+  "Pretty-print VAL in the current ACL2 package, downcased."
+  (let ((*package* (find-package (acl2::current-package *the-live-state*)))
+        (*print-case* :downcase)
+        (*print-pretty* t))
+    (prin1-to-string val)))
+
+(defun display-trans-eval-result (trans-ans)
+  "Send the result of a trans-eval call to Jupyter as execute_result.
+   TRANS-ANS is (stobjs-out . replaced-val).
+   Error-triple results are displayed unless erp or :invisible.
+   Non-triple results are displayed unless state-only.
+   No-op when no kernel is active (e.g. in test harness)."
+  (when jupyter:*kernel*
+    (let ((stobjs-out   (car trans-ans))
+          (replaced-val (cdr trans-ans)))
+      (cond
+        ((equal stobjs-out acl2::*error-triple-sig*)
+         (let ((erp-flag (car replaced-val))
+               (val      (cadr replaced-val)))
+           (unless (or erp-flag (eq val :invisible))
+             (jupyter:execute-result
+              (jupyter:text (format-acl2-value val))))))
+        (t
+         (unless (and (= (length stobjs-out) 1)
+                      (eq (car stobjs-out) 'acl2::state))
+           (jupyter:execute-result
+            (jupyter:text (format-acl2-value replaced-val)))))))))
+
+
+;;; ---------------------------------------------------------------------------
+;;; Boot-strap Read-Eval-Print Loop
+;;; ---------------------------------------------------------------------------
+;;; Simplified REPL for boot-strap mode.  No keyword commands, no
+;;; string-as-in-package, no command landmarks.  Just:
+;;;   read form → trans-eval → display result
+;;;
+;;; During boot-strap, the primordial world has no command landmark
+;;; infrastructure (next-absolute-command-number → (1+ NIL) → crash),
+;;; and interactive features like :pe, :pbt are not needed.
+
+(defun bootstrap-read-eval-print-loop (channel state)
+  "Read forms from CHANNEL, evaluate each via trans-eval.
+   Simplified for boot-strap mode: no keyword expansion, no command
+   landmarks.  Output routing is handled by the caller."
+  (let ((*readtable* acl2::*acl2-readtable*))
+    (catch 'acl2::local-top-level
+      (loop
+        (acl2::acl2-unwind acl2::*ld-level* t)
+        (multiple-value-bind (eofp raw-form state)
+            (acl2::read-object channel state)
+          (when eofp (return))
+          (let ((form raw-form))
+            (initialize-accumulated-warnings)
+            (f-put-global 'acl2::last-make-event-expansion nil state)
+            (multiple-value-bind (erp trans-ans state)
+                (acl2::trans-eval-default-warning
+                 form 'acl2-jupyter state t)
+              (unless erp
+                (display-trans-eval-result trans-ans)))))))))
+
+
+;;; ---------------------------------------------------------------------------
 ;;; Read-Eval-Print Loop (runs inside persistent LP context from start)
 ;;; ---------------------------------------------------------------------------
 ;;; trans-eval returns (mv erp (stobjs-out . replaced-val) state).
@@ -380,12 +457,92 @@
 
 
 ;;; ---------------------------------------------------------------------------
+;;; Cell Metadata Capture
+;;; ---------------------------------------------------------------------------
+
+(defun extract-event-tuples (scan deep-p)
+  "Extract event-landmark tuples from world SCAN (an ldiff).
+   When DEEP-P is NIL, keep only depth=0 (top-level) tuples."
+  (let ((all (loop for triple in scan
+                   when (and (eq (car triple) 'acl2::event-landmark)
+                             (eq (cadr triple) 'acl2::global-value))
+                   collect (cddr triple))))
+    (if deep-p
+        all
+        (remove-if-not
+         (lambda (et)
+           (let ((inner (if (eq (car et) 'acl2::local) (cdr et) et)))
+             (integerp (car inner))))
+         all))))
+
+(defun format-event-tuples (event-tuples deep-p)
+  "Format EVENT-TUPLES as printable strings.
+   DEEP-P T: full tuples with event numbers.
+   DEEP-P NIL: strip event number, unwrap LOCAL wrapper."
+  (let ((*package* (find-package "ACL2"))
+        (*print-case* :upcase))
+    (if deep-p
+        (mapcar #'prin1-to-string event-tuples)
+        (mapcar (lambda (et)
+                  (let ((inner (if (eq (car et) 'acl2::local) (cdr et) et)))
+                    (prin1-to-string (cdr inner))))
+                event-tuples))))
+
+(defun format-event-forms (event-tuples)
+  "Format the original source forms from EVENT-TUPLES as printable strings."
+  (let ((*package* (find-package "ACL2"))
+        (*print-case* :downcase))
+    (mapcar (lambda (et)
+              (prin1-to-string (acl2::access-event-tuple-form et)))
+            event-tuples)))
+
+(defun collect-cell-events (k)
+  "Diff post-world against world-baseline in kernel K.
+   Updates cell-events, cell-forms, cell-package, and world-baseline."
+  (let* ((post-wrld (w *the-live-state*))
+         (baseline  (world-baseline k))
+         (scan      (if baseline (ldiff post-wrld baseline) post-wrld))
+         (tuples    (extract-event-tuples scan (deep-events-p k)))
+         (events    (format-event-tuples tuples (deep-events-p k)))
+         (forms     (when (event-forms-p k) (format-event-forms tuples))))
+    (setf (cell-events k)   (coerce events 'vector)
+          (cell-forms k)    (when forms (coerce forms 'vector))
+          (cell-package k)  (acl2::current-package *the-live-state*)
+          (world-baseline k) post-wrld)))
+
+(defun send-cell-metadata (k)
+  "Send cell metadata as display_data with vendor MIME type."
+  (let ((alist (list (cons "events" (cell-events k))
+                     (cons "package" (cell-package k)))))
+    (when (plusp (length (cell-forms k)))
+      (push (cons "forms" (cell-forms k)) (cdr (last alist))))
+    (jupyter::send-display-data
+     (jupyter::kernel-iopub k)
+     (list :object-plist
+           "application/vnd.acl2.events+json"
+           (cons :object-alist alist)))))
+
+
+;;; ---------------------------------------------------------------------------
 ;;; evaluate-code -- dispatches to main thread
 ;;; ---------------------------------------------------------------------------
 
+(defun eval-cell (k trimmed)
+  "Evaluate TRIMMED code string through the appropriate REPL loop.
+   Captures cell metadata (events, forms, package) into kernel K.
+   Runs on the main thread inside with-suppression."
+  (acl2::with-suppression
+    (with-acl2-output-to *standard-output*
+      (let ((channel (make-string-input-channel trimmed)))
+        (unwind-protect
+            (if (bootstrap-p k)
+                (bootstrap-read-eval-print-loop channel *the-live-state*)
+                (jupyter-read-eval-print-loop channel *the-live-state*))
+          (close-string-input-channel channel))))
+    (collect-cell-events k)))
+
 (defmethod jupyter:evaluate-code ((k kernel) code &optional source-path breakpoints)
   (declare (ignore source-path breakpoints))
-  ;; Reset per-cell metadata
   (setf (cell-events k) #()
         (cell-forms k)  nil
         (cell-package k) "ACL2")
@@ -393,92 +550,13 @@
     (when (plusp (length trimmed))
       (multiple-value-bind (ename evalue traceback)
           (handler-case
-              (in-main-thread
-                ;; ---- Everything below runs on the main thread ----
-                ;; with-suppression unlocks COMMON-LISP package (on SBCL)
-                ;; so that pkg-witness can intern into it during undo etc.
-                ;; This mirrors lp which wraps ld-fn in with-suppression.
-                (acl2::with-suppression
-                 (with-acl2-output-to *standard-output*
-                     (let ((channel (make-string-input-channel trimmed)))
-                       (unwind-protect
-                           (jupyter-read-eval-print-loop channel *the-live-state*)
-                         (close-string-input-channel channel)))
-                   ;; After eval: capture events + package.
-                   ;; Diff post-world against world-baseline.  The baseline
-                   ;; is set in start: NIL for full-world mode (first cell
-                   ;; gets the entire world) or (w state) for diff-only.
-                   ;; After each cell, baseline advances to post-world.
-                   (let* ((post-wrld (w *the-live-state*))
-                          (baseline (world-baseline k))
-                          (scan (if baseline
-                                    (ldiff post-wrld baseline)
-                                    post-wrld))
-                          (event-tuples
-                            (let ((all
-                                    (loop for triple in scan
-                                          when (and (eq (car triple)
-                                                        'acl2::event-landmark)
-                                                    (eq (cadr triple)
-                                                        'acl2::global-value))
-                                          collect (cddr triple))))
-                              (if (deep-events-p k)
-                                  all
-                                  ;; Keep only depth=0 tuples (car is integer,
-                                  ;; not a cons of (n . d) for depth>0).
-                                  (remove-if-not
-                                   (lambda (et)
-                                     (let ((inner (if (eq (car et) 'acl2::local)
-                                                      (cdr et) et)))
-                                       (integerp (car inner))))
-                                   all))))
-                          (events
-                            (let ((*package* (find-package "ACL2"))
-                                  (*print-case* :upcase))
-                              (if (deep-events-p k)
-                                  ;; Full tuple including event number
-                                  (mapcar #'prin1-to-string event-tuples)
-                                  ;; Strip event number: (cdr (remove-local et))
-                                  (mapcar (lambda (et)
-                                            (let ((inner (if (eq (car et) 'acl2::local)
-                                                             (cdr et) et)))
-                                              (prin1-to-string (cdr inner))))
-                                          event-tuples))))
-                          (forms
-                            (when (event-forms-p k)
-                              (let ((*package* (find-package "ACL2"))
-                                    (*print-case* :downcase))
-                                (mapcar (lambda (et)
-                                          (prin1-to-string
-                                           (acl2::access-event-tuple-form et)))
-                                        event-tuples)))))
-                     (setf (cell-events k)
-                           (coerce events 'vector)
-                           (cell-forms k)
-                           (when forms (coerce forms 'vector))
-                           (cell-package k)
-                           (acl2::current-package *the-live-state*)
-                           (world-baseline k) post-wrld)
-                     (values)))))
+              (in-main-thread (eval-cell k trimmed))
             (error (c)
               (values (symbol-name (type-of c))
                       (format nil "~A" c)
                       (list (format nil "~A" c)))))
-        ;; Back on shell thread.  Send metadata as display_data with a
-        ;; vendor MIME type so it gets persisted in .ipynb cell outputs.
-        (unless ename
-          (let ((alist (list (cons "events" (cell-events k))
-                             (cons "package" (cell-package k)))))
-            (when (plusp (length (cell-forms k)))
-              (push (cons "forms" (cell-forms k)) (cdr (last alist))))
-            (jupyter::send-display-data
-             (jupyter::kernel-iopub k)
-             (list :object-plist
-                   "application/vnd.acl2.events+json"
-                   (cons :object-alist alist)))))
-        ;; Return error triple to CL-Jupyter, or no values for success.
-        (when ename
-          (values ename evalue traceback))))))
+        (unless ename (send-cell-metadata k))
+        (when ename (values ename evalue traceback))))))
 
 (defmethod jupyter:code-is-complete ((k kernel) code)
   (let ((*package* (find-package "ACL2"))
@@ -510,6 +588,39 @@
 ;;; No sbcl-restart, no LD, no set-raw-mode-on!.  We're called
 ;;; directly from sbcl --eval.
 
+;;; ---------------------------------------------------------------------------
+;;; Kernel Launch Helpers
+;;; ---------------------------------------------------------------------------
+
+(defun prepare-kernel-state (state)
+  "Common state setup for both normal and boot-strap kernel modes."
+  (f-put-global 'acl2::acl2-raw-mode-p nil state)
+  (f-put-global 'acl2::ld-error-action :continue state)
+  (sb-ext:disable-debugger)
+  (eval '(acl2::set-slow-alist-action nil))
+  (f-put-global 'acl2::slow-array-action nil state)
+  (setq *kernel-shutdown* nil))
+
+(defun run-kernel-with-lp-context (conn thread-name state)
+  "Set up persistent LP context and run the Jupyter kernel.
+   CONN is the connection file path.  Blocks until shutdown."
+  (acl2::acl2-unwind acl2::*ld-level* nil)
+  (push nil acl2::*acl2-unwind-protect-stack*)
+  (let ((acl2::*ld-level* 1))
+    (f-put-global 'acl2::ld-level 1 state)
+    (unwind-protect
+        (progn
+          (bordeaux-threads:make-thread
+           (lambda ()
+             (unwind-protect
+                 (jupyter:run-kernel 'kernel conn)
+               (setq *kernel-shutdown* t)
+               (bt-semaphore:signal-semaphore *main-thread-ready*)))
+           :name thread-name)
+          (main-thread-loop))
+      (f-put-global 'acl2::ld-level 0 state)
+      (acl2::acl2-unwind 0 nil))))
+
 (defun start (&optional connection-file
               &key full-world event-forms deep-events)
   "Start the ACL2 Jupyter kernel.
@@ -517,10 +628,8 @@
    FULL-WORLD: when T, first cell gets entire world (not just diff).
    EVENT-FORMS: when T, include original event forms in metadata.
    DEEP-EVENTS: when T, include embedded sub-events with full tuples."
-  ;; Image initialization (idempotent -- same as sbcl-restart calls)
   (acl2::acl2-default-restart)
   ;; LP first-entry initialization (normally done by lp on first call).
-  ;; We need these for include-book (:dir :system) to work.
   (let ((state *the-live-state*))
     (when (not acl2::*lp-ever-entered-p*)
       (f-put-global 'acl2::saved-output-reversed nil state)
@@ -530,45 +639,16 @@
        (acl2::getenv$-raw "ACL2_SYSTEM_BOOKS") 'acl2-jupyter state)
       (acl2::setup-standard-io)
       (setq acl2::*lp-ever-entered-p* t))
-    (f-put-global 'acl2::acl2-raw-mode-p nil state)
-    (f-put-global 'acl2::ld-error-action :continue state)
-    (sb-ext:disable-debugger)
-    ;; Suppress slow alist/array warnings for interactive use
-    (eval '(acl2::set-slow-alist-action nil))
-    (f-put-global 'acl2::slow-array-action nil state)
-    (setq *kernel-shutdown* nil)
-    ;; Set world-baseline for first-cell event capture.
-    ;; full-world T → baseline = NIL (first cell gets entire world).
-    ;; Otherwise baseline = current world (first cell gets only its own diff).
+    (prepare-kernel-state state)
     (setq *initial-world-baseline*
           (if full-world nil (w state)))
+    (setq *initial-bootstrap-p* nil)
     (setq *initial-event-forms-p* (and event-forms t))
     (setq *initial-deep-events-p* (and deep-events t))
     (let ((conn (or connection-file
                     (first (uiop:command-line-arguments)))))
-      (unless conn
-        (error "No connection file provided"))
-      ;; Set up persistent LP context -- mirroring ld-fn0's raw code.
-      ;; This stays active for the lifetime of the kernel.
-      (acl2::acl2-unwind acl2::*ld-level* nil)
-      (push nil acl2::*acl2-unwind-protect-stack*)
-      (let ((acl2::*ld-level* 1))
-        (f-put-global 'acl2::ld-level 1 state)
-        (unwind-protect
-            (progn
-              ;; Start Jupyter in a thread (like Bridge starts its listener)
-              (bordeaux-threads:make-thread
-               (lambda ()
-                 (unwind-protect
-                     (jupyter:run-kernel 'kernel conn)
-                   (setq *kernel-shutdown* t)
-                   (bt-semaphore:signal-semaphore *main-thread-ready*)))
-               :name "jupyter-kernel")
-              ;; Block main thread in work loop -- inside LP context
-              (main-thread-loop))
-          ;; Cleanup LP context on exit
-          (f-put-global 'acl2::ld-level 0 state)
-          (acl2::acl2-unwind 0 nil))))))
+      (unless conn (error "No connection file provided"))
+      (run-kernel-with-lp-context conn "jupyter-kernel" state))))
 
 
 ;;; ---------------------------------------------------------------------------
@@ -600,61 +680,26 @@
    is loaded.  The boot-strap kernel.json argv handles this by including
      --eval \"(acl2::load-acl2 :load-acl2-proclaims acl2::*do-proclaims*)\"
    before quickloading the kernel."
-
-  ;; Step 1: Enter boot-strap mode (primordial world)
   (format t "~&;; [boot-strap pass ~D] Entering boot-strap mode ...~%" pass)
   (push :acl2-loop-only *features*)
   (let ((state *the-live-state*))
     (acl2::set-initial-cbd)
     (makunbound 'acl2::*copy-of-common-lisp-symbols-from-main-lisp-package*)
     (acl2::enter-boot-strap-mode nil (acl2::get-os))
-
-    ;; Step 3: Set ld-skip-proofsp for this pass
     (cond
       ((= pass 1)
        (f-put-global 'acl2::ld-skip-proofsp 'acl2::initialize-acl2 state))
       ((= pass 2)
-       ;; Pass 2 needs the full pass 1 world first.
-       ;; The build script must execute all pass-1 notebooks before
-       ;; starting a pass-2 kernel.  For a single-kernel approach,
-       ;; pass-2 transition happens via enter-boot-strap-pass-2.
        (f-put-global 'acl2::ld-skip-proofsp 'acl2::include-book state))
       (t (error "Invalid pass number ~D (must be 1 or 2)" pass)))
-
     (format t "~&;; [boot-strap pass ~D] Kernel ready.~%" pass)
-
-    ;; Now start the kernel exactly like normal start, but skip
-    ;; acl2-default-restart (no saved image) and LP first-entry
-    ;; (enter-boot-strap-mode already set up the world).
-    (f-put-global 'acl2::acl2-raw-mode-p nil state)
-    (f-put-global 'acl2::ld-error-action :continue state)
-    (sb-ext:disable-debugger)
-    (eval '(acl2::set-slow-alist-action nil))
-    (f-put-global 'acl2::slow-array-action nil state)
     (setq acl2::*lp-ever-entered-p* t)
-    (setq *kernel-shutdown* nil)
-    ;; Diff-only mode: baseline = current world
+    (prepare-kernel-state state)
     (setq *initial-world-baseline* (w state))
-    (setq *initial-event-forms-p* t)    ; always capture forms in boot-strap
-    (setq *initial-deep-events-p* nil)  ; top-level events only
-
+    (setq *initial-bootstrap-p* t)
+    (setq *initial-event-forms-p* t)
+    (setq *initial-deep-events-p* nil)
     (let ((conn (or connection-file
                     (first (uiop:command-line-arguments)))))
-      (unless conn
-        (error "No connection file provided"))
-      (acl2::acl2-unwind acl2::*ld-level* nil)
-      (push nil acl2::*acl2-unwind-protect-stack*)
-      (let ((acl2::*ld-level* 1))
-        (f-put-global 'acl2::ld-level 1 state)
-        (unwind-protect
-            (progn
-              (bordeaux-threads:make-thread
-               (lambda ()
-                 (unwind-protect
-                     (jupyter:run-kernel 'kernel conn)
-                   (setq *kernel-shutdown* t)
-                   (bt-semaphore:signal-semaphore *main-thread-ready*)))
-               :name "jupyter-kernel-bootstrap")
-              (main-thread-loop))
-          (f-put-global 'acl2::ld-level 0 state)
-          (acl2::acl2-unwind 0 nil))))))
+      (unless conn (error "No connection file provided"))
+      (run-kernel-with-lp-context conn "jupyter-kernel-bootstrap" state))))

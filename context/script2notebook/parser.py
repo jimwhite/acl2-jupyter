@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import tree_sitter
-import tree_sitter_commonlisp as tscl
+import tree_sitter_commonlisp_noformat as tscl
 
 
 # Build the tree-sitter Language once at module level.

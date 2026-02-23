@@ -530,7 +530,8 @@
 (defun eval-cell (k trimmed)
   "Evaluate TRIMMED code string through the appropriate REPL loop.
    Captures cell metadata (events, forms, package) into kernel K.
-   Runs on the main thread inside with-suppression."
+   Runs on the main thread inside with-suppression.
+   Returns (values) on success so evaluate-code sees no ename."
   (acl2::with-suppression
     (with-acl2-output-to *standard-output*
       (let ((channel (make-string-input-channel trimmed)))
@@ -539,7 +540,8 @@
                 (bootstrap-read-eval-print-loop channel *the-live-state*)
                 (jupyter-read-eval-print-loop channel *the-live-state*))
           (close-string-input-channel channel))))
-    (collect-cell-events k)))
+    (collect-cell-events k)
+    (values)))
 
 (defmethod jupyter:evaluate-code ((k kernel) code &optional source-path breakpoints)
   (declare (ignore source-path breakpoints))

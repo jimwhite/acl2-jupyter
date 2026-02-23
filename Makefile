@@ -197,9 +197,10 @@ boot-metadata:
 		--no-userinit \
 		--load "$(CAPTURE_LOADER)"
 
-# Inject captured boot-strap metadata into source notebooks
+# Inject captured boot-strap metadata into source notebooks (per-cell)
+INJECT_BOOT_METADATA := $(VENV)/bin/inject-boot-metadata
 notebooks-inject-boot-metadata: install-script2notebook
-	$(BUILD_NOTEBOOKS) inject-boot-metadata $(ACL2_HOME) -v
+	$(INJECT_BOOT_METADATA) $(ACL2_HOME) -v --force
 
 # =============================================================================
 # Rust and Parinfer Setup

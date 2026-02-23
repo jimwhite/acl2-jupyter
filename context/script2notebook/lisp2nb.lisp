@@ -386,8 +386,8 @@ a newline except the last."
       (read-sequence buf in)
       buf)))
 
-(defun convert-file (input-path &optional output-path
-                     &key (markdown-bracket :none))
+(defun convert-file (input-path &key output-path
+                     (markdown-bracket :none))
   "Convert INPUT-PATH (.lisp) to OUTPUT-PATH (.ipynb).
 MARKDOWN-BRACKET can be :NONE, :FENCED, or :PRE.
 Returns the output pathname."
@@ -454,7 +454,8 @@ Returns the output pathname."
                        (file-write-date output)))
             (handler-case
                 (progn
-                  (convert-file input output
+                  (convert-file input
+                               :output-path output
                                :markdown-bracket markdown-bracket)
                   (format t "Wrote ~A~%" output)
                   (incf converted))

@@ -1,6 +1,7 @@
 all: build
 .PHONY: all build push push-ghcr build-multiplatform build-multiplatform-ghcr build-arm64 build-arm64-ghcr \
-        notebooks notebooks-convert notebooks-execute notebooks-force notebooks-dir install-script2notebook
+        notebooks notebooks-convert notebooks-execute notebooks-force notebooks-dir install-script2notebook \
+        lisp2nb lisp2nb-force sanitize-lisp
 
 # By default this builds the latest commit from the main branch of https://github.com/jimwhite/acl2
 # TODO: Default/easy selection of released version.
@@ -125,12 +126,11 @@ VENV_PYTHON := $(VENV)/bin/python
 VENV_PIP := $(VENV)/bin/pip
 BUILD_NOTEBOOKS := $(VENV)/bin/build-notebooks
 
-# Ensure the venv exists and script2notebook is installed into it.
+# Ensure the venv exists and build_notebooks (execute phase) is available.
 install-script2notebook: $(VENV)/bin/activate
 	@if [ ! -x "$(BUILD_NOTEBOOKS)" ]; then \
 		echo "Installing script2notebook into venv..."; \
 		$(VENV_PIP) install -e $(PWD)/context/script2notebook/; \
-		$(VENV_PIP) install $(PWD)/context/tree-sitter-commonlisp/; \
 	else \
 		echo "build-notebooks already installed in venv"; \
 	fi
@@ -142,8 +142,11 @@ $(VENV)/bin/activate:
 	fi
 
 # Convert all ACL2 source files to notebooks (incremental, in-place)
-notebooks-convert: install-script2notebook
-	$(BUILD_NOTEBOOKS) convert $(ACL2_HOME) -v
+# Uses the CL converter (lisp2nb) with recursive directory walk.
+notebooks-convert: sanitize-lisp
+	cd $(ACL2_HOME) && sbcl --noinform --non-interactive --disable-debugger \
+		--load "$(LISP2NB)" \
+		--eval '(lisp2nb:convert-directory "$(ACL2_HOME)" :markdown-bracket :fenced :verbose t)'
 
 # Execute certified notebooks through ACL2 kernel (incremental, in-place)
 notebooks-execute: install-script2notebook
@@ -153,15 +156,14 @@ notebooks-execute: install-script2notebook
 		--startup-timeout $(NOTEBOOK_STARTUP_TIMEOUT)
 
 # Convert + execute in one step (in-place)
-notebooks: install-script2notebook
-	$(BUILD_NOTEBOOKS) all $(ACL2_HOME) -v \
-		-j $(NOTEBOOK_JOBS) \
-		--cell-timeout $(NOTEBOOK_CELL_TIMEOUT) \
-		--startup-timeout $(NOTEBOOK_STARTUP_TIMEOUT)
+notebooks: notebooks-convert notebooks-execute
 
 # Force rebuild everything
-notebooks-force: install-script2notebook
-	$(BUILD_NOTEBOOKS) all $(ACL2_HOME) -v --force \
+notebooks-force: sanitize-lisp install-script2notebook
+	cd $(ACL2_HOME) && sbcl --noinform --non-interactive --disable-debugger \
+		--load "$(LISP2NB)" \
+		--eval '(lisp2nb:convert-directory "$(ACL2_HOME)" :force t :markdown-bracket :fenced :verbose t)'
+	$(BUILD_NOTEBOOKS) execute $(ACL2_HOME) -v --force \
 		-j $(NOTEBOOK_JOBS) \
 		--cell-timeout $(NOTEBOOK_CELL_TIMEOUT) \
 		--startup-timeout $(NOTEBOOK_STARTUP_TIMEOUT)
@@ -169,7 +171,10 @@ notebooks-force: install-script2notebook
 # Convert + execute a single directory (usage: make notebooks-dir DIR=/home/acl2/books/defsort)
 notebooks-dir: install-script2notebook
 	@if [ -z "$(DIR)" ]; then echo "Usage: make notebooks-dir DIR=/home/acl2/books/some-dir"; exit 1; fi
-	$(BUILD_NOTEBOOKS) all $(DIR) -v \
+	cd $(DIR) && sbcl --noinform --non-interactive --disable-debugger \
+		--load "$(LISP2NB)" \
+		--eval '(lisp2nb:convert-directory "$(DIR)" :markdown-bracket :fenced :verbose t)'
+	$(BUILD_NOTEBOOKS) execute $(DIR) -v \
 		-j $(NOTEBOOK_JOBS) \
 		--cell-timeout $(NOTEBOOK_CELL_TIMEOUT) \
 		--startup-timeout $(NOTEBOOK_STARTUP_TIMEOUT)
@@ -208,10 +213,14 @@ notebooks-inject-boot-metadata: install-script2notebook
 # Uses SBCL + rewrite-cl to parse .lisp files into notebooks.
 # This replaces the tree-sitter based Python converter, which has grammar bugs
 # that cause split cells on certain ACL2 source constructs.
+#
+# Targets:
+#   lisp2nb       — convert top-level ACL2 source files only (non-recursive)
+#   lisp2nb-force — same, but force reconversion even if up to date
+#   lisp2nb-books — convert all .lisp under ACL2_HOME recursively (inc. books)
+#   notebooks-convert — alias for lisp2nb-books (replaces old TS converter)
 
 LISP2NB := $(PWD)/context/script2notebook/lisp2nb.lisp
-
-.PHONY: lisp2nb lisp2nb-force sanitize-lisp
 
 # Rename non-source .lisp files so they are not picked up by the *.lisp glob
 sanitize-lisp:
@@ -220,12 +229,23 @@ sanitize-lisp:
 		echo "Renamed mcl-acl2-startup.lisp → mcl-acl2-startup.lisp.txt"; \
 	fi
 
-# Convert all ACL2 source files to notebooks using the CL converter
+# Convert top-level ACL2 source files only (non-recursive)
 lisp2nb: sanitize-lisp
-	cd $(ACL2_HOME) && sbcl --noinform --non-interactive --disable-debugger --load "$(LISP2NB)" --eval '(let ((ok 0) (fail 0)) (dolist (f (directory #p"$(ACL2_HOME)/*.lisp")) (handler-case (progn (lisp2nb:convert-file f :markdown-bracket :fenced) (incf ok)) (error (e) (incf fail) (format t "FAIL ~A: ~A~%" (pathname-name f) e)))) (format t "OK: ~D  FAIL: ~D~%" ok fail) (uiop:quit (if (> fail 0) 1 0)))' 2>&1
+	cd $(ACL2_HOME) && sbcl --noinform --non-interactive --disable-debugger \
+		--load "$(LISP2NB)" \
+		--eval '(let ((ok 0) (fail 0)) (dolist (f (directory #p"$(ACL2_HOME)/*.lisp")) (handler-case (progn (lisp2nb:convert-file f :markdown-bracket :fenced) (incf ok)) (error (e) (incf fail) (format t "FAIL ~A: ~A~%" (pathname-name f) e)))) (format t "OK: ~D  FAIL: ~D~%" ok fail) (uiop:quit (if (> fail 0) 1 0)))' 2>&1
 
-# Force reconvert (same as lisp2nb since CL converter always overwrites)
-lisp2nb-force: lisp2nb
+# Force reconvert top-level ACL2 source files
+lisp2nb-force: sanitize-lisp
+	cd $(ACL2_HOME) && sbcl --noinform --non-interactive --disable-debugger \
+		--load "$(LISP2NB)" \
+		--eval '(let ((ok 0) (fail 0)) (dolist (f (directory #p"$(ACL2_HOME)/*.lisp")) (handler-case (progn (lisp2nb:convert-file f :markdown-bracket :fenced) (incf ok)) (error (e) (incf fail) (format t "FAIL ~A: ~A~%" (pathname-name f) e)))) (format t "OK: ~D  FAIL: ~D~%" ok fail) (uiop:quit (if (> fail 0) 1 0)))' 2>&1
+
+# Convert all .lisp/.lsp files under ACL2_HOME recursively (inc. books)
+lisp2nb-books: sanitize-lisp
+	cd $(ACL2_HOME) && sbcl --noinform --non-interactive --disable-debugger \
+		--load "$(LISP2NB)" \
+		--eval '(lisp2nb:convert-directory "$(ACL2_HOME)" :markdown-bracket :fenced :verbose t)'
 
 # =============================================================================
 # ACL2 Boot-strap Notebook Execution (Pass-2-Only)

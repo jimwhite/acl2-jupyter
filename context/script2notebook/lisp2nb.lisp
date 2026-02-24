@@ -24,7 +24,7 @@
 
 (defpackage #:lisp2nb
   (:use #:cl)
-  (:export #:convert-file #:main))
+  (:export #:convert-file #:convert-directory #:main))
 
 (in-package #:lisp2nb)
 
@@ -557,6 +557,46 @@ a newline except the last."
                     (yason:encode-object-element "execution_count"
                                                  :null)))))))))))
 
+;;; ─── Portcullis (.acl2) metadata injection ─────────────────────────
+
+(defun acl2-companion-files (source)
+  "Find .acl2 portcullis companion files for SOURCE.
+Returns list of (name . content) pairs.  Per-book companion (stem.acl2) takes
+precedence over directory-wide cert.acl2 in ACL2, but we record both."
+  (let* ((dir (make-pathname :defaults source :name nil :type nil))
+         (cert-acl2 (merge-pathnames "cert.acl2" dir))
+         (book-acl2 (make-pathname :defaults source :type "acl2"))
+         (result nil))
+    (dolist (path (list cert-acl2 book-acl2))
+      (when (probe-file path)
+        (handler-case
+            (let ((text (uiop:read-file-string path)))
+              (push (cons (file-namestring path) text) result))
+          (error () nil))))
+    (nreverse result)))
+
+(defun inject-acl2-metadata (notebook-path source-path)
+  "Add .acl2 portcullis companion content to NOTEBOOK-PATH metadata.
+Reads the notebook JSON, adds an acl2_portcullis key with companion file
+contents.  No-op if no companions exist."
+  (let ((companions (acl2-companion-files source-path)))
+    (when companions
+      (let ((nb (with-open-file (in notebook-path :external-format :utf-8)
+                  (yason:parse in))))
+        (let ((meta (or (gethash "metadata" nb)
+                        (let ((h (make-hash-table :test #'equal)))
+                          (setf (gethash "metadata" nb) h)
+                          h)))
+              (port (make-hash-table :test #'equal)))
+          (dolist (pair companions)
+            (setf (gethash (car pair) port) (cdr pair)))
+          (setf (gethash "acl2_portcullis" meta) port))
+        (with-open-file (out notebook-path :direction :output
+                                           :if-exists :supersede
+                                           :external-format :utf-8)
+          (yason:encode nb out)
+          (terpri out))))))
+
 ;;; ─── Main conversion ───────────────────────────────────────────────
 
 (defun read-file-into-byte-vector (path)
@@ -568,9 +608,12 @@ a newline except the last."
       buf)))
 
 (defun convert-file (input-path &key output-path
-                     (markdown-bracket :none))
+                     (markdown-bracket :none)
+                     (inject-portcullis t))
   "Convert INPUT-PATH (.lisp) to OUTPUT-PATH (.ipynb).
 MARKDOWN-BRACKET can be :NONE, :FENCED, or :PRE.
+When INJECT-PORTCULLIS is true (the default), attach .acl2 companion file
+contents to the notebook metadata.
 Returns the output pathname."
   (let* ((input (pathname input-path))
          (output (or output-path
@@ -581,14 +624,74 @@ Returns the output pathname."
          (classified (classify-top-level-nodes nodes))
          (cells (group-nodes-into-cells classified source-bytes)))
     (write-notebook cells input output)
+    (when inject-portcullis
+      (inject-acl2-metadata output input))
     output))
+
+;;; ─── Recursive directory conversion ────────────────────────────────
+
+(defvar *source-extensions* '("lisp" "lsp")
+  "File extensions to convert (without the dot).")
+
+(defun find-source-files (directory)
+  "Recursively find all .lisp and .lsp files under DIRECTORY."
+  (let ((results nil))
+    (dolist (ext *source-extensions*)
+      (dolist (f (directory
+                  (merge-pathnames
+                   (make-pathname :directory '(:relative :wild-inferiors)
+                                  :name :wild :type ext)
+                   (truename directory))))
+        (push f results)))
+    (sort results #'string< :key #'namestring)))
+
+(defun convert-directory (dir &key (force nil)
+                                   (markdown-bracket :fenced)
+                                   (verbose nil))
+  "Convert all .lisp/.lsp files under DIR to .ipynb notebooks.
+Skips files whose .ipynb is newer than the source unless FORCE is true.
+Returns (values converted skipped errors)."
+  (let ((sources (find-source-files dir))
+        (converted 0) (skipped 0) (errors 0))
+    (when verbose
+      (format t "Found ~D source files under ~A~%" (length sources) dir))
+    (dolist (source sources)
+      (let ((output (make-pathname :defaults source :type "ipynb")))
+        (cond
+          ;; Skip if up to date.
+          ((and (not force)
+                (probe-file output)
+                (<= (file-write-date source) (file-write-date output)))
+           (incf skipped))
+          ;; Convert.
+          (t
+           (handler-case
+               (progn
+                 (convert-file source
+                               :output-path output
+                               :markdown-bracket markdown-bracket)
+                 (incf converted)
+                 (when verbose
+                   (format t "  ~A~%" (enough-namestring output dir))))
+             (error (e)
+               (incf errors)
+               (format *error-output* "FAIL ~A: ~A~%"
+                       (enough-namestring source dir) e)))))))
+    (format t "~A: ~D converted, ~D up-to-date, ~D errors~%"
+            (truename dir) converted skipped errors)
+    (values converted skipped errors)))
 
 ;;; ─── CLI entry point ───────────────────────────────────────────────
 
 (defun main ()
-  "CLI entry point.  Processes command-line arguments."
+  "CLI entry point.  Processes command-line arguments.
+Supports both individual files and directories:
+  lisp2nb [--force] [--fenced] FILE.lisp ...         — convert files
+  lisp2nb [--force] [--fenced] --recursive DIR ...    — convert directories"
   (let* ((args (uiop:command-line-arguments))
          (force nil)
+         (recursive nil)
+         (verbose nil)
          (output-dir nil)
          (markdown-bracket :none)
          (inputs '()))
@@ -601,6 +704,10 @@ Returns the output pathname."
           ((string= arg "--fenced") (setf markdown-bracket :fenced))
           ((string= arg "--pre") (setf markdown-bracket :pre))
           ((string= arg "--plain") (setf markdown-bracket :none))
+          ((or (string= arg "--recursive") (string= arg "-r"))
+           (setf recursive t))
+          ((or (string= arg "--verbose") (string= arg "-v"))
+           (setf verbose t))
           ((string= arg "-o")
            (setf output-dir (pop args)))
           ((string= arg "--"))
@@ -611,41 +718,59 @@ Returns the output pathname."
     (setf inputs (nreverse inputs))
 
     (when (null inputs)
-      (format *error-output* "Usage: lisp2nb.lisp [--force] INPUT.lisp ... [-o DIR]~%")
+      (format *error-output*
+              "Usage: lisp2nb [--force] [--fenced] [-r] [-v] INPUT ... [-o DIR]~%")
       (uiop:quit 1))
 
-    (let ((errors 0)
-          (converted 0))
-      (dolist (input-str inputs)
-        (let* ((input (pathname input-str))
-               (output (if output-dir
-                         (make-pathname
-                          :defaults (merge-pathnames
-                                     (make-pathname :name (pathname-name input)
-                                                    :type "ipynb")
-                                     (parse-namestring
-                                      (if (uiop:string-suffix-p output-dir "/")
-                                        output-dir
-                                        (concatenate 'string output-dir "/")))))
-                         (make-pathname :defaults input :type "ipynb"))))
-          ;; Skip if notebook is newer than source (unless --force).
-          (when (or force
-                    (not (probe-file output))
-                    (> (file-write-date input)
-                       (file-write-date output)))
-            (handler-case
-                (progn
-                  (convert-file input
-                               :output-path output
-                               :markdown-bracket markdown-bracket)
-                  (format t "Wrote ~A~%" output)
-                  (incf converted))
-              (error (e)
-                (format *error-output* "error: ~A: ~A~%" input e)
-                (incf errors))))))
-      (when (> converted 0)
-        (format t "Converted ~D file~:P~%" converted))
-      (uiop:quit (if (> errors 0) 1 0)))))
+    (if recursive
+        ;; Directory mode: recursively convert all .lisp/.lsp files.
+        (let ((total-converted 0) (total-skipped 0) (total-errors 0))
+          (dolist (dir-str inputs)
+            (multiple-value-bind (c s e)
+                (convert-directory dir-str
+                                   :force force
+                                   :markdown-bracket markdown-bracket
+                                   :verbose verbose)
+              (incf total-converted c)
+              (incf total-skipped s)
+              (incf total-errors e)))
+          (when (> (length inputs) 1)
+            (format t "Total: ~D converted, ~D up-to-date, ~D errors~%"
+                    total-converted total-skipped total-errors))
+          (uiop:quit (if (> total-errors 0) 1 0)))
+
+        ;; File mode: convert individual files.
+        (let ((errors 0) (converted 0))
+          (dolist (input-str inputs)
+            (let* ((input (pathname input-str))
+                   (output (if output-dir
+                             (make-pathname
+                              :defaults (merge-pathnames
+                                         (make-pathname :name (pathname-name input)
+                                                        :type "ipynb")
+                                         (parse-namestring
+                                          (if (uiop:string-suffix-p output-dir "/")
+                                            output-dir
+                                            (concatenate 'string output-dir "/")))))
+                             (make-pathname :defaults input :type "ipynb"))))
+              ;; Skip if notebook is newer than source (unless --force).
+              (when (or force
+                        (not (probe-file output))
+                        (> (file-write-date input)
+                           (file-write-date output)))
+                (handler-case
+                    (progn
+                      (convert-file input
+                                   :output-path output
+                                   :markdown-bracket markdown-bracket)
+                      (format t "Wrote ~A~%" output)
+                      (incf converted))
+                  (error (e)
+                    (format *error-output* "error: ~A: ~A~%" input e)
+                    (incf errors))))))
+          (when (> converted 0)
+            (format t "Converted ~D file~:P~%" converted))
+          (uiop:quit (if (> errors 0) 1 0))))))
 
 ;;; When loaded as a script, run main.
 (when (and (find-package :uiop)

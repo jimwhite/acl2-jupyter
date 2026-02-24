@@ -79,7 +79,9 @@
   (text "" :type string)
   ;; Byte offset into the source file (computed by walking).
   (start-byte 0 :type fixnum)
-  (end-byte 0 :type fixnum))
+  (end-byte 0 :type fixnum)
+  ;; Original rewrite-cl node (only for :form nodes).
+  (orig-node nil))
 
 (defun classify-top-level-nodes (nodes)
   "Walk the flat list of rewrite-cl nodes and produce a list of
@@ -147,7 +149,8 @@ Whitespace and single newlines between forms are discarded."
                         :kind :form
                         :text (rewrite-cl.node:node-string node)
                         :start-byte start
-                        :end-byte byte-pos)
+                        :end-byte byte-pos
+                        :orig-node node)
                        result))
                (incf i)))))))
     (nreverse result)))
@@ -166,7 +169,8 @@ Whitespace and single newlines between forms are discarded."
   (source "" :type string)
   (start-byte 0 :type fixnum)
   (end-byte 0 :type fixnum)
-  (comment-chars 0 :type fixnum))  ; chars of comment at start of source
+  (comment-chars 0 :type fixnum)   ; chars of comment at start of source
+  (form-node nil))                 ; original rewrite-cl node (for code cells)
 
 (defun group-nodes-into-cells (classified-nodes source-bytes)
   "Group CLASSIFIED-NODES into CELLs following the detached/attached logic."
@@ -203,7 +207,8 @@ Whitespace and single newlines between forms are discarded."
                                :source (classified-node-text form-node)
                                :start-byte (classified-node-start-byte form-node)
                                :end-byte (classified-node-end-byte form-node)
-                               :comment-chars 0)
+                               :comment-chars 0
+                               :form-node (classified-node-orig-node form-node))
                     cells))
 
              ;; Run ends with blank → detached.
@@ -213,7 +218,8 @@ Whitespace and single newlines between forms are discarded."
                                :source (classified-node-text form-node)
                                :start-byte (classified-node-start-byte form-node)
                                :end-byte (classified-node-end-byte form-node)
-                               :comment-chars 0)
+                               :comment-chars 0
+                               :form-node (classified-node-orig-node form-node))
                     cells))
 
              ;; Run ends with comment → attached to the form.
@@ -244,7 +250,9 @@ Whitespace and single newlines between forms are discarded."
                                      :source text
                                      :start-byte att-start
                                      :end-byte code-end
-                                     :comment-chars comment-chars)
+                                     :comment-chars comment-chars
+                                     :form-node (classified-node-orig-node
+                                                 form-node))
                           cells))))))
 
            (setf run '()
@@ -270,6 +278,170 @@ Whitespace and single newlines between forms are discarded."
         (emit-markdown run)))
 
     (nreverse cells)))
+
+;;; ─── Inline comment & docstring annotation ─────────────────────────
+;;;
+;;; These mirror converter.py's _find_inline_comments and _find_docstrings.
+;;; They walk a form's rewrite-cl node tree to find comments and docstrings
+;;; within the form body, returning [char-start, char-end] spans relative
+;;; to the cell's source string.
+
+(defun node-open-len (node)
+  "Return the length of NODE's opening delimiter (for container nodes).
+For seq-nodes this is the open paren/bracket; for reader-macro and
+quote nodes this is the prefix string. Returns 0 for leaf nodes."
+  (typecase node
+    (rewrite-cl.node::seq-node
+     (length (rewrite-cl.node::seq-node-open node)))
+    (rewrite-cl.node::reader-macro-node
+     (length (rewrite-cl.node::reader-macro-node-prefix node)))
+    (rewrite-cl.node::quote-node
+     (length (rewrite-cl.node::quote-node-prefix node)))
+    (t 0)))
+
+(defun node-close-len (node)
+  "Return the length of NODE's closing delimiter.
+For seq-nodes this is the close paren/bracket. Others are 0."
+  (typecase node
+    (rewrite-cl.node::seq-node
+     (length (rewrite-cl.node::seq-node-close node)))
+    (t 0)))
+
+(defun find-inner-comments (form-node form-char-offset)
+  "Find comment nodes inside FORM-NODE (recursively).
+Returns a list of (start end) lists as character offsets from the
+start of the cell source. FORM-CHAR-OFFSET is the character position
+where the form begins within the cell source."
+  (let ((spans '())
+        (pos form-char-offset))
+    (labels
+        ((walk (node)
+           (let ((tag (rewrite-cl.node:node-tag node)))
+             (cond
+               ;; Comment node — record its span.
+               ((member tag '(:comment :block-comment))
+                (let* ((text (rewrite-cl.node:node-string node))
+                       (trimmed (string-right-trim '(#\Newline) text))
+                       (start pos))
+                  (push (list start (+ start (length trimmed))) spans))
+                (incf pos (length (rewrite-cl.node:node-string node))))
+
+               ;; Container node — recurse through children.
+               ((rewrite-cl.node:node-inner-p node)
+                (incf pos (node-open-len node))
+                (dolist (child (rewrite-cl.node:node-children node))
+                  (walk child))
+                (incf pos (node-close-len node)))
+
+               ;; Leaf node — just advance.
+               (t
+                (incf pos (length (rewrite-cl.node:node-string node))))))))
+      (walk form-node))
+    (nreverse spans)))
+
+(defun string-node-p (node)
+  "True if NODE is a string literal."
+  (eq (rewrite-cl.node:node-tag node) :string))
+
+(defun symbol-node-p (node)
+  "True if NODE is a symbol."
+  (eq (rewrite-cl.node:node-tag node) :symbol))
+
+(defun def-keyword-p (text)
+  "True if TEXT (a symbol name) contains \"def\" (case-insensitive)."
+  (search "def" (string-downcase text)))
+
+(defun semantic-children (node)
+  "Return the non-whitespace, non-newline children of NODE."
+  (remove-if (lambda (c)
+               (member (rewrite-cl.node:node-tag c)
+                       '(:whitespace :newline)))
+             (rewrite-cl.node:node-children node)))
+
+(defun child-char-offset (root target base-offset)
+  "Compute the character offset of TARGET node within ROOT's source text.
+BASE-OFFSET is ROOT's character position in the cell source.
+Returns the character offset of TARGET, or NIL if not found."
+  (let ((pos base-offset)
+        (found nil))
+    (labels
+        ((walk (node)
+           (when found (return-from walk))
+           (cond
+             ;; Found the target.
+             ((eq node target)
+              (setf found pos)
+              ;; Advance past it so caller position tracking stays consistent.
+              (incf pos (length (rewrite-cl.node:node-string node))))
+
+             ;; Container — recurse.
+             ((rewrite-cl.node:node-inner-p node)
+              (incf pos (node-open-len node))
+              (dolist (child (rewrite-cl.node:node-children node))
+                (walk child)
+                (when found (return)))
+              (unless found
+                (incf pos (node-close-len node))))
+
+             ;; Leaf — advance.
+             (t
+              (incf pos (length (rewrite-cl.node:node-string node)))))))
+      (walk root))
+    found))
+
+(defun find-docstrings (form-node form-char-offset)
+  "Find docstrings in FORM-NODE using a positional heuristic.
+A string literal at position 4 (1-indexed among semantic children)
+in a form whose first symbol contains \"def\" is treated as a
+docstring, provided it is not the last semantic child.
+Returns a list of (start end) character-offset pairs."
+  ;; Only applies to list forms.
+  (unless (and (rewrite-cl.node:node-inner-p form-node)
+               (eq (rewrite-cl.node:node-tag form-node) :list))
+    (return-from find-docstrings '()))
+
+  (let ((sem (semantic-children form-node)))
+    ;; First semantic child must be a symbol containing "def".
+    (unless (and sem
+                (symbol-node-p (first sem))
+                (def-keyword-p (rewrite-cl.node:node-string (first sem))))
+      (return-from find-docstrings '()))
+
+    ;; We need at least 4 semantic children for position 4.
+    (when (< (length sem) 4)
+      (return-from find-docstrings '()))
+
+    ;; Position 4 = sem[3] (0-indexed). Collect consecutive strings
+    ;; from position 4, excluding if it's the last semantic child.
+    (let ((body-items (nthcdr 3 sem))
+          (spans '()))
+      (loop for item in body-items
+            for i from 0
+            while (string-node-p item)
+            do (let ((is-last (= (+ 3 i) (1- (length sem)))))
+                 (unless is-last
+                   ;; Compute character offset of this string within cell source.
+                   ;; Walk from form start to find position of this child.
+                   (let ((char-pos (child-char-offset form-node item
+                                                      form-char-offset)))
+                     (when char-pos
+                       (push (list char-pos
+                                   (+ char-pos
+                                      (length (rewrite-cl.node:node-string item))))
+                             spans))))))
+      (nreverse spans))))
+
+(defun find-all-annotations (cell)
+  "Compute the combined inline-comment and docstring annotations for CELL.
+Returns a sorted list of (start end) pairs, or NIL if none."
+  (let ((form-node (cell-form-node cell)))
+    (when (and form-node (string= (cell-type cell) "code"))
+      (let* ((comment-chars (cell-comment-chars cell))
+             (inline (find-inner-comments form-node comment-chars))
+             (docstrings (find-docstrings form-node comment-chars))
+             (all-spans (sort (append docstrings inline) #'< :key #'first)))
+        (when all-spans
+          all-spans)))))
 
 ;;; ─── JSON / .ipynb output ──────────────────────────────────────────
 
@@ -368,8 +540,17 @@ a newline except the last."
                                 (yason:with-array ()
                                   (yason:encode-array-element prefix)
                                   (yason:encode-array-element
-                                   (+ prefix (cell-comment-chars c)))))))))))
-                  ;; outputs (empty for code cells, absent for markdown)
+                                   (+ prefix (cell-comment-chars c)))))))
+                          ;; Inline comments and docstrings within form body.
+                          (let ((annotations (find-all-annotations c)))
+                            (when annotations
+                              (yason:with-object-element ("comments")
+                                (yason:with-array ()
+                                  (dolist (span annotations)
+                                    (yason:with-array ()
+                                      (yason:encode-array-element (first span))
+                                      (yason:encode-array-element
+                                       (second span))))))))))))                  ;; outputs (empty for code cells, absent for markdown)
                   (when (string= (cell-type c) "code")
                     (yason:with-object-element ("outputs")
                       (yason:with-array ()))

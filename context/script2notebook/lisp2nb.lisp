@@ -607,6 +607,24 @@ contents.  No-op if no companions exist."
       (read-sequence buf in)
       buf)))
 
+(defun write-placeholder-notebook (input output condition)
+  "Write a placeholder .ipynb for INPUT that could not be parsed.
+The notebook contains a markdown cell describing the error followed by a
+single code cell with the raw source.
+CONDITION is the error condition that was signalled."
+  (let ((source-text (ignore-errors (uiop:read-file-string input)))
+        (*markdown-bracket* :none))   ; no bracket wrapping for placeholder
+    (write-notebook
+     (list* (make-cell :type "markdown"
+                       :source (format nil "**Parse error** — this file could ~
+not be converted automatically.~%~%~A" condition))
+            (when source-text
+              (list (make-cell :type "code"
+                               :source source-text
+                               :end-byte (length source-text)))))
+     input output)
+    (format *error-output* "PLACEHOLDER ~A: ~A~%" (namestring input) condition)))
+
 (defun convert-file (input-path &key output-path
                      (markdown-bracket :none)
                      (inject-portcullis t))
@@ -614,18 +632,28 @@ contents.  No-op if no companions exist."
 MARKDOWN-BRACKET can be :NONE, :FENCED, or :PRE.
 When INJECT-PORTCULLIS is true (the default), attach .acl2 companion file
 contents to the notebook metadata.
-Returns the output pathname."
+Returns the output pathname.
+If parsing fails, writes a placeholder notebook with the raw source and
+reports the issue to *ERROR-OUTPUT*."
   (let* ((input (pathname input-path))
          (output (or output-path
                      (make-pathname :defaults input :type "ipynb")))
-         (*markdown-bracket* markdown-bracket)
-         (source-bytes (read-file-into-byte-vector input))
-         (nodes (rewrite-cl:parse-file-all input))
-         (classified (classify-top-level-nodes nodes))
-         (cells (group-nodes-into-cells classified source-bytes)))
-    (write-notebook cells input output)
-    (when inject-portcullis
-      (inject-acl2-metadata output input))
+         (*markdown-bracket* markdown-bracket))
+    (handler-case
+        (let* ((source-bytes (read-file-into-byte-vector input))
+               ;; Parse with package locks disabled — ACL2 sources intern
+               ;; symbols into the COMMON-LISP package (e.g. COMMON-LISP::TH)
+               ;; which trips SBCL's package lock.
+               (nodes (#+sbcl sb-ext:without-package-locks
+                       #-sbcl progn
+                       (rewrite-cl:parse-file-all input)))
+               (classified (classify-top-level-nodes nodes))
+               (cells (group-nodes-into-cells classified source-bytes)))
+          (write-notebook cells input output)
+          (when inject-portcullis
+            (inject-acl2-metadata output input)))
+      (error (e)
+        (write-placeholder-notebook input output e)))
     output))
 
 ;;; ─── Recursive directory conversion ────────────────────────────────
@@ -633,52 +661,83 @@ Returns the output pathname."
 (defvar *source-extensions* '("lisp" "lsp")
   "File extensions to convert (without the dot).")
 
-(defun find-source-files (directory)
-  "Recursively find all .lisp and .lsp files under DIRECTORY."
-  (let ((results nil))
-    (dolist (ext *source-extensions*)
-      (dolist (f (directory
-                  (merge-pathnames
-                   (make-pathname :directory '(:relative :wild-inferiors)
-                                  :name :wild :type ext)
-                   (truename directory))))
-        (push f results)))
-    (sort results #'string< :key #'namestring)))
+(defvar *skip-directory-names* '(".sys")
+  "Directory names to skip during recursive source file discovery.
+.sys/ directories contain auto-generated useless-runes files from ACL2's
+certification system; they are not meaningful source.")
 
 (defun convert-directory (dir &key (force nil)
                                    (markdown-bracket :fenced)
                                    (verbose nil))
   "Convert all .lisp/.lsp files under DIR to .ipynb notebooks.
-Skips files whose .ipynb is newer than the source unless FORCE is true.
+Skips .sys/ directories and files whose .ipynb is newer than the source
+unless FORCE is true.  Each file is processed and forgotten immediately —
+no data accumulates across files.
 Returns (values converted skipped errors)."
-  (let ((sources (find-source-files dir))
-        (converted 0) (skipped 0) (errors 0))
-    (when verbose
-      (format t "Found ~D source files under ~A~%" (length sources) dir))
-    (dolist (source sources)
-      (let ((output (make-pathname :defaults source :type "ipynb")))
-        (cond
-          ;; Skip if up to date.
-          ((and (not force)
-                (probe-file output)
-                (<= (file-write-date source) (file-write-date output)))
-           (incf skipped))
-          ;; Convert.
-          (t
-           (handler-case
-               (progn
-                 (convert-file source
-                               :output-path output
-                               :markdown-bracket markdown-bracket)
-                 (incf converted)
-                 (when verbose
-                   (format t "  ~A~%" (enough-namestring output dir))))
-             (error (e)
-               (incf errors)
-               (format *error-output* "FAIL ~A: ~A~%"
-                       (enough-namestring source dir) e)))))))
-    (format t "~A: ~D converted, ~D up-to-date, ~D errors~%"
-            (truename dir) converted skipped errors)
+  (let ((converted 0) (skipped 0) (errors 0) (n 0)
+        (t-start (get-internal-real-time))
+        (t-last-report (get-internal-real-time))
+        (root (truename dir)))
+    (labels
+        ((convert-one (source)
+           (incf n)
+           (let ((output (make-pathname :defaults source :type "ipynb")))
+             (cond
+               ;; Skip if up to date.
+               ((and (not force)
+                     (probe-file output)
+                     (<= (file-write-date source) (file-write-date output)))
+                (incf skipped))
+               ;; Convert.
+               (t
+                (handler-case
+                    (progn
+                      (convert-file source
+                                    :output-path output
+                                    :markdown-bracket markdown-bracket)
+                      (incf converted)
+                      (when verbose
+                        (format t "  ~A~%" (enough-namestring output root))))
+                  (error (e)
+                    (incf errors)
+                    (format *error-output* "FAIL ~A: ~A~%"
+                            (enough-namestring source root) e))))))
+           ;; Progress report every 10 seconds.
+           (let ((now (get-internal-real-time)))
+             (when (> (- now t-last-report)
+                      (* 10 internal-time-units-per-second))
+               (setf t-last-report now)
+               (let ((elapsed (/ (- now t-start)
+                                 internal-time-units-per-second)))
+                 (format t "  progress: ~D files (~D converted, ~D skipped, ~D errors) ~
+                            [~,1Fs elapsed]~%"
+                         n converted skipped errors elapsed)
+                 (finish-output)))))
+
+         (walk (d)
+           ;; Process source files in this directory, then recurse.
+           (dolist (entry (directory
+                           (merge-pathnames
+                            (make-pathname :name :wild :type :wild)
+                            d)))
+             (cond
+               ;; Directory — recurse unless skipped.
+               ((uiop:directory-pathname-p entry)
+                (let ((name (car (last (pathname-directory entry)))))
+                  (unless (member name *skip-directory-names*
+                                  :test #'string=)
+                    (walk entry))))
+               ;; Source file — convert immediately.
+               ((member (pathname-type entry) *source-extensions*
+                        :test #'string-equal)
+                (convert-one entry))))))
+
+      (walk root))
+
+    (let ((elapsed (/ (- (get-internal-real-time) t-start)
+                      internal-time-units-per-second)))
+      (format t "~A: ~D converted, ~D skipped, ~D errors [~,1Fs]~%"
+              root converted skipped errors elapsed))
     (values converted skipped errors)))
 
 ;;; ─── CLI entry point ───────────────────────────────────────────────

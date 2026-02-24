@@ -12,10 +12,17 @@ Install
 cd /workspace/acl2-jupyter && make install-parinfer
 ```
 
-Correct parens from indentation
+Correct parens from indentation.
 ```bash
 . $HOME/.cargo/env && parinfer-rust -m indent -l lisp --lisp-block-comments <file.lisp | diff file.lisp -
 ```
+When applying corrections don't count parens, just get your indentation correct and parinfer will give correct parens.
+
+Correct indentations from parens.  For if you have correct code but need to fix indentation so you can make changes followed by parinfer to correct parens from indentation.
+```bash
+. $HOME/.cargo/env && parinfer-rust -m paren -l lisp --lisp-block-comments <file.lisp | diff file.lisp -
+```
+
 
 Help
 ```bash

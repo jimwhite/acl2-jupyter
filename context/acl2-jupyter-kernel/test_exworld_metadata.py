@@ -204,6 +204,17 @@ class TestDependencies:
         assert any("cdr" in r for r in ref_names), \
             f"expected cdr reference: {refs}"
 
+    def test_defconst_has_dependencies(self, kc):
+        """A defconst should produce dependency edges (source-based extraction).
+        The old world-body approach failed for constants since the world
+        stores the computed value, not the source expression."""
+        code = "(defconst *exw-myconst* (+ 1 2))"
+        _, _, error, meta = eval_with_metadata(kc, code)
+        assert error is None, f"error: {error}"
+        deps = meta.get("dependencies", {})
+        matches = [k for k in deps if "exw-myconst" in k.lower()]
+        assert len(matches) > 0, f"no dep edge for *exw-myconst*: {deps}"
+
 
 # ---------------------------------------------------------------------------
 # Tests — Expansions

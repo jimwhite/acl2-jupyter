@@ -1,9 +1,9 @@
 ## Plan: Non-World Metadata Capture for ACL2 Jupyter Kernel
 
 > **Status**: Core features implemented on branch `exworld-metadata`.
-> Phase 3 below is the current work item.
+> Phase 4 below is the current work item.
 
-**TL;DR** — Extend the kernel's per-cell metadata beyond world event landmarks to include: (1) all symbols referenced in the cell with their resolved packages and kinds, (2) dependency edges from defined symbols to referenced symbols with typed refs, (3) macro expansion of ACL2 forms via `translate1`, and (4) detection of genuinely unexpected CL-level side effects. The metadata flows through the existing `display_data` / `application/vnd.acl2.events+json` MIME channel, gated behind the `:exworld` kernel option (`ACL2_JUPYTER_EXWORLD=1`).
+**TL;DR** — Extend the kernel's per-cell metadata beyond world event landmarks to include: (1) all symbols referenced in the cell with their resolved packages and kinds, (2) dependency edges from defined symbols to referenced symbols, (3) macro expansion of ACL2 forms via `translate1`, and (4) detection of genuinely unexpected CL-level side effects. The metadata flows through the existing `display_data` / `application/vnd.acl2.events+json` MIME channel, gated behind the `:exworld` kernel option (`ACL2_JUPYTER_EXWORLD=1`).
 
 ---
 
@@ -15,61 +15,48 @@ Implemented symbols.lisp, kernel.lisp integration, .asd registration, feature ga
 
 Ref badge color fix (badge-background/badge-foreground), symbols table column reorder (Package/Name/Kind/Pos with explicit widths).
 
-### Phase 3 — Fix unknown kinds, typed dep refs, filter raw_definitions (CURRENT)
+### Phase 3 — Fix unknown kinds, filter raw_definitions (DONE)
 
-Three bugs/improvements discovered during hanoi.ipynb testing:
+- 3a. Post-eval re-classification of "unknown" symbols via `reclassify-unknown-symbols`
+- 3b. Typed dependency references — implemented then reverted; deps use plain strings
+- 3c. Filter raw_definitions to subtract ACL2-defined names (expected fboundp)
+- 3d. Arglist formals not marked as operators — `defun-like-p` + `walk-flat`
 
-#### 3a. Post-eval re-classification of "unknown" symbols
+### Phase 4 — Source-based dependency extraction (DONE)
 
-**Problem**: `accumulate-form-symbols` calls `classify-symbol` via `symbols-table-to-json` BEFORE `trans-eval`. Symbols being defined by the cell (e.g. `foo` in `(defun foo ...)`) don't yet have world properties, so they get `kind: "unknown"`.
+**Problem**: The previous `build-dependency-edges` pipeline used a hardcoded list of ~15 event types in `extract-defined-names` and queried world properties for symbol bodies via `get-symbol-body`. This failed for constants (world stores computed value, not source expression) and couldn't handle the hundreds of definition forms ACL2 supports (including user-defined ones).
 
-**Fix**: In `collect-cell-events` (kernel.lisp ~L576), after the world is updated, iterate over `cell-symbols` entries. For any with `kind == "unknown"`, re-query the post-eval world via `classify-symbol-safe` and update the entry in place.
+**Solution**: Pre/post classification diff using source forms.
 
-- File: kernel.lisp `collect-cell-events`, after `(setf (world-baseline k) post-wrld)`
-- Loop over `(cell-symbols k)`, parse each entry's `kind` field, re-classify if `"unknown"`
-- Need helper in symbols.lisp: `reclassify-unknown-symbols(symbols-vector wrld)` that mutates the vector entries
+1. **Before eval**: snapshot `classify-symbol-safe` for every symbol extracted from source forms (first-sighting-only dedup for multi-form cells)
+2. **After eval**: diff to find symbols that went `:unknown` → known kind — these are the symbols *defined* by the cell
+3. **Walk source forms**: for each newly-defined symbol, find which stashed source s-expression mentions it, walk that form to extract references
 
-#### 3b. Typed dependency references
+#### Implementation
 
-**Problem**: Dependency refs are plain strings like `"COMMON-LISP::consp"`. User wants to see what kind each referenced symbol is.
+- **`cell-kind-snapshot` slot** (kernel.lisp): alist of `(sym . kind-keyword)`, reset per cell. Only the first sighting of each symbol is recorded so multi-form cells preserve pre-definition kinds.
+- **`accumulate-form-symbols`** (kernel.lisp): after `extract-symbols`, captures pre-eval kinds into `cell-kind-snapshot` with first-sighting dedup (`unless (assoc sym ...)`).
+- **`extract-newly-defined`** (symbols.lisp): returns symbols where pre-eval kind was `:unknown` but post-eval is no longer `:unknown`. Replaces `extract-defined-names` for both dependency extraction and raw_definitions filtering.
+- **`build-source-dependencies`** (symbols.lisp): uses `extract-newly-defined` + source form walking. For each newly-defined symbol, finds its source form, walks it for references (excluding self), emits edges as `"pkg::name"` strings.
+- **`collect-cell-events`** (kernel.lisp): calls `build-source-dependencies` instead of old `build-dependency-edges`; calls `extract-newly-defined` instead of old `extract-defined-names` for raw_defs filtering.
 
-**Fix** (already partially applied to symbols.lisp): `extract-body-references` now returns objects `{"name": "pkg::sym", "kind": "function"}` instead of strings. `build-dependency-edges` passes them through.
+#### Deleted code
 
-- File: symbols.lisp `extract-body-references` — DONE, returns `(:object-alist ("name" . n) ("kind" . k))`
-- File: renderer/index.js `buildDependenciesSection` (~L205) — update to read `ref.name` and `ref.kind`, render kind-colored badge (reuse `KIND_COLORS` map) next to the ref name. Handle backward compat: if `ref` is a string (old format), treat as before.
-- File: test_exworld_metadata.py — update `TestDependencies` assertions: `ref_names = [r["name"].lower() if isinstance(r, dict) else r.lower() for r in refs]`
+- `extract-defined-names` — hardcoded event type list, replaced by `extract-newly-defined`
+- `get-symbol-body` — world property query, replaced by source form walking
+- `extract-body-references` — used `get-symbol-body`, replaced by direct `extract-symbols` on source forms
+- `build-dependency-edges` — replaced by `build-source-dependencies`
 
-#### 3c. Filter raw_definitions to only unexpected side effects
+#### Edge cases
 
-**Problem**: `raw_definitions` currently reports every symbol that gained `fboundp`/`boundp` after eval. But ACL2 `defun` always installs a CL-level `fboundp` — that's expected, not a "raw CL side effect". The feature reports noise.
+- **Multiple top-level forms**: each is a separate `cell-source-forms` entry; form-matching correctly attributes references per symbol.
+- **Compound forms** (`mutual-recursion`, `defconsts`, `encapsulate`): all newly-defined symbols map to the same source form. Each gets the full set of references from that form minus itself. Over-broad edges accepted (simpler, still useful).
+- **Snapshot deduplication**: first-sighting-only prevents multi-form cells from overwriting pre-definition kinds.
 
-**Fix**: In `collect-cell-events` (~L600), after building dependency edges (which calls `extract-defined-names`), pass the set of ACL2-defined names to the raw-change detection. Subtract them so only genuinely unexpected CL bindings appear.
+#### Decisions
 
-- File: kernel.lisp `collect-cell-events` — get `defined-names` from `extract-defined-names(tuples)`, pass to a new function or filter inline
-- File: symbols.lisp — add `filter-expected-definitions(changes defined-names)` or modify `detect-raw-changes` to accept an exclusion set
-- The key: format defined names as `"pkg::name"` strings (same format as changes) and subtract
-
-**Steps**
-
-1. **symbols.lisp**: Add `reclassify-unknown-symbols` — takes the symbols vector and post-eval wrld, updates `"kind"` fields in place for any `"unknown"` entries
-2. **kernel.lisp `collect-cell-events`**: Call `reclassify-unknown-symbols` on `(cell-symbols k)` with `post-wrld` after setting `world-baseline`
-3. **kernel.lisp `collect-cell-events`**: Extract `defined-names` from `extract-defined-names(tuples)`, format as `"pkg::name"` strings, subtract from raw-changes result before storing in `cell-raw-defs`
-4. **renderer/index.js `buildDependenciesSection`**: Read `ref.name`/`ref.kind` from each dep ref object; render `ref.name` text with a kind-colored badge from `KIND_COLORS[ref.kind]`; handle backward compat for plain string refs
-5. **test_exworld_metadata.py**: Update `TestDependencies` assertions to handle `{name, kind}` objects; optionally add a test verifying defined symbols get correct kind post-eval
-6. **Reinstall kernel**: Clear FASL cache, run `install-kernelspec.sh`
-7. **Verify**: Run `pytest test_exworld_metadata.py`, execute hanoi.ipynb cells, confirm kinds are correct, dep refs show kinds, raw_definitions is empty for normal ACL2 defuns
-
-**Verification**
-
-- `pytest test_exworld_metadata.py -v --timeout=180` — all tests pass
-- Execute `(defun mem (e x) ...)` in hanoi.ipynb — Symbols section shows `mem` as `kind: function` (not `unknown`)
-- Dependencies show typed refs: `consp` with function badge, `equal` with function badge, etc.
-- `raw_definitions` is absent/empty for normal ACL2 defun cells (no false positives)
-- `pytest test_metadata.py -v --timeout=180` — base tests still pass (backward compat)
-
-**Decisions**
-
-- Re-classify post-eval (approach A) chosen over form-based inference — more accurate, catches all world properties including theorems/constants/stobjs
-- raw_definitions: filter out ACL2-defined names rather than removing the feature (preserves detection of genuine CL side effects like `defparameter` in progn)
-- Dependency ref format: `{name, kind}` objects with backward-compat string handling in renderer
-- Same MIME channel, same feature gate (`ACL2_JUPYTER_EXWORLD=1`)
+- Pre/post classify diff over hardcoded event type list — universal, works for any definition form
+- Source form walking over world property query — preserves original expressions
+- Over-broad edges accepted for compound forms
+- Output format unchanged — `{"defined-name": ["ref1", "ref2", ...]}`
+- `extract-newly-defined` serves dual purpose (deps + raw_defs filtering)

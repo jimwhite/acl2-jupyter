@@ -215,6 +215,15 @@
    (cell-raw-defs   :initform #() :accessor cell-raw-defs
                     :documentation "Vector of strings naming symbols that
    gained fboundp/boundp status at the CL level during eval.")
+   ;; Source s-expressions for dependency extraction
+   (cell-source-forms :initform nil :accessor cell-source-forms
+                      :documentation "List of live s-expressions read from
+   the cell, used for source-based dependency extraction.")
+   ;; Pre-eval kind snapshot for dependency extraction (pre/post diff)
+   (cell-kind-snapshot :initform nil :accessor cell-kind-snapshot
+                       :documentation "Alist of (sym . kind-keyword) captured
+   before eval.  Only the first sighting of each symbol is recorded so that
+   multi-form cells preserve the pre-definition kind.")
    ;; Pre-eval snapshot for raw change detection
    (cell-binding-snapshot :initform nil :accessor cell-binding-snapshot
                           :documentation "Alist of (sym . plist) snapshots
@@ -397,7 +406,8 @@
           (let ((form raw-form))
             ;; Extra-world: extract symbols from the read form
             (when (exworld-p k)
-              (accumulate-form-symbols k form (w state)))
+              (accumulate-form-symbols k form (w state))
+              (push form (cell-source-forms k)))
             (initialize-accumulated-warnings)
             (acl2::initialize-timers state)
             (f-put-global 'acl2::last-make-event-expansion nil state)
@@ -446,6 +456,8 @@
             (when (exworld-p k)
               (let ((form-syms (accumulate-form-symbols k form (w state))))
                 (declare (ignore form-syms))
+                ;; Stash source form for source-based dependency extraction
+                (push form (cell-source-forms k))
                 ;; Try macro expansion capture before eval
                 (accumulate-form-expansion k form state)))
             ;; Save world state before eval -- needed for command landmarks.
@@ -506,7 +518,10 @@
 
 (defun accumulate-form-symbols (k form wrld)
   "Extract symbols from FORM and merge into K's cell-symbols accumulator.
-   Also takes a binding snapshot for raw-change detection.
+   Also takes a binding snapshot for raw-change detection and captures
+   pre-eval kind classifications for the pre/post dependency diff.
+   Only the first sighting of each symbol is recorded in the kind snapshot
+   so that multi-form cells preserve the pre-definition kind.
    Returns the extracted symbol table (for potential reuse by caller)."
   (handler-case
       (let ((table (extract-symbols form)))
@@ -515,6 +530,16 @@
           (when (plusp (length new-entries))
             (setf (cell-symbols k)
                   (concatenate 'vector (cell-symbols k) new-entries))))
+        ;; Capture pre-eval kind snapshot (first sighting only)
+        (let ((snapshot (cell-kind-snapshot k)))
+          (maphash (lambda (sym plist)
+                     (declare (ignore plist))
+                     (when (and (interesting-symbol-p sym)
+                                (not (assoc sym snapshot :test #'eq)))
+                       (push (cons sym (classify-symbol-safe sym wrld))
+                             snapshot)))
+                   table)
+          (setf (cell-kind-snapshot k) snapshot))
         ;; Take binding snapshot for raw-change detection
         (let ((snap (snapshot-bindings table)))
           (setf (cell-binding-snapshot k)
@@ -593,14 +618,18 @@
           (when (plusp (length (cell-symbols k)))
             (reclassify-unknown-symbols (cell-symbols k) post-wrld))
         (error () nil))
-      ;; Extra-world: build dependency edges from defined symbols
+      ;; Extra-world: build dependency edges via pre/post classify diff
       (handler-case
-          (let ((deps (build-dependency-edges tuples post-wrld)))
-            (when deps
-              (setf (cell-dependencies k) deps)))
+          (when (cell-kind-snapshot k)
+            (let ((deps (build-source-dependencies
+                         (cell-kind-snapshot k)
+                         post-wrld
+                         (cell-source-forms k))))
+              (when deps
+                (setf (cell-dependencies k) deps))))
         (error () nil))
       ;; Extra-world: detect raw CL-level side effects
-      ;; Filter out symbols that were defined by ACL2 events (expected fboundp)
+      ;; Filter out symbols that were defined by the cell (expected fboundp)
       (handler-case
           (when (cell-binding-snapshot k)
             (let ((all-syms (make-hash-table :test 'eq)))
@@ -608,15 +637,18 @@
                 (setf (gethash (car entry) all-syms) t))
               (let* ((changes (detect-raw-changes
                                (cell-binding-snapshot k) all-syms))
-                     ;; Build set of ACL2-defined names as "pkg::name" strings
+                     ;; Build set of newly-defined names as "pkg::name" strings
                      (defined-names
-                       (let ((names nil)
-                             (*print-case* :downcase))
-                         (dolist (sym (extract-defined-names tuples) names)
-                           (push (format nil "~A::~A"
-                                         (package-name (symbol-package sym))
-                                         (symbol-name sym))
-                                 names))))
+                       (when (cell-kind-snapshot k)
+                         (let ((names nil)
+                               (*print-case* :downcase))
+                           (dolist (sym (extract-newly-defined
+                                        (cell-kind-snapshot k) post-wrld)
+                                       names)
+                             (push (format nil "~A::~A"
+                                           (package-name (symbol-package sym))
+                                           (symbol-name sym))
+                                   names)))))
                      ;; Subtract expected definitions
                      (unexpected (remove-if
                                   (lambda (c) (member c defined-names
@@ -734,6 +766,8 @@
         (cell-dependencies k) nil
         (cell-expansions k) #()
         (cell-raw-defs k)   #()
+        (cell-source-forms k) nil
+        (cell-kind-snapshot k) nil
         (cell-binding-snapshot k) nil)
   (let ((trimmed (string-trim '(#\Space #\Tab #\Newline #\Return) code)))
     (when (plusp (length trimmed))

@@ -232,86 +232,67 @@
     (nreverse changes)))
 
 ;;; ---------------------------------------------------------------------------
-;;; Dependency Edge Extraction
+;;; Dependency Edge Extraction (source-based pre/post classify diff)
 ;;; ---------------------------------------------------------------------------
 
-(defun extract-defined-names (event-tuples)
-  "Extract the names of symbols defined by EVENT-TUPLES.
-   Each depth-0 tuple looks like:
-     (n ((types...) name . mode) form-type form-name formals body...)
-   where the second element is a summary subtuple.
-   Deep tuples or stripped tuples may vary; we look at the summary.
-   Returns a list of symbols."
-  (let ((names nil))
-    (dolist (et event-tuples)
-      (let ((inner (if (eq (car et) 'acl2::local) (cdr et) et)))
-        ;; Strip event number if present
-        (let* ((rest (if (integerp (car inner)) (cdr inner) inner))
-               ;; (car rest) is the summary subtuple: ((types) name . mode)
-               (summary (car rest)))
-          (when (consp summary)
-            (let ((event-types (let ((et-head (car summary)))
-                                 (if (listp et-head) et-head (list et-head))))
-                  (name (cadr summary)))
-              (when (and (symbolp name)
-                         (intersection event-types
-                                       '(acl2::defun acl2::defuns
-                                         acl2::defmacro acl2::defthm
-                                         acl2::defconst acl2::defstobj
-                                         acl2::defchoose acl2::defpkg
-                                         acl2::defabbrev acl2::mutual-recursion
-                                         acl2::defaxiom acl2::deflabel
-                                         acl2::verify-guards
-                                         acl2::in-theory
-                                         acl2::encapsulate)))
-                (push name names)))))))
-    (nreverse names)))
+(defun extract-newly-defined (kind-snapshot post-wrld)
+  "Return the list of symbols from KIND-SNAPSHOT whose pre-eval kind was
+   :UNKNOWN but whose post-eval kind (via CLASSIFY-SYMBOL-SAFE) is no
+   longer :UNKNOWN.  These are the symbols defined by the current cell."
+  (loop for (sym . pre-kind) in kind-snapshot
+        when (and (eq pre-kind :unknown)
+                  (not (eq :unknown (classify-symbol-safe sym post-wrld))))
+          collect sym))
 
-(defun get-symbol-body (sym wrld)
-  "Retrieve the body/definition of SYM from the ACL2 world.
-   Tries unnormalized-body (functions), macro-body (macros),
-   theorem (theorems), const (constants) in order."
-  (or (ignore-errors (acl2::getpropc sym 'acl2::unnormalized-body nil wrld))
-      (ignore-errors (acl2::getpropc sym 'acl2::macro-body nil wrld))
-      (ignore-errors (acl2::getpropc sym 'acl2::theorem nil wrld))
-      ;; For constants, the value itself might reference other symbols
-      (ignore-errors (acl2::getpropc sym 'acl2::const nil wrld))))
+(defun build-source-dependencies (kind-snapshot post-wrld source-forms)
+  "Build dependency edges using the pre/post classify diff approach.
+   KIND-SNAPSHOT is an alist of (sym . pre-eval-kind).
+   POST-WRLD is the ACL2 world after eval.
+   SOURCE-FORMS is a list of live s-expressions from the cell.
 
-(defun extract-body-references (sym wrld)
-  "Extract symbols referenced in SYM's body from the ACL2 world WRLD.
-   Returns a list of symbol name strings (package::name format)."
-  (let ((body (get-symbol-body sym wrld)))
-    (when body
-      (let ((table (extract-symbols body))
-            (refs nil))
-        (maphash (lambda (ref-sym plist)
-                   (declare (ignore plist))
-                   (when (and (interesting-symbol-p ref-sym)
-                              (not (eq ref-sym sym)))
-                     (let ((*print-case* :downcase))
-                       (push (format nil "~A::~A"
-                                     (package-name (symbol-package ref-sym))
-                                     (symbol-name ref-sym))
-                             refs))))
-                 table)
-        (nreverse refs)))))
+   For each newly-defined symbol (unknown→known), find the source form
+   that mentions it, walk that form to extract all referenced symbols,
+   and emit an edge from the defined symbol to its references.
 
-(defun build-dependency-edges (event-tuples wrld)
-  "Build dependency edges for symbols defined in EVENT-TUPLES.
-   Returns an alist of (defined-name-string . (ref-name-string ...))."
-  (let ((edges nil))
-    (dolist (sym (extract-defined-names event-tuples))
-      (let ((refs (extract-body-references sym wrld)))
-        (when refs
-          (let ((*print-case* :downcase))
-            (push (cons (format nil "~A::~A"
-                                (package-name (symbol-package sym))
-                                (symbol-name sym))
-                        (coerce refs 'vector))
-                  edges)))))
-    ;; Return as JSON-ready object-plist
-    (when edges
-      (cons :object-alist (nreverse edges)))))
+   For compound forms where multiple defined symbols match the same form,
+   each gets the full reference set minus itself (over-broad, accepted)."
+  (let ((newly-defined (extract-newly-defined kind-snapshot post-wrld)))
+    (when newly-defined
+      ;; Pre-compute extract-symbols tables for each source form
+      (let ((form-tables (mapcar (lambda (form)
+                                   (cons form (extract-symbols form)))
+                                 source-forms))
+            (edges nil))
+        (dolist (sym newly-defined)
+          ;; Find the source form that mentions this symbol
+          (let ((matching-table nil))
+            (dolist (ft form-tables)
+              (when (gethash sym (cdr ft))
+                (setf matching-table (cdr ft))
+                (return)))
+            (when matching-table
+              ;; Extract all interesting references minus the defined symbol
+              (let ((refs nil))
+                (maphash (lambda (ref-sym plist)
+                           (declare (ignore plist))
+                           (when (and (interesting-symbol-p ref-sym)
+                                      (not (eq ref-sym sym)))
+                             (let ((*print-case* :downcase))
+                               (push (format nil "~A::~A"
+                                             (package-name
+                                              (symbol-package ref-sym))
+                                             (symbol-name ref-sym))
+                                     refs))))
+                         matching-table)
+                (when refs
+                  (let ((*print-case* :downcase))
+                    (push (cons (format nil "~A::~A"
+                                        (package-name (symbol-package sym))
+                                        (symbol-name sym))
+                                (coerce (nreverse refs) 'vector))
+                          edges)))))))
+        (when edges
+          (cons :object-alist (nreverse edges)))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Macro Expansion Capture

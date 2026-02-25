@@ -6,5 +6,8 @@
 		{
 			"path": "/home/acl2"
 		}
-	]
+	],
+	"settings": {
+		"python.defaultInterpreterPath": "/opt/conda/bin/python"
+	}
 }

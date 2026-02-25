@@ -18,12 +18,24 @@
 ;;; Symbol Extraction — Walk a read s-expression
 ;;; ---------------------------------------------------------------------------
 
+(defun defun-like-p (sym)
+  "Return T if SYM names a definition form whose second argument is
+   a formal parameter list (e.g. DEFUN, DEFUND, DEFMACRO, DEFUN$, etc.)."
+  (member sym '(acl2::defun  acl2::defund
+                acl2::defmacro
+                acl2::defun$  acl2::defund$
+                acl2::defun-sk acl2::defun-sk$
+                acl2::define)
+          :test #'eq))
+
 (defun extract-symbols (form)
   "Walk FORM recursively, collecting every symbol into a hash table.
    Keys are symbols; values are plists with collected info:
      :OPERATOR T  — appeared in function position (car of a form)
      :ARGUMENT T  — appeared as an argument (non-car position)
-   A symbol can have both :OPERATOR and :ARGUMENT set."
+   A symbol can have both :OPERATOR and :ARGUMENT set.
+   Argument lists of definition forms (defun, defmacro, etc.) are
+   walked as flat data so formal parameters are never marked operator."
   (let ((table (make-hash-table :test 'eq)))
     (labels
         ((record (sym operator-p)
@@ -39,10 +51,33 @@
              ((symbolp x)
               (record x operator-p))
              ((consp x)
-              ;; Car is in operator position when the form is a list
-              (walk (car x) t)
-              (walk-list (cdr x)))
+              ;; Recognise (defun name (formals...) body ...) and similar:
+              ;; walk the formals list as flat data (all :argument, no :operator).
+              (let ((head (car x)))
+                (cond
+                  ((and (symbolp head) (defun-like-p head))
+                   ;; head = defun-like operator
+                   (record head t)
+                   ;; second element = name being defined
+                   (when (cddr x)               ; need at least (op name formals ...)
+                     (walk (cadr x) nil)         ; name — argument
+                     (walk-flat (caddr x))       ; formals — all arguments
+                     (walk-list (cdddr x))))     ; body & rest
+                  (t
+                   ;; Normal list: car is operator position
+                   (walk (car x) t)
+                   (walk-list (cdr x))))))
              ;; Ignore atoms like numbers, strings, characters
+             (t nil)))
+         (walk-flat (x)
+           "Walk X treating every symbol as :ARGUMENT, no operator positions.
+            Used for formal parameter lists and similar flat data."
+           (cond
+             ((symbolp x)
+              (record x nil))
+             ((consp x)
+              (walk-flat (car x))
+              (walk-flat (cdr x)))
              (t nil)))
          (walk-list (xs)
            (when (consp xs)

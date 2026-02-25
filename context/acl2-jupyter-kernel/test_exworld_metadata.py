@@ -140,6 +140,23 @@ class TestSymbols:
             assert expected in names, \
                 f"expected {expected} in symbols: {names}"
 
+    def test_formals_not_operator(self, kc):
+        """Formal parameters in a defun arglist should be argument-only,
+        never operator.  Regression test: the first formal was mis-classified
+        as operator because the arglist was walked as a normal form."""
+        _, _, error, meta = eval_with_metadata(
+            kc, "(defun exw-formals-test (a b c) (list a b c))")
+        assert error is None, f"error: {error}"
+        symbols = meta.get("symbols", [])
+        for name in ["A", "B", "C"]:
+            entries = [s for s in symbols if s["name"].upper() == name]
+            assert len(entries) > 0, f"formal {name} not found in symbols"
+            for e in entries:
+                assert e.get("argument") is True, \
+                    f"formal {name} should be argument: {e}"
+                assert e.get("operator") is not True, \
+                    f"formal {name} should NOT be operator: {e}"
+
 
 # ---------------------------------------------------------------------------
 # Tests — Dependencies

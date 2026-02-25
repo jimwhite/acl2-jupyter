@@ -6,16 +6,19 @@ application/vnd.acl2.events+json after each successful cell execution.
 This gets stored in the notebook's output list (standard Jupyter
 persistence mechanism).
 
-The payload is:
+The payload always contains:
   {
     "events": ["(DEFUN ...)", ...],   -- event landmark S-expressions
     "package": "ACL2",                -- current ACL2 package
-    "forms": ["(defun ...)", ...]     -- original event forms (optional,
-                                         requires ACL2_JUPYTER_EVENT_FORMS=1)
   }
 
+These tests cover the base metadata (events, package) and shallow-event
+mode (default).  Feature-specific tests live in their own files:
+  - test_event_forms.py   (requires ACL2_JUPYTER_EVENT_FORMS=1)
+  - test_exworld_metadata.py  (requires ACL2_JUPYTER_EXWORLD=1)
+
 Usage:
-    pytest test_metadata.py -v --timeout=180
+    pytest test_metadata.py -v
 """
 
 import time
@@ -169,70 +172,6 @@ class TestMetadata:
         # meta comes from display_data; should have at least 'package'
         assert "package" in meta, f"no display_data with {MIME_TYPE}: {meta}"
         assert "events" in meta, f"missing events key: {meta}"
-
-
-class TestEventForms:
-    """Tests for the 'forms' array in display_data metadata.
-
-    These tests require ACL2_JUPYTER_EVENT_FORMS=1 in the kernel's
-    environment (set in kernel.json via the installer).
-    """
-
-    def test_defun_has_form(self, kc):
-        """A defun should produce a form matching the source code."""
-        _, _, error, meta = eval_with_metadata(
-            kc, "(defun forms-test-fn (x) (+ x 99))")
-        assert error is None, f"error: {error}"
-        forms = meta.get("forms", [])
-        assert len(forms) > 0, f"expected forms, got: {meta}"
-        combined = " ".join(forms).lower()
-        assert "forms-test-fn" in combined, \
-            f"expected function name in forms: {forms}"
-        assert "defun" in combined, \
-            f"expected 'defun' in forms: {forms}"
-
-    def test_defthm_has_form(self, kc):
-        """A defthm should produce a form matching the theorem."""
-        _, _, error, meta = eval_with_metadata(
-            kc, "(defthm forms-test-thm (equal (cdr (cons x y)) y))")
-        assert error is None, f"error: {error}"
-        forms = meta.get("forms", [])
-        assert len(forms) > 0, f"expected forms, got: {meta}"
-        combined = " ".join(forms).lower()
-        assert "forms-test-thm" in combined, \
-            f"expected theorem name in forms: {forms}"
-        assert "defthm" in combined, \
-            f"expected 'defthm' in forms: {forms}"
-
-    def test_forms_are_strings(self, kc):
-        """Forms should be S-expression strings."""
-        _, _, error, meta = eval_with_metadata(
-            kc, "(defun forms-str-test (x) x)")
-        assert error is None, f"error: {error}"
-        forms = meta.get("forms", [])
-        assert len(forms) > 0, f"no forms"
-        for f in forms:
-            assert isinstance(f, str), f"form should be string, got: {type(f)}"
-            assert len(f) > 0, "empty form string"
-
-    def test_arithmetic_no_forms(self, kc):
-        """Plain arithmetic produces no forms (no events = no forms)."""
-        _, _, error, meta = eval_with_metadata(kc, "(+ 3 4)")
-        assert error is None, f"error: {error}"
-        forms = meta.get("forms", [])
-        assert len(forms) == 0, f"expected no forms, got: {forms}"
-
-    def test_forms_count_matches_events(self, kc):
-        """Number of forms should equal number of events."""
-        code = """(defun forms-count-a (x) (+ x 10))
-(defun forms-count-b (x) (+ x 20))"""
-        _, _, error, meta = eval_with_metadata(kc, code)
-        assert error is None, f"error: {error}"
-        events = meta.get("events", [])
-        forms = meta.get("forms", [])
-        assert len(events) == len(forms), \
-            f"events ({len(events)}) != forms ({len(forms)})"
-        assert len(forms) >= 2, f"expected >=2 forms, got {len(forms)}"
 
 
 class TestShallowEvents:

@@ -1,0 +1,19 @@
+2026-02-25 07:38:31 [INFO] <KERNEL> Starting acl2 kernel
+2026-02-25 07:38:31 [INFO] <KERNEL> Parsing connection file /tmp/tmpovtlvsiw.json
+2026-02-25 07:38:31 [INFO] <MAC> Starting message authentification
+2026-02-25 07:38:31 [INFO] <MAC> Using hmac with sha256 digest for message signing.
+2026-02-25 07:38:31 [INFO] <HB-CHANNEL> Starting channel on tcp://127.0.0.1:59163
+2026-02-25 07:38:31 [INFO] <IOPUB-CHANNEL> Starting channel on tcp://127.0.0.1:42209
+2026-02-25 07:38:31 [INFO] <HB-CHANNEL> Starting thread
+2026-02-25 07:38:31 [INFO] <SHELL-CHANNEL> Starting channel on tcp://127.0.0.1:51651
+2026-02-25 07:38:31 [INFO] <STDIN-CHANNEL> Starting channel on tcp://127.0.0.1:40369
+2026-02-25 07:38:31 [INFO] <CONTROL-CHANNEL> Starting channel on tcp://127.0.0.1:41233
+2026-02-25 07:38:31 [INFO] <HISTORY> Starting history
+2026-02-25 07:38:31 [INFO] <KERNEL> Handling kernel_info_request message
+2026-02-25 07:38:31 [INFO] <KERNEL> Handling kernel_info_request message
+2026-02-25 07:38:31 [INFO] <KERNEL> Handling execute_request message
+2026-02-25 07:38:31 [INFO] <KERNEL> Handling execute_request message
+2026-02-25 07:38:31 [INFO] <KERNEL> Handling execute_request message
+2026-02-25 07:38:31 [INFO] <KERNEL> Handling execute_request message
+2026-02-25 07:38:31 [INFO] <KERNEL> Handling execute_request message
+2026-02-25 07:38:31 [INFO] <KERNEL> Handling execute_request message

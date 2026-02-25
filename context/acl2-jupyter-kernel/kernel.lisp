@@ -60,6 +60,13 @@
    with their full event-tuple structure including absolute numbers.
    Set from ACL2_JUPYTER_DEEP_EVENTS env var in start.")
 
+(defvar *initial-exworld-p* nil
+  "When T, each cell's display_data includes extra-world metadata:
+   symbol references with package/kind classification, dependency edges
+   between defined symbols, macro expansion captures, and detection of
+   raw CL-level side effects (fboundp/boundp changes).  Set from
+   ACL2_JUPYTER_EXWORLD env var in start.")
+
 (defvar *main-thread-lock* (bordeaux-threads:make-lock "acl2-jupyter-main-thread-lock"))
 (defvar *main-thread-work* nil)
 (defvar *main-thread-ready* (bt-semaphore:make-semaphore))
@@ -195,6 +202,24 @@
   ((cell-events     :initform #() :accessor cell-events)
    (cell-forms      :initform nil  :accessor cell-forms)
    (cell-package    :initform "ACL2" :accessor cell-package)
+   ;; Extra-world metadata accumulators (per-cell, reset by evaluate-code)
+   (cell-symbols    :initform #() :accessor cell-symbols
+                    :documentation "Vector of JSON-ready symbol entries
+   collected across all forms in the current cell.")
+   (cell-dependencies :initform nil :accessor cell-dependencies
+                      :documentation "JSON-ready object mapping defined
+   symbol names to vectors of referenced symbol names.")
+   (cell-expansions :initform #() :accessor cell-expansions
+                    :documentation "Vector of JSON-ready expansion entries
+   for forms that involved ACL2 macro expansion.")
+   (cell-raw-defs   :initform #() :accessor cell-raw-defs
+                    :documentation "Vector of strings naming symbols that
+   gained fboundp/boundp status at the CL level during eval.")
+   ;; Pre-eval snapshot for raw change detection
+   (cell-binding-snapshot :initform nil :accessor cell-binding-snapshot
+                          :documentation "Alist of (sym . plist) snapshots
+   taken before eval to detect raw CL-level side effects.")
+   ;; Existing slots
    (world-baseline  :initform *initial-world-baseline*
                     :accessor world-baseline
                     :documentation "Previous world state for event diff.
@@ -210,6 +235,10 @@
                     :documentation "When NIL, only top-level events
    (depth=0) are included and event numbers are stripped.  When T,
    all events including embedded sub-events with full tuples.")
+   (exworld-p       :initform *initial-exworld-p*
+                    :accessor exworld-p
+                    :documentation "When T, include extra-world metadata:
+   symbol references, dependency edges, macro expansions, raw CL defs.")
    (bootstrap-p     :initform *initial-bootstrap-p*
                     :accessor bootstrap-p
                     :documentation "When T, kernel is in boot-strap mode.
@@ -353,10 +382,11 @@
 ;;; infrastructure (next-absolute-command-number → (1+ NIL) → crash),
 ;;; and interactive features like :pe, :pbt are not needed.
 
-(defun bootstrap-read-eval-print-loop (channel state)
+(defun bootstrap-read-eval-print-loop (k channel state)
   "Read forms from CHANNEL, evaluate each via trans-eval.
    Simplified for boot-strap mode: no keyword expansion, no command
-   landmarks.  Output routing is handled by the caller."
+   landmarks.  Output routing is handled by the caller.
+   K is the kernel instance for accumulating extra-world metadata."
   (let ((*readtable* acl2::*acl2-readtable*))
     (catch 'acl2::local-top-level
       (loop
@@ -365,6 +395,9 @@
             (acl2::read-object channel state)
           (when eofp (return))
           (let ((form raw-form))
+            ;; Extra-world: extract symbols from the read form
+            (when (exworld-p k)
+              (accumulate-form-symbols k form (w state)))
             (initialize-accumulated-warnings)
             (acl2::initialize-timers state)
             (f-put-global 'acl2::last-make-event-expansion nil state)
@@ -385,11 +418,12 @@
 ;;;     We display val via execute_result unless it's :invisible.
 ;;;   - For non-triples: replaced-val is the value(s) directly.
 
-(defun jupyter-read-eval-print-loop (channel state)
+(defun jupyter-read-eval-print-loop (k channel state)
   "Read forms from CHANNEL, evaluate each via trans-eval, send results
    to Jupyter.  Runs inside the persistent LP context set up by start.
    catch 'local-top-level is per-cell so a throw aborts the rest of
-   the cell but not the kernel."
+   the cell but not the kernel.
+   K is the kernel instance for accumulating extra-world metadata."
   (let ((*readtable* acl2::*acl2-readtable*))
     (catch 'acl2::local-top-level
       (loop
@@ -408,6 +442,12 @@
                         ((stringp raw-form)
                          (list 'acl2::in-package raw-form))
                         (t raw-form))))
+            ;; Extra-world: extract symbols and capture pre-eval snapshot
+            (when (exworld-p k)
+              (let ((form-syms (accumulate-form-symbols k form (w state))))
+                (declare (ignore form-syms))
+                ;; Try macro expansion capture before eval
+                (accumulate-form-expansion k form state)))
             ;; Save world state before eval -- needed for command landmarks.
             ;; This mirrors ld-fn0 which saves old-wrld and
             ;; old-default-defun-mode before calling trans-eval.
@@ -459,6 +499,41 @@
 
 
 ;;; ---------------------------------------------------------------------------
+;;; Per-Form Extra-World Metadata Accumulation
+;;; ---------------------------------------------------------------------------
+;;; These functions are called from the REPL loops for each form,
+;;; accumulating metadata into the kernel's per-cell slots.
+
+(defun accumulate-form-symbols (k form wrld)
+  "Extract symbols from FORM and merge into K's cell-symbols accumulator.
+   Also takes a binding snapshot for raw-change detection.
+   Returns the extracted symbol table (for potential reuse by caller)."
+  (handler-case
+      (let ((table (extract-symbols form)))
+        ;; Merge into cell-symbols: convert to JSON entries and append
+        (let ((new-entries (symbols-table-to-json table wrld)))
+          (when (plusp (length new-entries))
+            (setf (cell-symbols k)
+                  (concatenate 'vector (cell-symbols k) new-entries))))
+        ;; Take binding snapshot for raw-change detection
+        (let ((snap (snapshot-bindings table)))
+          (setf (cell-binding-snapshot k)
+                (append (cell-binding-snapshot k) snap)))
+        table)
+    (error () nil)))
+
+(defun accumulate-form-expansion (k form state)
+  "Try to capture macro expansion for FORM and append to K's
+   cell-expansions accumulator."
+  (handler-case
+      (let ((expansion (capture-expansion form state)))
+        (when expansion
+          (setf (cell-expansions k)
+                (concatenate 'vector (cell-expansions k)
+                             (vector expansion)))))
+    (error () nil)))
+
+;;; ---------------------------------------------------------------------------
 ;;; Cell Metadata Capture
 ;;; ---------------------------------------------------------------------------
 
@@ -500,7 +575,8 @@
 
 (defun collect-cell-events (k)
   "Diff post-world against world-baseline in kernel K.
-   Updates cell-events, cell-forms, cell-package, and world-baseline."
+   Updates cell-events, cell-forms, cell-package, world-baseline,
+   and extra-world metadata (dependencies, raw-defs)."
   (let* ((post-wrld (w *the-live-state*))
          (baseline  (world-baseline k))
          (scan      (if baseline (ldiff post-wrld baseline) post-wrld))
@@ -510,14 +586,45 @@
     (setf (cell-events k)   (coerce events 'vector)
           (cell-forms k)    (when forms (coerce forms 'vector))
           (cell-package k)  (acl2::current-package *the-live-state*)
-          (world-baseline k) post-wrld)))
+          (world-baseline k) post-wrld)
+    ;; Extra-world: build dependency edges from defined symbols
+    (when (exworld-p k)
+      (handler-case
+          (let ((deps (build-dependency-edges tuples post-wrld)))
+            (when deps
+              (setf (cell-dependencies k) deps)))
+        (error () nil))
+      ;; Extra-world: detect raw CL-level side effects
+      (handler-case
+          (when (cell-binding-snapshot k)
+            ;; Re-check all symbols we saw in this cell
+            (let ((all-syms (make-hash-table :test 'eq)))
+              (dolist (entry (cell-binding-snapshot k))
+                (setf (gethash (car entry) all-syms) t))
+              (let ((changes (detect-raw-changes
+                              (cell-binding-snapshot k) all-syms)))
+                (when changes
+                  (setf (cell-raw-defs k)
+                        (coerce changes 'vector))))))
+        (error () nil)))))
 
 (defun send-cell-metadata (k)
-  "Send cell metadata as display_data with vendor MIME type."
+  "Send cell metadata as display_data with vendor MIME type.
+   Includes both world-event metadata and extra-world metadata."
   (let ((alist (list (cons "events" (cell-events k))
                      (cons "package" (cell-package k)))))
     (when (plusp (length (cell-forms k)))
       (push (cons "forms" (cell-forms k)) (cdr (last alist))))
+    ;; Extra-world metadata (only when exworld mode is active)
+    (when (exworld-p k)
+      (when (plusp (length (cell-symbols k)))
+        (push (cons "symbols" (cell-symbols k)) (cdr (last alist))))
+      (when (cell-dependencies k)
+        (push (cons "dependencies" (cell-dependencies k)) (cdr (last alist))))
+      (when (plusp (length (cell-expansions k)))
+        (push (cons "expansions" (cell-expansions k)) (cdr (last alist))))
+      (when (plusp (length (cell-raw-defs k)))
+        (push (cons "raw_definitions" (cell-raw-defs k)) (cdr (last alist)))))
     (jupyter::send-display-data
      (jupyter::kernel-iopub k)
      (list :object-plist
@@ -591,8 +698,8 @@
         (let ((channel (make-string-input-channel trimmed)))
           (unwind-protect
               (if (bootstrap-p k)
-                  (bootstrap-read-eval-print-loop channel *the-live-state*)
-                  (jupyter-read-eval-print-loop channel *the-live-state*))
+                  (bootstrap-read-eval-print-loop k channel *the-live-state*)
+                  (jupyter-read-eval-print-loop k channel *the-live-state*))
             (close-string-input-channel channel))))
       (collect-cell-events k)
       (values)))
@@ -601,7 +708,14 @@
   (declare (ignore source-path breakpoints))
   (setf (cell-events k) #()
         (cell-forms k)  nil
-        (cell-package k) "ACL2")
+        (cell-package k) "ACL2"
+        ;; Reset extra-world metadata accumulators (always reset,
+        ;; even if exworld-p is nil, to keep slots clean)
+        (cell-symbols k)    #()
+        (cell-dependencies k) nil
+        (cell-expansions k) #()
+        (cell-raw-defs k)   #()
+        (cell-binding-snapshot k) nil)
   (let ((trimmed (string-trim '(#\Space #\Tab #\Newline #\Return) code)))
     (when (plusp (length trimmed))
       (multiple-value-bind (ename evalue traceback)
@@ -678,12 +792,13 @@
       (acl2::acl2-unwind 0 nil))))
 
 (defun start (&optional connection-file
-              &key full-world event-forms deep-events)
+              &key full-world event-forms deep-events exworld)
   "Start the ACL2 Jupyter kernel.
    CONNECTION-FILE: Jupyter connection file path (or from argv).
    FULL-WORLD: when T, first cell gets entire world (not just diff).
    EVENT-FORMS: when T, include original event forms in metadata.
-   DEEP-EVENTS: when T, include embedded sub-events with full tuples."
+   DEEP-EVENTS: when T, include embedded sub-events with full tuples.
+   EXWORLD: when T, include extra-world metadata (symbols, deps, expansions)."
   (acl2::acl2-default-restart)
   ;; LP first-entry initialization (normally done by lp on first call).
   (let ((state *the-live-state*))
@@ -701,6 +816,7 @@
     (setq *initial-bootstrap-p* nil)
     (setq *initial-event-forms-p* (and event-forms t))
     (setq *initial-deep-events-p* (and deep-events t))
+    (setq *initial-exworld-p* (and exworld t))
     (let ((conn (or connection-file
                     (first (uiop:command-line-arguments)))))
       (unless conn (error "No connection file provided"))

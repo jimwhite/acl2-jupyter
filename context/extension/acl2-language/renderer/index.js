@@ -1,115 +1,350 @@
 // ACL2 Events Renderer for VS Code Notebooks
 // Renders application/vnd.acl2.events+json output
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Create an element with inline styles from an object. */
+function el(tag, styles, textContent) {
+  const e = document.createElement(tag);
+  if (styles) Object.assign(e.style, styles);
+  if (textContent !== undefined) e.textContent = textContent;
+  return e;
+}
+
+/** Badge span used for package names, symbol kinds, etc. */
+function badge(text, bg, fg) {
+  return el("span", {
+    display: "inline-block",
+    padding: "1px 6px",
+    borderRadius: "4px",
+    backgroundColor: bg || "var(--vscode-badge-background, #4d4d4d)",
+    color: fg || "var(--vscode-badge-foreground, #fff)",
+    fontSize: "0.85em",
+  }, text);
+}
+
+/** Muted description text. */
+function muted(text) {
+  return el("span", {
+    fontSize: "0.85em",
+    color: "var(--vscode-descriptionForeground, #888)",
+  }, text);
+}
+
+/** A clickable toggle that shows/hides a target element. */
+function makeToggle(label, target) {
+  const btn = el("span", {
+    cursor: "pointer",
+    fontSize: "0.85em",
+    color: "var(--vscode-textLink-foreground, #3794ff)",
+    userSelect: "none",
+  }, `▶ ${label}`);
+  let open = false;
+  btn.addEventListener("click", () => {
+    open = !open;
+    target.style.display = open ? "block" : "none";
+    btn.textContent = open ? `▼ ${label}` : `▶ ${label}`;
+  });
+  return btn;
+}
+
+/** Card container for detail items. */
+function card() {
+  return el("div", {
+    marginTop: "6px",
+    padding: "6px 8px",
+    borderRadius: "4px",
+    backgroundColor: "var(--vscode-editor-background, #1e1e1e)",
+    border: "1px solid var(--vscode-panel-border, #333)",
+  });
+}
+
+/** Pre-formatted code block. */
+function codeBlock(text) {
+  return el("div", {
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+    color: "var(--vscode-editor-foreground, #d4d4d4)",
+  }, text);
+}
+
+// Kind → badge colour mapping (VS Code theme-friendly)
+const KIND_COLORS = {
+  function:       ["var(--vscode-symbolIcon-functionForeground, #b180d7)", "var(--vscode-editor-background, #1e1e1e)"],
+  macro:          ["var(--vscode-symbolIcon-enumeratorForeground, #ee9d28)", "var(--vscode-editor-background, #1e1e1e)"],
+  theorem:        ["var(--vscode-symbolIcon-interfaceForeground, #75beff)", "var(--vscode-editor-background, #1e1e1e)"],
+  constant:       ["var(--vscode-symbolIcon-constantForeground, #4fc1ff)", "var(--vscode-editor-background, #1e1e1e)"],
+  stobj:          ["var(--vscode-symbolIcon-structForeground, #ee9d28)", "var(--vscode-editor-background, #1e1e1e)"],
+  "special-form": ["var(--vscode-symbolIcon-keywordForeground, #c586c0)", "var(--vscode-editor-background, #1e1e1e)"],
+  "cl-macro":     ["var(--vscode-symbolIcon-enumeratorMemberForeground, #ee9d28)", "var(--vscode-editor-background, #1e1e1e)"],
+  "cl-function":  ["var(--vscode-symbolIcon-methodForeground, #b180d7)", "var(--vscode-editor-background, #1e1e1e)"],
+  "cl-variable":  ["var(--vscode-symbolIcon-variableForeground, #75beff)", "var(--vscode-editor-background, #1e1e1e)"],
+};
+
+// ---------------------------------------------------------------------------
+// Section builders
+// ---------------------------------------------------------------------------
+
+/** Build the Events / Forms section (existing feature). */
+function buildEventsSection(events, forms) {
+  const wrap = el("div", { display: "none", padding: "0 8px 4px" });
+  const count = Math.max(events.length, forms.length);
+  for (let i = 0; i < count; i++) {
+    const c = card();
+    if (i < forms.length && forms[i]) {
+      c.appendChild(codeBlock(forms[i]));
+    }
+    if (i < events.length && events[i]) {
+      const ev = codeBlock(events[i]);
+      if (i < forms.length && forms[i]) {
+        Object.assign(ev.style, {
+          fontSize: "0.9em",
+          marginTop: "4px",
+          color: "var(--vscode-descriptionForeground, #888)",
+        });
+      }
+      c.appendChild(ev);
+    }
+    wrap.appendChild(c);
+  }
+  return wrap;
+}
+
+/** Build the Symbols section — a compact table. */
+function buildSymbolsSection(symbols) {
+  const wrap = el("div", { display: "none", padding: "0 8px 4px" });
+  const table = el("table", {
+    width: "100%",
+    borderCollapse: "collapse",
+    marginTop: "4px",
+    fontSize: "0.9em",
+  });
+
+  // Header
+  const thead = document.createElement("thead");
+  const hr = document.createElement("tr");
+  for (const h of ["Name", "Package", "Kind", "Pos"]) {
+    const th = el("th", {
+      textAlign: "left",
+      padding: "2px 8px 2px 0",
+      borderBottom: "1px solid var(--vscode-panel-border, #333)",
+      color: "var(--vscode-descriptionForeground, #888)",
+      fontWeight: "normal",
+    }, h);
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
+  table.appendChild(thead);
+
+  // Rows
+  const tbody = document.createElement("tbody");
+  for (const sym of symbols) {
+    const tr = document.createElement("tr");
+
+    // Name
+    const tdName = el("td", { padding: "2px 8px 2px 0" });
+    tdName.appendChild(el("code", {
+      color: "var(--vscode-editor-foreground, #d4d4d4)",
+    }, sym.name));
+    tr.appendChild(tdName);
+
+    // Package
+    tr.appendChild(el("td", {
+      padding: "2px 8px 2px 0",
+      color: "var(--vscode-descriptionForeground, #888)",
+    }, sym.package));
+
+    // Kind badge
+    const tdKind = el("td", { padding: "2px 8px 2px 0" });
+    const colors = KIND_COLORS[sym.kind] || [
+      "var(--vscode-badge-background, #4d4d4d)",
+      "var(--vscode-badge-foreground, #fff)",
+    ];
+    tdKind.appendChild(badge(sym.kind, colors[0], colors[1]));
+    tr.appendChild(tdKind);
+
+    // Position (operator / argument)
+    const pos = [];
+    if (sym.operator) pos.push("op");
+    if (sym.argument) pos.push("arg");
+    tr.appendChild(el("td", {
+      padding: "2px 8px 2px 0",
+      color: "var(--vscode-descriptionForeground, #888)",
+      fontSize: "0.9em",
+    }, pos.join(", ") || "—"));
+
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  return wrap;
+}
+
+/** Build the Dependencies section — definition → references. */
+function buildDependenciesSection(dependencies) {
+  const wrap = el("div", { display: "none", padding: "0 8px 4px" });
+  const keys = Object.keys(dependencies);
+  for (const defName of keys) {
+    const refs = dependencies[defName];
+    const c = card();
+
+    // Defined name
+    const header = el("div", { marginBottom: "4px" });
+    header.appendChild(el("code", {
+      color: "var(--vscode-symbolIcon-functionForeground, #b180d7)",
+      fontWeight: "bold",
+    }, defName));
+    header.appendChild(muted(` → ${refs.length} ref${refs.length !== 1 ? "s" : ""}`));
+    c.appendChild(header);
+
+    // Reference list
+    const refList = el("div", {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: "4px",
+    });
+    for (const ref of refs) {
+      refList.appendChild(badge(ref,
+        "var(--vscode-editor-inlayHint-background, #2a2a2a)",
+        "var(--vscode-editor-foreground, #d4d4d4)"));
+    }
+    c.appendChild(refList);
+    wrap.appendChild(c);
+  }
+  return wrap;
+}
+
+/** Build the Expansions section — form → expanded code. */
+function buildExpansionsSection(expansions) {
+  const wrap = el("div", { display: "none", padding: "0 8px 4px" });
+  for (const exp of expansions) {
+    const c = card();
+
+    // Original form
+    const formLabel = muted("form");
+    formLabel.style.display = "block";
+    formLabel.style.marginBottom = "2px";
+    c.appendChild(formLabel);
+    c.appendChild(codeBlock(exp.form));
+
+    // Arrow
+    c.appendChild(el("div", {
+      textAlign: "center",
+      color: "var(--vscode-descriptionForeground, #888)",
+      margin: "4px 0",
+    }, "↓ expands to"));
+
+    // Expansion
+    const expLabel = muted("expansion");
+    expLabel.style.display = "block";
+    expLabel.style.marginBottom = "2px";
+    c.appendChild(expLabel);
+    const expCode = codeBlock(exp.expansion);
+    expCode.style.color = "var(--vscode-symbolIcon-functionForeground, #b180d7)";
+    c.appendChild(expCode);
+
+    wrap.appendChild(c);
+  }
+  return wrap;
+}
+
+/** Build the Raw Definitions section — list of symbols with CL-level changes. */
+function buildRawDefsSection(rawDefs) {
+  const wrap = el("div", { display: "none", padding: "0 8px 4px" });
+  const c = card();
+  const list = el("div", { display: "flex", flexWrap: "wrap", gap: "4px" });
+  for (const name of rawDefs) {
+    list.appendChild(badge(name,
+      "var(--vscode-inputValidation-warningBackground, #352a05)",
+      "var(--vscode-inputValidation-warningForeground, #cca700)"));
+  }
+  c.appendChild(list);
+  wrap.appendChild(c);
+  return wrap;
+}
+
+// ---------------------------------------------------------------------------
+// Main Renderer
+// ---------------------------------------------------------------------------
+
 export const activate = (context) => ({
   renderOutputItem(data, element) {
     const acl2Data = data.json();
     const events = acl2Data.events || [];
     const forms = acl2Data.forms || [];
     const pkg = acl2Data.package || "ACL2";
-    const hasContent = events.length > 0 || forms.length > 0;
+    const symbols = acl2Data.symbols || [];
+    const dependencies = acl2Data.dependencies || {};
+    const expansions = acl2Data.expansions || [];
+    const rawDefs = acl2Data.raw_definitions || [];
 
-    // Create container
-    const container = document.createElement("div");
-    container.style.fontFamily = "var(--vscode-editor-font-family, monospace)";
-    container.style.fontSize = "var(--vscode-editor-font-size, 13px)";
-    container.style.lineHeight = "1.5";
+    const depCount = Object.keys(dependencies).length;
+    const hasEvents = events.length > 0 || forms.length > 0;
+    const hasExworld = symbols.length > 0 || depCount > 0 || expansions.length > 0 || rawDefs.length > 0;
+    const hasContent = hasEvents || hasExworld;
 
-    // Header row: package + counts + toggle (all on one line)
-    const headerRow = document.createElement("div");
-    headerRow.style.display = "flex";
-    headerRow.style.alignItems = "center";
-    headerRow.style.gap = "6px";
-    headerRow.style.padding = hasContent ? "4px 8px" : "0px 8px";
+    // Container
+    const container = el("div", {
+      fontFamily: "var(--vscode-editor-font-family, monospace)",
+      fontSize: "var(--vscode-editor-font-size, 13px)",
+      lineHeight: "1.5",
+    });
+
+    // Header row
+    const headerRow = el("div", {
+      display: "flex",
+      alignItems: "center",
+      gap: "6px",
+      padding: hasContent ? "4px 8px" : "0px 8px",
+      flexWrap: "wrap",
+    });
 
     // Package badge
-    const pkgBadge = document.createElement("span");
-    pkgBadge.style.display = "inline-block";
-    pkgBadge.style.padding = "1px 6px";
-    pkgBadge.style.borderRadius = "4px";
-    pkgBadge.style.backgroundColor = "var(--vscode-badge-background, #4d4d4d)";
-    pkgBadge.style.color = "var(--vscode-badge-foreground, #fff)";
-    pkgBadge.style.fontSize = "0.85em";
-    pkgBadge.textContent = pkg;
-    headerRow.appendChild(pkgBadge);
+    headerRow.appendChild(badge(pkg));
 
     if (hasContent) {
-      // Counts
-      const countsEl = document.createElement("span");
-      countsEl.style.fontSize = "0.85em";
-      countsEl.style.color = "var(--vscode-descriptionForeground, #888)";
+      // Summary counts
       const parts = [];
       if (forms.length > 0) parts.push(`${forms.length} form${forms.length !== 1 ? "s" : ""}`);
       if (events.length > 0) parts.push(`${events.length} event${events.length !== 1 ? "s" : ""}`);
-      countsEl.textContent = parts.join(", ");
-      headerRow.appendChild(countsEl);
+      if (symbols.length > 0) parts.push(`${symbols.length} sym`);
+      if (depCount > 0) parts.push(`${depCount} dep${depCount !== 1 ? "s" : ""}`);
+      if (expansions.length > 0) parts.push(`${expansions.length} exp`);
+      if (rawDefs.length > 0) parts.push(`${rawDefs.length} raw`);
+      headerRow.appendChild(muted(parts.join(" · ")));
 
-      // Toggle button (right after counts)
-      const toggleBtn = document.createElement("span");
-      toggleBtn.style.cursor = "pointer";
-      toggleBtn.style.fontSize = "0.85em";
-      toggleBtn.style.color = "var(--vscode-textLink-foreground, #3794ff)";
-      toggleBtn.style.userSelect = "none";
-      toggleBtn.textContent = "▶ Show";
-      headerRow.appendChild(toggleBtn);
+      // Sections — each gets its own toggle + detail container
+      const sections = [];
 
-      // Details container (hidden by default)
-      const detailsDiv = document.createElement("div");
-      detailsDiv.style.display = "none";
-      detailsDiv.style.padding = "0 8px 4px";
+      if (hasEvents) {
+        const sec = buildEventsSection(events, forms);
+        const label = forms.length > 0 ? "Forms" : "Events";
+        sections.push({ label, sec });
+      }
+      if (symbols.length > 0) {
+        sections.push({ label: "Symbols", sec: buildSymbolsSection(symbols) });
+      }
+      if (depCount > 0) {
+        sections.push({ label: "Deps", sec: buildDependenciesSection(dependencies) });
+      }
+      if (expansions.length > 0) {
+        sections.push({ label: "Expand", sec: buildExpansionsSection(expansions) });
+      }
+      if (rawDefs.length > 0) {
+        sections.push({ label: "Raw", sec: buildRawDefsSection(rawDefs) });
+      }
 
-      let expanded = false;
-      toggleBtn.addEventListener("click", () => {
-        expanded = !expanded;
-        detailsDiv.style.display = expanded ? "block" : "none";
-        toggleBtn.textContent = expanded ? "▼ Hide" : "▶ Show";
-      });
-
-      // Build event/form blocks
-      const count = Math.max(events.length, forms.length);
-      for (let i = 0; i < count; i++) {
-        const eventBlock = document.createElement("div");
-        eventBlock.style.marginTop = "6px";
-        eventBlock.style.padding = "6px 8px";
-        eventBlock.style.borderRadius = "4px";
-        eventBlock.style.backgroundColor = "var(--vscode-editor-background, #1e1e1e)";
-        eventBlock.style.border = "1px solid var(--vscode-panel-border, #333)";
-
-        // Show form if present
-        if (i < forms.length && forms[i]) {
-          const formEl = document.createElement("div");
-          formEl.style.color = "var(--vscode-editor-foreground, #d4d4d4)";
-          formEl.style.whiteSpace = "pre-wrap";
-          formEl.style.wordBreak = "break-word";
-          formEl.textContent = forms[i];
-          eventBlock.appendChild(formEl);
-        }
-
-        // Show event landmark
-        if (i < events.length && events[i]) {
-          const eventEl = document.createElement("div");
-          eventEl.style.whiteSpace = "pre-wrap";
-          eventEl.style.wordBreak = "break-word";
-          if (i < forms.length && forms[i]) {
-            // When shown alongside a form, make the event smaller/muted
-            eventEl.style.fontSize = "0.9em";
-            eventEl.style.marginTop = "4px";
-            eventEl.style.color = "var(--vscode-descriptionForeground, #888)";
-          } else {
-            // Event shown alone — use normal foreground
-            eventEl.style.color = "var(--vscode-editor-foreground, #d4d4d4)";
-          }
-          eventEl.textContent = events[i];
-          eventBlock.appendChild(eventEl);
-        }
-
-        detailsDiv.appendChild(eventBlock);
+      for (const { label, sec } of sections) {
+        headerRow.appendChild(makeToggle(label, sec));
       }
 
       container.appendChild(headerRow);
-      container.appendChild(detailsDiv);
+      for (const { sec } of sections) {
+        container.appendChild(sec);
+      }
     } else {
-      // Zero events/forms: minimal footprint — just the header row with no padding
       container.appendChild(headerRow);
     }
 

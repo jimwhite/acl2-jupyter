@@ -14,6 +14,7 @@
   :serial t
   :components
     ((:file "packages")
+     (:file "symbols")
      (:file "kernel")
      (:file "complete")
      (:file "inspect")

@@ -91,12 +91,14 @@
   (let* ((full-world  (equal (or (uiop:getenv "ACL2_JUPYTER_FULL_WORLD") "0") "1"))
          (event-forms (equal (or (uiop:getenv "ACL2_JUPYTER_EVENT_FORMS") "0") "1"))
          (deep-events (equal (or (uiop:getenv "ACL2_JUPYTER_DEEP_EVENTS") "0") "1"))
+         (exworld     (equal (or (uiop:getenv "ACL2_JUPYTER_EXWORLD") "0") "1"))
          (start-form
-           (format nil "(acl2-jupyter-kernel:start \"~A\" :event-forms ~A :full-world ~A :deep-events ~A)"
+           (format nil "(acl2-jupyter-kernel:start \"~A\" :event-forms ~A :full-world ~A :deep-events ~A :exworld ~A)"
                    "{connection_file}"
                    (if event-forms "t" "nil")
                    (if full-world  "t" "nil")
-                   (if deep-events "t" "nil"))))
+                   (if deep-events "t" "nil")
+                   (if exworld     "t" "nil"))))
     (list lisp-runtime
           "--tls-limit" "16384"
           "--dynamic-space-size" "32000"

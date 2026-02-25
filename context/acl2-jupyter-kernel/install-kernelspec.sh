@@ -56,12 +56,14 @@ fi
 export ACL2_JUPYTER_EVENT_FORMS="${ACL2_JUPYTER_EVENT_FORMS:-1}"
 export ACL2_JUPYTER_FULL_WORLD="${ACL2_JUPYTER_FULL_WORLD:-0}"
 export ACL2_JUPYTER_DEEP_EVENTS="${ACL2_JUPYTER_DEEP_EVENTS:-0}"
+export ACL2_JUPYTER_EXWORLD="${ACL2_JUPYTER_EXWORLD:-0}"
 
 echo "=== Installing ACL2 Jupyter Kernelspec ==="
 echo "  saved_acl2: ${SAVED_ACL2}"
 echo "  event-forms: ${ACL2_JUPYTER_EVENT_FORMS}"
 echo "  full-world:  ${ACL2_JUPYTER_FULL_WORLD}"
 echo "  deep-events: ${ACL2_JUPYTER_DEEP_EVENTS}"
+echo "  exworld:     ${ACL2_JUPYTER_EXWORLD}"
 echo ""
 
 "${SAVED_ACL2}" <<EOF

@@ -60,3 +60,19 @@ Ref badge color fix (badge-background/badge-foreground), symbols table column re
 - Over-broad edges accepted for compound forms
 - Output format unchanged — `{"defined-name": ["ref1", "ref2", ...]}`
 - `extract-newly-defined` serves dual purpose (deps + raw_defs filtering)
+
+### Phase 4a — Bootstrap pass-2 re-definition detection (DONE)
+
+**Problem**: In `--pass2-only` bootstrap mode, pass 1 runs internally via `ld-fn` before the REPL starts. By the time pass 2 executes notebook cells, all symbols are already defined. The kind-snapshot diff (`extract-newly-defined`) sees `:function` → `:function` and finds no transitions, producing empty dependency sets for pass-2 notebooks.
+
+**Solution**: Augment `extract-newly-defined` (kind diff) with `extract-event-defined-names` (event tuple extraction). Pass-2 forms still create event landmarks in the world (even though they're redundant re-definitions), so the event tuples from the world diff provide a reliable signal for what each cell defined.
+
+#### Implementation
+
+- **`extract-event-defined-names`** (symbols.lisp): iterates event tuples, strips LOCAL wrapper and event number, extracts the symbol name from `(cadr summary)` position. No hardcoded event type list — any symbol in the name position is included (filtered by `interesting-symbol-p`). Uses `pushnew` for dedup.
+- **`build-source-dependencies`** (symbols.lisp): new optional `event-tuples` parameter. Computes `newly-defined` as the `union` of `extract-newly-defined` (kind diff, catches fresh definitions) and `extract-event-defined-names` (event tuples, catches re-definitions in bootstrap pass 2).
+- **`collect-cell-events`** (kernel.lisp): passes `tuples` as 4th arg to `build-source-dependencies`. Guard changed from `(cell-kind-snapshot k)` to `(or (cell-kind-snapshot k) tuples)` so deps are computed even when no kind snapshot exists. Raw-defs filter likewise uses the union approach.
+
+#### Key insight
+
+Both signals are always available and complementary. In normal kernel mode, `extract-newly-defined` catches everything (symbols go unknown → known). In bootstrap pass 2, `extract-event-defined-names` catches re-definitions. The union is always safe — it can only add more defined names, never remove them.

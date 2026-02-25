@@ -244,19 +244,48 @@
                   (not (eq :unknown (classify-symbol-safe sym post-wrld))))
           collect sym))
 
-(defun build-source-dependencies (kind-snapshot post-wrld source-forms)
-  "Build dependency edges using the pre/post classify diff approach.
+(defun extract-event-defined-names (event-tuples)
+  "Extract symbol names from event tuple summaries.
+   Each depth-0 tuple is (n summary form-type form-name formals body ...).
+   The summary is ((event-types...) name . mode).
+   Unlike the old extract-defined-names, this does NOT hardcode a list of
+   event types — any tuple whose summary has a symbol in the name position
+   is included.  This catches re-definitions in bootstrap pass 2 where the
+   kind-snapshot diff sees no change."
+  (let ((names nil))
+    (dolist (et event-tuples)
+      (let ((inner (if (eq (car et) 'acl2::local) (cdr et) et)))
+        (let* ((rest (if (integerp (car inner)) (cdr inner) inner))
+               (summary (car rest)))
+          (when (consp summary)
+            (let ((name (cadr summary)))
+              (when (and (symbolp name)
+                         (interesting-symbol-p name))
+                (pushnew name names :test #'eq)))))))
+    (nreverse names)))
+
+(defun build-source-dependencies (kind-snapshot post-wrld source-forms
+                                  &optional event-tuples)
+  "Build dependency edges using the pre/post classify diff approach,
+   augmented by event tuple extraction for bootstrap pass-2 re-definitions.
    KIND-SNAPSHOT is an alist of (sym . pre-eval-kind).
    POST-WRLD is the ACL2 world after eval.
    SOURCE-FORMS is a list of live s-expressions from the cell.
+   EVENT-TUPLES (optional) provides event-landmark tuples from the world diff;
+   defined names are extracted from these and unioned with the kind-snapshot
+   diff so that re-definitions (e.g. bootstrap pass 2) are also detected.
 
-   For each newly-defined symbol (unknown→known), find the source form
-   that mentions it, walk that form to extract all referenced symbols,
-   and emit an edge from the defined symbol to its references.
+   For each defined symbol, find the source form that mentions it, walk that
+   form to extract all referenced symbols, and emit an edge from the defined
+   symbol to its references.
 
    For compound forms where multiple defined symbols match the same form,
    each gets the full reference set minus itself (over-broad, accepted)."
-  (let ((newly-defined (extract-newly-defined kind-snapshot post-wrld)))
+  (let* ((from-kind-diff (extract-newly-defined kind-snapshot post-wrld))
+         (from-events (when event-tuples
+                        (extract-event-defined-names event-tuples)))
+         ;; Union: kind-diff catches fresh definitions, events catch re-defs
+         (newly-defined (union from-kind-diff from-events :test #'eq)))
     (when newly-defined
       ;; Pre-compute extract-symbols tables for each source form
       (let ((form-tables (mapcar (lambda (form)

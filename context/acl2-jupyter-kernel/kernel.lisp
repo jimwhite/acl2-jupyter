@@ -619,12 +619,14 @@
             (reclassify-unknown-symbols (cell-symbols k) post-wrld))
         (error () nil))
       ;; Extra-world: build dependency edges via pre/post classify diff
+      ;; + event tuple extraction (catches re-definitions in bootstrap pass 2)
       (handler-case
-          (when (cell-kind-snapshot k)
+          (when (or (cell-kind-snapshot k) tuples)
             (let ((deps (build-source-dependencies
                          (cell-kind-snapshot k)
                          post-wrld
-                         (cell-source-forms k))))
+                         (cell-source-forms k)
+                         tuples)))
               (when deps
                 (setf (cell-dependencies k) deps))))
         (error () nil))
@@ -637,18 +639,24 @@
                 (setf (gethash (car entry) all-syms) t))
               (let* ((changes (detect-raw-changes
                                (cell-binding-snapshot k) all-syms))
-                     ;; Build set of newly-defined names as "pkg::name" strings
+                     ;; Build set of defined names as "pkg::name" strings
+                     ;; Union of kind-diff + event-tuple extraction
                      (defined-names
-                       (when (cell-kind-snapshot k)
-                         (let ((names nil)
-                               (*print-case* :downcase))
-                           (dolist (sym (extract-newly-defined
-                                        (cell-kind-snapshot k) post-wrld)
-                                       names)
-                             (push (format nil "~A::~A"
-                                           (package-name (symbol-package sym))
-                                           (symbol-name sym))
-                                   names)))))
+                       (let ((names nil)
+                             (*print-case* :downcase)
+                             (defined-syms
+                               (union
+                                (when (cell-kind-snapshot k)
+                                  (extract-newly-defined
+                                   (cell-kind-snapshot k) post-wrld))
+                                (when tuples
+                                  (extract-event-defined-names tuples))
+                                :test #'eq)))
+                         (dolist (sym defined-syms names)
+                           (push (format nil "~A::~A"
+                                         (package-name (symbol-package sym))
+                                         (symbol-name sym))
+                                 names))))
                      ;; Subtract expected definitions
                      (unexpected (remove-if
                                   (lambda (c) (member c defined-names

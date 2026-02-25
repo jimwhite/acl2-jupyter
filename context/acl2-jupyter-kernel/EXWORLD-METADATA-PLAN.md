@@ -1,66 +1,75 @@
 ## Plan: Non-World Metadata Capture for ACL2 Jupyter Kernel
 
-**TL;DR** — Extend the kernel's per-cell metadata beyond world event landmarks to include: (1) all symbols referenced in the cell with their resolved packages and kinds, (2) dependency edges from defined symbols to referenced symbols, (3) macro expansion of ACL2 forms via `translate1`, and (4) detection of raw CL-level side effects (new `fboundp`/`boundp` bindings not covered by world events). The metadata flows through the existing `display_data` / `application/vnd.acl2.events+json` MIME channel.
+> **Status**: Core features implemented on branch `exworld-metadata`.
+> Phase 3 below is the current work item.
+
+**TL;DR** — Extend the kernel's per-cell metadata beyond world event landmarks to include: (1) all symbols referenced in the cell with their resolved packages and kinds, (2) dependency edges from defined symbols to referenced symbols with typed refs, (3) macro expansion of ACL2 forms via `translate1`, and (4) detection of genuinely unexpected CL-level side effects. The metadata flows through the existing `display_data` / `application/vnd.acl2.events+json` MIME channel, gated behind the `:exworld` kernel option (`ACL2_JUPYTER_EXWORLD=1`).
+
+---
+
+### Phase 1 — Core exworld metadata (DONE)
+
+Implemented symbols.lisp, kernel.lisp integration, .asd registration, feature gating, test segregation. All 12 exworld + 11 base tests passing. Renderer rewritten with sections for Forms, Symbols, Deps, Expand, Raw.
+
+### Phase 2 — Renderer polish (DONE)
+
+Ref badge color fix (badge-background/badge-foreground), symbols table column reorder (Package/Name/Kind/Pos with explicit widths).
+
+### Phase 3 — Fix unknown kinds, typed dep refs, filter raw_definitions (CURRENT)
+
+Three bugs/improvements discovered during hanoi.ipynb testing:
+
+#### 3a. Post-eval re-classification of "unknown" symbols
+
+**Problem**: `accumulate-form-symbols` calls `classify-symbol` via `symbols-table-to-json` BEFORE `trans-eval`. Symbols being defined by the cell (e.g. `foo` in `(defun foo ...)`) don't yet have world properties, so they get `kind: "unknown"`.
+
+**Fix**: In `collect-cell-events` (kernel.lisp ~L576), after the world is updated, iterate over `cell-symbols` entries. For any with `kind == "unknown"`, re-query the post-eval world via `classify-symbol-safe` and update the entry in place.
+
+- File: kernel.lisp `collect-cell-events`, after `(setf (world-baseline k) post-wrld)`
+- Loop over `(cell-symbols k)`, parse each entry's `kind` field, re-classify if `"unknown"`
+- Need helper in symbols.lisp: `reclassify-unknown-symbols(symbols-vector wrld)` that mutates the vector entries
+
+#### 3b. Typed dependency references
+
+**Problem**: Dependency refs are plain strings like `"COMMON-LISP::consp"`. User wants to see what kind each referenced symbol is.
+
+**Fix** (already partially applied to symbols.lisp): `extract-body-references` now returns objects `{"name": "pkg::sym", "kind": "function"}` instead of strings. `build-dependency-edges` passes them through.
+
+- File: symbols.lisp `extract-body-references` — DONE, returns `(:object-alist ("name" . n) ("kind" . k))`
+- File: renderer/index.js `buildDependenciesSection` (~L205) — update to read `ref.name` and `ref.kind`, render kind-colored badge (reuse `KIND_COLORS` map) next to the ref name. Handle backward compat: if `ref` is a string (old format), treat as before.
+- File: test_exworld_metadata.py — update `TestDependencies` assertions: `ref_names = [r["name"].lower() if isinstance(r, dict) else r.lower() for r in refs]`
+
+#### 3c. Filter raw_definitions to only unexpected side effects
+
+**Problem**: `raw_definitions` currently reports every symbol that gained `fboundp`/`boundp` after eval. But ACL2 `defun` always installs a CL-level `fboundp` — that's expected, not a "raw CL side effect". The feature reports noise.
+
+**Fix**: In `collect-cell-events` (~L600), after building dependency edges (which calls `extract-defined-names`), pass the set of ACL2-defined names to the raw-change detection. Subtract them so only genuinely unexpected CL bindings appear.
+
+- File: kernel.lisp `collect-cell-events` — get `defined-names` from `extract-defined-names(tuples)`, pass to a new function or filter inline
+- File: symbols.lisp — add `filter-expected-definitions(changes defined-names)` or modify `detect-raw-changes` to accept an exclusion set
+- The key: format defined names as `"pkg::name"` strings (same format as changes) and subtract
 
 **Steps**
 
-1. **Add a symbol extraction utility** in a new file context/acl2-jupyter-kernel/symbols.lisp. Implement `extract-symbols` — a recursive walker over read s-expressions that collects every symbol into a hash table (deduped). After `read-object` returns a form but before `trans-eval`, walk the form. For each symbol, record:
-   - `symbol-name`, `symbol-package` (the package it resolved in during read)
-   - Position: operator vs argument (is it `(car ...)` of a cons = function position?)
-   - This captures the reader's *actual* symbol resolution — no separate parser needed since forms are already live Lisp objects with packages resolved.
-
-2. **Classify referenced symbols against the ACL2 world** (also in symbols.lisp). For each extracted symbol, query the world (before eval) via `getpropc`:
-   - `'acl2::formals` → function
-   - `'acl2::macro-args` → macro
-   - `'acl2::theorem` → theorem
-   - `'acl2::const` → constant
-   - `'acl2::stobj` → stobj
-   - `boundp` / `fboundp` at CL level → raw Lisp binding
-   - None of the above → unknown/forward-reference
-
-3. **Capture macro expansions** in kernel.lisp. Between `read-object` and `trans-eval`, call ACL2's `translate1` on the form:
-   ```
-   (translate1 form :stobjs-out '((:stobjs-out . :stobjs-out)) t ctx wrld state)
-   ```
-   This returns `(mv erp translated-term bindings state)`. The `translated-term` is the fully macro-expanded, translated ACL2 term. Compare surface symbols in the original form vs the translated term to identify which macros expanded and what they expanded into. Wrap in `ignore-errors` — translation can fail for event forms like `defun` (which aren't expressions); for those, fall back to extracting the body and translating just that.
-
-4. **Detect raw CL-level side effects** in kernel.lisp. Before `trans-eval`, snapshot a set of "interesting" CL-level bindings:
-   - `fboundp` status for symbols in the cell's form (from step 1)
-   - `boundp` status for the same symbols
-   - Optionally: count of symbols in `ACL2_*1*_ACL2` package (detects new *1* compiled functions)
-   
-   After `trans-eval`, re-check these. Any newly `fboundp`/`boundp` symbol not accounted for by world event landmarks is a raw CL-level definition. Report these separately.
-
-5. **Build dependency edges** in symbols.lisp. After eval, for each symbol *newly defined* by this cell (detected via world diff in `collect-cell-events`):
-   - Retrieve its `'unnormalized-body` from the post-eval world via `(getpropc sym 'acl2::unnormalized-body nil post-wrld)`
-   - Walk the body to extract all referenced symbols (reusing `extract-symbols`)
-   - For macros: walk the `'macro-body` property
-   - For theorems: walk the `'theorem` property (the theorem body is stored as a translated term)
-   - Each `(defined-symbol . referenced-symbols-list)` pair is a dependency edge
-
-6. **Extend `send-cell-metadata`** in kernel.lisp (around kernel.lisp). Add new keys to the `application/vnd.acl2.events+json` payload:
-
-   | Key | Type | Description |
-   |-----|------|-------------|
-   | `symbols` | array of objects | Each: `{name, package, kind, defined}` |
-   | `dependencies` | object | `{defined_sym: [referenced_sym, ...], ...}` |
-   | `expansions` | array of objects | Each: `{form, expansion}` (macro-expanded forms) |
-   | `raw_definitions` | array of strings | CL-level `fboundp`/`boundp` changes not in world events |
-
-7. **Register the new file** in acl2-jupyter-kernel.asd — add `"symbols"` to the `:components` list.
-
-8. **Accumulate across forms in a cell** — the read-eval-print loop in `jupyter-read-eval-print-loop` processes multiple forms per cell. Add per-cell accumulator slots to the `kernel` class (e.g., `cell-symbols`, `cell-dependencies`, `cell-expansions`, `cell-raw-defs`) that get reset at the start of `eval-cell` and populated incrementally by each form in the loop.
+1. **symbols.lisp**: Add `reclassify-unknown-symbols` — takes the symbols vector and post-eval wrld, updates `"kind"` fields in place for any `"unknown"` entries
+2. **kernel.lisp `collect-cell-events`**: Call `reclassify-unknown-symbols` on `(cell-symbols k)` with `post-wrld` after setting `world-baseline`
+3. **kernel.lisp `collect-cell-events`**: Extract `defined-names` from `extract-defined-names(tuples)`, format as `"pkg::name"` strings, subtract from raw-changes result before storing in `cell-raw-defs`
+4. **renderer/index.js `buildDependenciesSection`**: Read `ref.name`/`ref.kind` from each dep ref object; render `ref.name` text with a kind-colored badge from `KIND_COLORS[ref.kind]`; handle backward compat for plain string refs
+5. **test_exworld_metadata.py**: Update `TestDependencies` assertions to handle `{name, kind}` objects; optionally add a test verifying defined symbols get correct kind post-eval
+6. **Reinstall kernel**: Clear FASL cache, run `install-kernelspec.sh`
+7. **Verify**: Run `pytest test_exworld_metadata.py`, execute hanoi.ipynb cells, confirm kinds are correct, dep refs show kinds, raw_definitions is empty for normal ACL2 defuns
 
 **Verification**
 
-- Test with a cell containing `(defun app (x y) (if (consp x) (cons (car x) (app (cdr x) y)) y))` — should report `app` as defined (function), and `consp`, `cons`, `car`, `cdr`, `if` as referenced, with dependency edge `app → {consp, cons, car, cdr, app}` (self-recursive).
-- Test with `(defmacro my-mac (x) ...)` followed by `(my-mac foo)` in a later cell — the second cell should show `my-mac` as a referenced macro, and `expansions` should show what `(my-mac foo)` expanded to.
-- Test with a `:pe` keyword command — should resolve symbols referenced in the expansion `(ACL2::PE 'sym)`.
-- Run the existing `test_kernel.py` and `test_kernel_eval.lisp` tests to ensure no regressions.
+- `pytest test_exworld_metadata.py -v --timeout=180` — all tests pass
+- Execute `(defun mem (e x) ...)` in hanoi.ipynb — Symbols section shows `mem` as `kind: function` (not `unknown`)
+- Dependencies show typed refs: `consp` with function badge, `equal` with function badge, etc.
+- `raw_definitions` is absent/empty for normal ACL2 defun cells (no false positives)
+- `pytest test_metadata.py -v --timeout=180` — base tests still pass (backward compat)
 
 **Decisions**
 
-- **S-expression walking over pre-parsing**: Since `read-object` already resolves symbols into live Lisp objects with correct packages, walking the resulting form is simpler and more accurate than running a separate parser (tree-sitter/Eclector). Tree-sitter doesn't know package state; Eclector would need to replicate ACL2's readtable. The read form IS the ground truth.
-- **`translate1` for macro expansion**: ACL2 macros are expanded by `translate`, not CL's `macroexpand` — so `*macroexpand-hook*` is useless for ACL2 macros. Calling `translate1` directly is the correct approach, matching how `trans-eval0` uses it internally.
-- **Dependency from world properties, not from source**: Extracting dependencies from `'unnormalized-body` / `'theorem` in the post-eval world is more reliable than trying to parse the source form, because the world stores the actual processed body after macro expansion and normalization.
-- **Same MIME channel**: Extending the existing vendor MIME type keeps the transport unified and ensures metadata persists in `.ipynb` files for downstream tools.
+- Re-classify post-eval (approach A) chosen over form-based inference — more accurate, catches all world properties including theorems/constants/stobjs
+- raw_definitions: filter out ACL2-defined names rather than removing the feature (preserves detection of genuine CL side effects like `defparameter` in progn)
+- Dependency ref format: `{name, kind}` objects with backward-compat string handling in renderer
+- Same MIME channel, same feature gate (`ACL2_JUPYTER_EXWORLD=1`)

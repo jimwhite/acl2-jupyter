@@ -133,6 +133,28 @@
              table)
     (coerce (nreverse entries) 'vector)))
 
+(defun reclassify-unknown-symbols (symbols-vector wrld)
+  "Re-classify any symbol entries in SYMBOLS-VECTOR that have kind \"unknown\".
+   Mutates the vector entries in place.  Called after eval when the world
+   has been updated with new definitions."
+  (loop for i from 0 below (length symbols-vector)
+        for entry = (aref symbols-vector i)
+        ;; entry is (:object-alist ("name" . n) ("package" . p) ("kind" . k) ...)
+        for alist = (cdr entry)
+        for kind-cell = (assoc "kind" alist :test #'string=)
+        when (and kind-cell (string= (cdr kind-cell) "unknown"))
+          do (let* ((name-cell (assoc "name" alist :test #'string=))
+                    (pkg-cell  (assoc "package" alist :test #'string=))
+                    (sym (ignore-errors
+                           (find-symbol (string-upcase (cdr name-cell))
+                                        (cdr pkg-cell)))))
+               (when sym
+                 (let ((new-kind (string-downcase
+                                  (symbol-name
+                                   (classify-symbol-safe sym wrld)))))
+                   (unless (string= new-kind "unknown")
+                     (setf (cdr kind-cell) new-kind)))))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; Raw CL-Level Side Effect Detection
 ;;; ---------------------------------------------------------------------------

@@ -587,25 +587,44 @@
           (cell-forms k)    (when forms (coerce forms 'vector))
           (cell-package k)  (acl2::current-package *the-live-state*)
           (world-baseline k) post-wrld)
-    ;; Extra-world: build dependency edges from defined symbols
+    ;; Extra-world: reclassify unknown symbols now that world is updated
     (when (exworld-p k)
+      (handler-case
+          (when (plusp (length (cell-symbols k)))
+            (reclassify-unknown-symbols (cell-symbols k) post-wrld))
+        (error () nil))
+      ;; Extra-world: build dependency edges from defined symbols
       (handler-case
           (let ((deps (build-dependency-edges tuples post-wrld)))
             (when deps
               (setf (cell-dependencies k) deps)))
         (error () nil))
       ;; Extra-world: detect raw CL-level side effects
+      ;; Filter out symbols that were defined by ACL2 events (expected fboundp)
       (handler-case
           (when (cell-binding-snapshot k)
-            ;; Re-check all symbols we saw in this cell
             (let ((all-syms (make-hash-table :test 'eq)))
               (dolist (entry (cell-binding-snapshot k))
                 (setf (gethash (car entry) all-syms) t))
-              (let ((changes (detect-raw-changes
-                              (cell-binding-snapshot k) all-syms)))
-                (when changes
+              (let* ((changes (detect-raw-changes
+                               (cell-binding-snapshot k) all-syms))
+                     ;; Build set of ACL2-defined names as "pkg::name" strings
+                     (defined-names
+                       (let ((names nil)
+                             (*print-case* :downcase))
+                         (dolist (sym (extract-defined-names tuples) names)
+                           (push (format nil "~A::~A"
+                                         (package-name (symbol-package sym))
+                                         (symbol-name sym))
+                                 names))))
+                     ;; Subtract expected definitions
+                     (unexpected (remove-if
+                                  (lambda (c) (member c defined-names
+                                                      :test #'string=))
+                                  changes)))
+                (when unexpected
                   (setf (cell-raw-defs k)
-                        (coerce changes 'vector))))))
+                        (coerce unexpected 'vector))))))
         (error () nil)))))
 
 (defun send-cell-metadata (k)

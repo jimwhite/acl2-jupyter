@@ -122,17 +122,34 @@ function buildSymbolsSection(symbols) {
     fontSize: "0.9em",
   });
 
+  // Column config: header, width, align
+  const cols = [
+    { header: "Package", width: "15%", align: "right" },
+    { header: "Name",    width: "60%", align: "left" },
+    { header: "Kind",    width: "15%", align: "left" },
+    { header: "Pos",     width: "10%", align: "left" },
+  ];
+
+  // Colgroup
+  const colgroup = document.createElement("colgroup");
+  for (const col of cols) {
+    const c = document.createElement("col");
+    c.style.width = col.width;
+    colgroup.appendChild(c);
+  }
+  table.appendChild(colgroup);
+
   // Header
   const thead = document.createElement("thead");
   const hr = document.createElement("tr");
-  for (const h of ["Name", "Package", "Kind", "Pos"]) {
+  for (const col of cols) {
     const th = el("th", {
-      textAlign: "left",
+      textAlign: col.align,
       padding: "2px 8px 2px 0",
       borderBottom: "1px solid var(--vscode-panel-border, #333)",
       color: "var(--vscode-descriptionForeground, #888)",
       fontWeight: "normal",
-    }, h);
+    }, col.header);
     hr.appendChild(th);
   }
   thead.appendChild(hr);
@@ -143,21 +160,22 @@ function buildSymbolsSection(symbols) {
   for (const sym of symbols) {
     const tr = document.createElement("tr");
 
-    // Name
-    const tdName = el("td", { padding: "2px 8px 2px 0" });
+    // Package (right-aligned)
+    tr.appendChild(el("td", {
+      padding: "2px 8px 2px 0",
+      textAlign: "right",
+      color: "var(--vscode-descriptionForeground, #888)",
+    }, sym.package));
+
+    // Name (left-aligned, widest)
+    const tdName = el("td", { padding: "2px 8px 2px 0", textAlign: "left" });
     tdName.appendChild(el("code", {
       color: "var(--vscode-editor-foreground, #d4d4d4)",
     }, sym.name));
     tr.appendChild(tdName);
 
-    // Package
-    tr.appendChild(el("td", {
-      padding: "2px 8px 2px 0",
-      color: "var(--vscode-descriptionForeground, #888)",
-    }, sym.package));
-
-    // Kind badge
-    const tdKind = el("td", { padding: "2px 8px 2px 0" });
+    // Kind badge (left-aligned)
+    const tdKind = el("td", { padding: "2px 8px 2px 0", textAlign: "left" });
     const colors = KIND_COLORS[sym.kind] || [
       "var(--vscode-badge-background, #4d4d4d)",
       "var(--vscode-badge-foreground, #fff)",
@@ -165,12 +183,13 @@ function buildSymbolsSection(symbols) {
     tdKind.appendChild(badge(sym.kind, colors[0], colors[1]));
     tr.appendChild(tdKind);
 
-    // Position (operator / argument)
+    // Position (left-aligned)
     const pos = [];
     if (sym.operator) pos.push("op");
     if (sym.argument) pos.push("arg");
     tr.appendChild(el("td", {
       padding: "2px 8px 2px 0",
+      textAlign: "left",
       color: "var(--vscode-descriptionForeground, #888)",
       fontSize: "0.9em",
     }, pos.join(", ") || "—"));
@@ -207,8 +226,8 @@ function buildDependenciesSection(dependencies) {
     });
     for (const ref of refs) {
       refList.appendChild(badge(ref,
-        "var(--vscode-editor-inlayHint-background, #2a2a2a)",
-        "var(--vscode-editor-foreground, #d4d4d4)"));
+        "var(--vscode-badge-background, #4d4d4d)",
+        "var(--vscode-badge-foreground, #fff)"));
     }
     c.appendChild(refList);
     wrap.appendChild(c);

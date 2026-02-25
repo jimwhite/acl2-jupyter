@@ -5,3 +5,8 @@ actionlint
 /doc/
 /manual/
 __pycache__/
+node_modules/
+*.log
+*.pyc
+*.pyo
+*.pyd

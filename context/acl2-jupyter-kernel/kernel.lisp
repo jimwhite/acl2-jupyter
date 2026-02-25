@@ -919,6 +919,7 @@
     (setq *initial-bootstrap-p* t)
     (setq *initial-event-forms-p* t)
     (setq *initial-deep-events-p* nil)
+    (setq *initial-exworld-p* t)
     (let ((conn (or connection-file
                     (first (uiop:command-line-arguments)))))
       (unless conn (error "No connection file provided"))
@@ -1058,6 +1059,7 @@
     (setq *initial-bootstrap-p* t)
     (setq *initial-event-forms-p* t)
     (setq *initial-deep-events-p* nil)
+    (setq *initial-exworld-p* t)
     (let ((conn (or connection-file
                     (first (uiop:command-line-arguments)))))
       (unless conn (error "No connection file provided"))

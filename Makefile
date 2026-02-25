@@ -271,7 +271,7 @@ KERNEL_DST := $(HOME)/quicklisp/local-projects/acl2-jupyter-kernel
 
 # Deploy kernel source to quicklisp local-projects and clear FASL cache
 deploy-kernel:
-	@for f in kernel.lisp packages.lisp complete.lisp inspect.lisp installer.lisp \
+	@for f in kernel.lisp symbols.lisp packages.lisp complete.lisp inspect.lisp installer.lisp \
 	          acl2-jupyter-kernel.asd start-kernel-bootstrap.sh; do \
 		if [ -f "$(KERNEL_SRC)/$$f" ]; then \
 			sudo cp "$(KERNEL_SRC)/$$f" "$(KERNEL_DST)/$$f"; \

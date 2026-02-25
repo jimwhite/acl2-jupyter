@@ -100,6 +100,7 @@ def make_kernel_json(acl2_home: Path, pass2_only: bool = False) -> dict:
         "metadata": {},
         "env": {
             "SBCL_HOME": sbcl_home,
+            "ACL2_JUPYTER_EXWORLD": "1",
         },
     }
 

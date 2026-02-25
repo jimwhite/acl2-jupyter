@@ -550,12 +550,13 @@ a newline except the last."
                                     (yason:with-array ()
                                       (yason:encode-array-element (first span))
                                       (yason:encode-array-element
-                                       (second span))))))))))))                  ;; outputs (empty for code cells, absent for markdown)
+                                       (second span))))))))))))
+                  ;; code cells require outputs and execution_count
                   (when (string= (cell-type c) "code")
                     (yason:with-object-element ("outputs")
                       (yason:with-array ()))
-                    (yason:encode-object-element "execution_count"
-                                                 :null)))))))))))
+                    (yason:encode-object-element
+                     "execution_count" nil)))))))))))
 
 ;;; ─── Portcullis (.acl2) metadata injection ─────────────────────────
 
@@ -582,7 +583,7 @@ contents.  No-op if no companions exist."
   (let ((companions (acl2-companion-files source-path)))
     (when companions
       (let ((nb (with-open-file (in notebook-path :external-format :utf-8)
-                  (yason:parse in))))
+                  (yason:parse in :json-arrays-as-vectors t))))
         (let ((meta (or (gethash "metadata" nb)
                         (let ((h (make-hash-table :test #'equal)))
                           (setf (gethash "metadata" nb) h)

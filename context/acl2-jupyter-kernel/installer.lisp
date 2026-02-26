@@ -156,7 +156,9 @@
 ;;; ---------------------------------------------------------------------------
 
 (defun install (&key system local prefix jupyter program
-                     lisp-runtime core-path quicklisp-setup)
+                     lisp-runtime core-path quicklisp-setup
+                     (kernel-name +language+)
+                     (display-name +display-name+))
   "Install the ACL2 Jupyter kernel.
    Paths are auto-detected from the running environment unless overridden.
    - SYSTEM: if T, install system-wide; otherwise install for current user
@@ -166,11 +168,13 @@
    - PROGRAM: program directory override
    - LISP-RUNTIME: path to Lisp executable (auto-detected)
    - CORE-PATH: path to saved_acl2.core (auto-detected)
-   - QUICKLISP-SETUP: path to quicklisp/setup.lisp (auto-detected)"
+   - QUICKLISP-SETUP: path to quicklisp/setup.lisp (auto-detected)
+   - KERNEL-NAME: kernelspec name / directory name (default: \"acl2\")
+   - DISPLAY-NAME: human-readable name shown in Jupyter (default: \"ACL2\")"
   (let ((instance (make-instance
                     (if system 'acl2-system-installer 'acl2-user-installer)
-                    :display-name +display-name+
-                    :kernel-name +language+
+                    :display-name display-name
+                    :kernel-name kernel-name
                     :lisp-runtime (or lisp-runtime (find-lisp-runtime))
                     :core-path (or core-path (find-acl2-core))
                     :quicklisp-setup (or quicklisp-setup (find-quicklisp-setup))

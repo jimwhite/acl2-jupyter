@@ -64,11 +64,16 @@
   char)
 
 (defmethod ngray:stream-finish-output ((stream line-buffered-stream))
-  (finish-output (line-buffered-inner stream))
+  "No-op: suppress ACL2's internal finish-output calls that would cause
+   the inner iopub-stream to flush mid-line (fragmenting into separate
+   ZMQ messages).  Only stream-write-char flushes — on #\\Newline."
+  (declare (ignore stream))
   nil)
 
 (defmethod ngray:stream-force-output ((stream line-buffered-stream))
-  (force-output (line-buffered-inner stream))
+  "No-op: suppress ACL2's internal force-output calls.
+   See stream-finish-output rationale above."
+  (declare (ignore stream))
   nil)
 
 (defmethod ngray:stream-line-column ((stream line-buffered-stream))
@@ -290,6 +295,10 @@
    (cell-trust-tags :initform #() :accessor cell-trust-tags
                     :documentation "Vector of JSON-ready trust-tag entries
    introduced by this cell: [{\"tag\": \":foo\", \"books\": [...]}].")
+   ;; Per-cell include-book file dependencies
+   (cell-include-books :initform #() :accessor cell-include-books
+                       :documentation "Vector of book path strings from
+   include-book events in this cell's world diff.")
    ;; Per-cell raw include files detected (Phase 5a)
    (cell-raw-includes :initform #() :accessor cell-raw-includes
                       :documentation "Vector of filename strings from
@@ -322,8 +331,8 @@
   (:default-initargs
     :name "acl2"
     :package (find-package "ACL2")
-    :version "0.1.0"
-    :banner (format nil "ACL2 Jupyter Kernel v0.1.0~%~A"
+    :version "0.2.0"
+    :banner (format nil "ACL2 Jupyter Kernel v0.2.0~%~A"
                     (f-get-global 'acl2::acl2-version
                                   *the-live-state*))
     :language-name "acl2"
@@ -759,7 +768,20 @@
                  (new-ttags (diff-ttags-seen (cell-ttags-before k) post-ttags)))
             (when new-ttags
               (setf (cell-trust-tags k) (coerce new-ttags 'vector))))
-        (error () nil)))))
+        (error () nil)))
+    ;; Extract include-book file dependencies from event tuples.
+    ;; Uses all-tuples (deep) so this works regardless of deep-events-p.
+    (handler-case
+        (let ((books (loop for et in all-tuples
+                          when (eq (acl2::access-event-tuple-type et)
+                                   'acl2::include-book)
+                          collect (let ((namex (acl2::access-event-tuple-namex et)))
+                                    (if (stringp namex) namex
+                                        (prin1-to-string namex))))))
+          (when books
+            (setf (cell-include-books k)
+                  (coerce books 'vector))))
+      (error () nil))))
 
 (defun send-cell-metadata (k)
   "Send cell metadata as display_data with vendor MIME type.
@@ -768,6 +790,9 @@
                      (cons "package" (cell-package k)))))
     (when (plusp (length (cell-forms k)))
       (push (cons "forms" (cell-forms k)) (cdr (last alist))))
+    ;; Include-book file dependencies (always emitted — not gated on exworld)
+    (when (plusp (length (cell-include-books k)))
+      (push (cons "include_books" (cell-include-books k)) (cdr (last alist))))
     ;; Extra-world metadata (only when exworld mode is active)
     (when (exworld-p k)
       (when (plusp (length (cell-symbols k)))
@@ -806,6 +831,46 @@
 (defvar *analyze-source-cl-directive* ":analyze-source-cl "
   "Directive prefix for CL-mode source-only analysis (no eval).
    Uses the standard CL readtable instead of ACL2's readtable.")
+
+(defvar *configure-directive* ":configure "
+  "Directive prefix for runtime kernel configuration.
+   Sent by the client (e.g. build_notebooks.py) to toggle feature flags
+   without restarting the kernel.  The payload is a plist of keyword/value
+   pairs:  :configure :deep-events t :exworld t :event-forms t
+   Boolean values are T or NIL (case-insensitive).")
+
+(defun apply-configure-directive (k payload)
+  "Parse PAYLOAD (a string of keyword/boolean pairs) and set the
+   corresponding feature flags on kernel K.
+   Known flags: :deep-events, :exworld, :event-forms, :full-world.
+   Returns a human-readable summary of the new settings."
+  (let ((*package* (find-package "KEYWORD"))
+        (*readtable* (copy-readtable nil))
+        (pairs nil))
+    (with-input-from-string (stream payload)
+      (loop for key = (read stream nil stream)
+            until (eq key stream)
+            for val = (read stream nil stream)
+            do (when (eq val stream)
+                 (error "Missing value for ~A" key))
+               (push (cons key val) pairs)))
+    (setf pairs (nreverse pairs))
+    (dolist (pair pairs)
+      (let ((key (car pair))
+            (val (and (cdr pair) t)))   ; normalise to T/NIL
+        (case key
+          (:deep-events  (setf (deep-events-p k) val))
+          (:exworld      (setf (exworld-p k)     val))
+          (:event-forms  (setf (event-forms-p k) val))
+          (:full-world   (when val
+                           (setf (world-baseline k) nil))
+                         (unless val
+                           (setf (world-baseline k)
+                                 (w *the-live-state*))))
+          (otherwise
+           (format *error-output* "~&;; [configure] Unknown flag ~S (ignored)~%" key)))))
+    (format nil "deep-events=~A exworld=~A event-forms=~A"
+            (deep-events-p k) (exworld-p k) (event-forms-p k))))
 
 (defun bootstrap-enter-pass-2 (state)
   "Transition from pass 1 to pass 2 during bootstrap.
@@ -929,6 +994,14 @@
                       :end1 (length *analyze-source-cl-directive*)))
     (analyze-source-cell k (subseq trimmed (length *analyze-source-cl-directive*)) t)
     (return-from eval-cell (values)))
+  ;; Runtime configuration directive (sent by build_notebooks.py or client)
+  (when (and (>= (length trimmed) (length *configure-directive*))
+             (string= trimmed *configure-directive*
+                      :end1 (length *configure-directive*)))
+    (let ((summary (apply-configure-directive
+                    k (subseq trimmed (length *configure-directive*)))))
+      (format t "~&;; [kernel] ~A~%" summary))
+    (return-from eval-cell (values)))
   ;; Snapshot ttags-seen before eval (Phase 5b)
   (when (exworld-p k)
     (handler-case
@@ -962,6 +1035,7 @@
         (cell-binding-snapshot k) nil
         (cell-ttags-before k) nil
         (cell-trust-tags k) #()
+        (cell-include-books k) #()
         (cell-raw-includes k) #())
   (let ((trimmed (string-trim '(#\Space #\Tab #\Newline #\Return) code)))
     (when (plusp (length trimmed))

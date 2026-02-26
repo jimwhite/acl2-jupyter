@@ -194,7 +194,7 @@ lisp2nb-force: sanitize-lisp
 lisp2nb-books: notebooks-convert
 
 # Execute certified notebooks through ACL2 kernel (incremental, in-place)
-notebooks-execute: install-script2notebook
+notebooks-execute: deploy-kernel install-script2notebook
 	$(BUILD_NOTEBOOKS) execute $(ACL2_HOME) -v \
 		-j $(NOTEBOOK_JOBS) \
 		--cell-timeout $(NOTEBOOK_CELL_TIMEOUT) \
@@ -204,7 +204,7 @@ notebooks-execute: install-script2notebook
 notebooks: notebooks-convert notebooks-execute
 
 # Force reconvert all + re-execute
-notebooks-force: sanitize-lisp install-script2notebook
+notebooks-force: sanitize-lisp deploy-kernel install-script2notebook
 	find $(ACL2_HOME) -name '*.ipynb' -not -path '*/.sys/*' -delete
 	$(MAKE) -j $(NOTEBOOK_JOBS) notebooks-convert
 	$(BUILD_NOTEBOOKS) execute $(ACL2_HOME) -v --force \
@@ -213,7 +213,7 @@ notebooks-force: sanitize-lisp install-script2notebook
 		--startup-timeout $(NOTEBOOK_STARTUP_TIMEOUT)
 
 # Convert + execute a single directory (usage: make notebooks-dir DIR=/home/acl2/books/defsort)
-notebooks-dir: install-script2notebook
+notebooks-dir: deploy-kernel install-script2notebook
 	@if [ -z "$(DIR)" ]; then echo "Usage: make notebooks-dir DIR=/home/acl2/books/some-dir"; exit 1; fi
 	$(MAKE) -j $(NOTEBOOK_JOBS) $$(find $(DIR) \( -name '*.lisp' -o -name '*.lsp' \) \
 		-not -path '*/.sys/*' | sed 's/\.[^.]*$$/.ipynb/')

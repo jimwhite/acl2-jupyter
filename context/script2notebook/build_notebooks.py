@@ -135,6 +135,48 @@ def _inject_acl2_metadata(notebook: Path, source: Path) -> None:
         f.write("\n")
 
 
+def _inject_configure_cell(notebook: Path, configure: str) -> bool:
+    """Prepend a ``:configure`` directive cell to *notebook*.
+
+    The kernel recognises ``:configure :key val ...`` directives and
+    toggles feature flags (deep-events, exworld, event-forms, etc.)
+    without restarting.
+
+    A marker (``provenance.configure``) prevents double-injection on
+    re-runs.
+
+    Returns True if a cell was injected, False otherwise.
+    """
+    try:
+        with open(notebook) as f:
+            nb = json.load(f)
+    except (json.JSONDecodeError, OSError) as exc:
+        log.warning("Cannot inject configure cell for %s: %s", notebook, exc)
+        return False
+
+    for cell in nb.get("cells", []):
+        if cell.get("metadata", {}).get("provenance", {}).get("configure"):
+            return False
+
+    cfg_cell = {
+        "cell_type": "code",
+        "metadata": {"provenance": {"configure": True}},
+        "source": [configure],
+        "execution_count": None,
+        "outputs": [],
+        "id": uuid.uuid4().hex[:8],
+    }
+
+    nb["cells"] = [cfg_cell] + nb.get("cells", [])
+
+    with open(notebook, "w") as f:
+        json.dump(nb, f, indent=1)
+        f.write("\n")
+
+    log.debug("Injected configure cell into %s", notebook)
+    return True
+
+
 def _inject_port_file_cell(notebook: Path, source: Path) -> bool:
     """Prepend an ``eval-port-file`` cell to *notebook* if a ``.port`` file exists.
 

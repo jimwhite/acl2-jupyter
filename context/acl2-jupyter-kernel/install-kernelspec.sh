@@ -53,10 +53,11 @@ fi
 
 # Kernel start options — set explicitly rather than relying on defaults.
 # These become flags in kernel.json's argv start form.
+# Override via env vars before running this script if needed.
 export ACL2_JUPYTER_EVENT_FORMS="${ACL2_JUPYTER_EVENT_FORMS:-1}"
 export ACL2_JUPYTER_FULL_WORLD="${ACL2_JUPYTER_FULL_WORLD:-0}"
 export ACL2_JUPYTER_DEEP_EVENTS="${ACL2_JUPYTER_DEEP_EVENTS:-0}"
-export ACL2_JUPYTER_EXWORLD="${ACL2_JUPYTER_EXWORLD:-0}"
+export ACL2_JUPYTER_EXWORLD="${ACL2_JUPYTER_EXWORLD:-1}"
 
 echo "=== Installing ACL2 Jupyter Kernelspec ==="
 echo "  saved_acl2: ${SAVED_ACL2}"

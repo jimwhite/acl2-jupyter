@@ -262,7 +262,7 @@ notebooks-inject-boot-metadata: install-script2notebook
 #   - Notebooks converted from .lisp via lisp2nb
 #   - script2notebook installed in venv
 
-BOOTSTRAP_SCRIPT := $(PWD)/context/script2notebook/build_boot_strap.py
+BOOTSTRAP_SCRIPT := $(VENV)/bin/build-boot-strap
 BOOTSTRAP_STARTUP_TIMEOUT ?= 1200
 KERNEL_SRC := $(PWD)/context/acl2-jupyter-kernel
 KERNEL_DST := $(HOME)/quicklisp/local-projects/acl2-jupyter-kernel
@@ -282,7 +282,7 @@ deploy-kernel:
 
 # Execute pass-2 notebooks (pass 1 runs inside kernel via ld-fn)
 bootstrap-pass2: install-script2notebook
-	$(VENV_PYTHON) $(BOOTSTRAP_SCRIPT) $(ACL2_HOME) \
+	$(BOOTSTRAP_SCRIPT) $(ACL2_HOME) \
 		--pass2-only \
 		--cell-timeout $(NOTEBOOK_CELL_TIMEOUT) \
 		--startup-timeout $(BOOTSTRAP_STARTUP_TIMEOUT) \

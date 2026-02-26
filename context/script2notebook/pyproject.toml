@@ -26,6 +26,7 @@ package-dir = {"script2notebook" = "."}
 [project.scripts]
 script2notebook = "script2notebook.cli:main"
 build-notebooks = "script2notebook.build_notebooks:main"
+build-boot-strap = "script2notebook.build_boot_strap:main"
 inject-boot-metadata = "script2notebook.inject_boot_metadata:main"
 
 [project.optional-dependencies]

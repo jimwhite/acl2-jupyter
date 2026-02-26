@@ -329,3 +329,63 @@ class TestAnalyzeSource:
         def_names = {s["name"] for s in symbols if s.get("is_operator")}
         assert "*MY-CL-VAR*" in def_names or len(symbols) > 0, (
             f"expected *MY-CL-VAR* in operator names or some symbols: {meta}")
+
+
+# ---------------------------------------------------------------------------
+# Tests — Trust Tags (Phase 5b)
+# ---------------------------------------------------------------------------
+
+class TestTrustTags:
+
+    def test_defttag_produces_trust_tags(self, kc):
+        """A cell with defttag should produce trust_tags metadata."""
+        code = '(defttag :exw-test-ttag)'
+        _, _, error, meta = eval_with_metadata(kc, code)
+        assert error is None, f"error: {error}"
+        trust_tags = meta.get("trust_tags", [])
+        assert len(trust_tags) > 0, f"expected trust_tags, got: {meta}"
+        tags = [t["tag"] for t in trust_tags]
+        assert any("exw-test-ttag" in t.lower() for t in tags), \
+            f"expected :exw-test-ttag in trust_tags: {trust_tags}"
+
+    def test_no_defttag_no_trust_tags(self, kc):
+        """A cell without defttag should not produce trust_tags."""
+        _, _, error, meta = eval_with_metadata(kc, "(+ 1 2)")
+        assert error is None, f"error: {error}"
+        trust_tags = meta.get("trust_tags", [])
+        assert len(trust_tags) == 0, f"unexpected trust_tags: {trust_tags}"
+
+    def test_trust_tag_has_structure(self, kc):
+        """Each trust_tag entry should have 'tag' and 'books' keys."""
+        code = '(defttag :exw-test-ttag2)'
+        _, _, error, meta = eval_with_metadata(kc, code)
+        assert error is None, f"error: {error}"
+        trust_tags = meta.get("trust_tags", [])
+        for tt in trust_tags:
+            assert "tag" in tt, f"missing 'tag': {tt}"
+            assert "books" in tt, f"missing 'books': {tt}"
+
+
+# ---------------------------------------------------------------------------
+# Tests — Include-Raw Detection (Phase 5a)
+# ---------------------------------------------------------------------------
+
+class TestIncludeRawDetection:
+
+    def test_analyze_source_detects_include_raw(self, kc):
+        """Source analysis should detect include-raw file references."""
+        code = ':analyze-source (include-raw "foo-raw.lsp")'
+        _, _, error, meta = eval_with_metadata(kc, code)
+        assert error is None, f"error: {error}"
+        raw_includes = meta.get("raw_includes", [])
+        assert "foo-raw.lsp" in raw_includes, \
+            f"expected foo-raw.lsp in raw_includes: {meta}"
+
+    def test_analyze_source_no_include_raw(self, kc):
+        """Source without include-raw should have no raw_includes."""
+        code = ':analyze-source (defun no-raw (x) x)'
+        _, _, error, meta = eval_with_metadata(kc, code)
+        assert error is None, f"error: {error}"
+        raw_includes = meta.get("raw_includes", [])
+        assert len(raw_includes) == 0, \
+            f"unexpected raw_includes: {raw_includes}"

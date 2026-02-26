@@ -387,6 +387,70 @@
           (cons :object-alist (nreverse edges)))))))
 
 ;;; ---------------------------------------------------------------------------
+;;; Trust Tag Tracking (Phase 5b)
+;;; ---------------------------------------------------------------------------
+
+(defun diff-ttags-seen (before-alist after-alist)
+  "Compare BEFORE-ALIST and AFTER-ALIST (ttags-seen world global format:
+   alist of (ttag-keyword . (book-name-list))).
+   Returns a list of JSON-ready alists for new or extended trust tag entries:
+   ((:object-alist (\"tag\" . \":foo\") (\"books\" . #(\"bar\"))))
+   A ttag is 'new' if it appears in AFTER but not BEFORE, or if its
+   book list is longer in AFTER than BEFORE."
+  (let ((new-tags nil))
+    (dolist (after-entry after-alist)
+      (let* ((tag (car after-entry))
+             (after-books (cdr after-entry))
+             (before-entry (assoc tag before-alist :test #'equal))
+             (before-books (cdr before-entry)))
+        ;; New tag (not in before) or extended book list
+        (when (or (null before-entry)
+                  (> (length after-books) (length before-books)))
+          ;; Compute only the new books (in after but not before)
+          (let ((new-books (if before-entry
+                               (set-difference after-books before-books
+                                               :test #'equal)
+                               after-books)))
+            (let ((*print-case* :downcase))
+              (push (cons :object-alist
+                          (list (cons "tag" (prin1-to-string tag))
+                                (cons "books"
+                                      (coerce
+                                       (mapcar #'prin1-to-string new-books)
+                                       'vector))))
+                    new-tags))))))
+    (nreverse new-tags)))
+
+;;; ---------------------------------------------------------------------------
+;;; Include-Raw File Extraction (Phase 5a)
+;;; ---------------------------------------------------------------------------
+
+(defun extract-include-raw-files (source-forms)
+  "Walk SOURCE-FORMS looking for (include-raw \"filename\" ...) calls.
+   Returns a list of filename strings (the cadr of each include-raw form).
+   Handles both ACL2::INCLUDE-RAW and any package-qualified variant."
+  (let ((files nil))
+    (labels ((walk-for-include-raw (form)
+               (when (consp form)
+                 (let ((head (car form)))
+                   (when (and (symbolp head)
+                              (string= (symbol-name head) "INCLUDE-RAW")
+                              (consp (cdr form))
+                              (stringp (cadr form)))
+                     (pushnew (cadr form) files :test #'string=)))
+                 ;; Recurse into sub-forms (progn, encapsulate, etc.)
+                 (when (and (symbolp (car form))
+                            (member (symbol-name (car form))
+                                    '("PROGN" "PROGN!" "ENCAPSULATE"
+                                      "WITH-OUTPUT" "LOCAL")
+                                    :test #'string=))
+                   (dolist (sub (cdr form))
+                     (walk-for-include-raw sub))))))
+      (dolist (form source-forms)
+        (walk-for-include-raw form)))
+    (nreverse files)))
+
+;;; ---------------------------------------------------------------------------
 ;;; Macro Expansion Capture
 ;;; ---------------------------------------------------------------------------
 

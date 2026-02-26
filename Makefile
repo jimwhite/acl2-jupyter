@@ -267,18 +267,21 @@ BOOTSTRAP_STARTUP_TIMEOUT ?= 1200
 KERNEL_SRC := $(PWD)/context/acl2-jupyter-kernel
 KERNEL_DST := $(HOME)/quicklisp/local-projects/acl2-jupyter-kernel
 
-.PHONY: bootstrap-pass2 deploy-kernel bootstrap notebooks-tar
+.PHONY: bootstrap-pass2 deploy-kernel install-kernel bootstrap notebooks-tar
 
-# Deploy kernel source to quicklisp local-projects and clear FASL cache
+INSTALL_KERNELSPEC := $(KERNEL_SRC)/install-kernelspec.sh
+
+# Deploy kernel source to quicklisp local-projects and clear FASL cache.
+# Uses the same glob copy as install-kernelspec.sh (no hardcoded file list).
 deploy-kernel:
-	@for f in kernel.lisp symbols.lisp packages.lisp complete.lisp inspect.lisp installer.lisp \
-	          acl2-jupyter-kernel.asd start-kernel-bootstrap.sh; do \
-		if [ -f "$(KERNEL_SRC)/$$f" ]; then \
-			sudo cp "$(KERNEL_SRC)/$$f" "$(KERNEL_DST)/$$f"; \
-		fi; \
-	done
+	@mkdir -p "$(KERNEL_DST)"
+	cp -a "$(KERNEL_SRC)"/*.lisp "$(KERNEL_SRC)"/*.asd "$(KERNEL_SRC)"/*.sh "$(KERNEL_DST)/"
 	rm -rf $(HOME)/.cache/common-lisp/sbcl-*/home/jovyan/quicklisp/local-projects/acl2-jupyter-kernel/
 	@echo "Kernel deployed and FASL cache cleared."
+
+# Full install: deploy source + register kernelspec via saved_acl2
+install-kernel:
+	$(INSTALL_KERNELSPEC)
 
 # Execute pass-2 notebooks (pass 1 runs inside kernel via ld-fn)
 bootstrap-pass2: install-script2notebook

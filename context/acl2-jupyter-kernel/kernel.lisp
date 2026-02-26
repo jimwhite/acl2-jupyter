@@ -31,6 +31,55 @@
 (in-package #:acl2-jupyter)
 
 ;;; ---------------------------------------------------------------------------
+;;; Stdout Line-Buffered Flushing
+;;; ---------------------------------------------------------------------------
+;;; The upstream common-lisp-jupyter iopub-stream accumulates characters in a
+;;; buffer and only flushes on stream-finish-output (after cell eval completes).
+;;; For long-running cells the user sees no output until the cell finishes.
+;;;
+;;; We fix this at the kernel layer (without modifying the upstream fork):
+;;;   1. Define stream-force-output on iopub-stream → delegates to finish.
+;;;   2. Define a line-buffered-stream wrapper that intercepts write-char
+;;;      and calls force-output on the inner stream after every #\Newline.
+;;;   3. Install the wrapper in in-main-thread's stream bindings.
+
+(defmethod ngray:stream-force-output ((stream jupyter::iopub-stream))
+  "Flush the iopub buffer on force-output (upstream only flushes on finish)."
+  (jupyter::iopub-finish-output (jupyter::iopub-stream-channel stream)
+                                (jupyter::iopub-stream-name stream))
+  nil)
+
+(defclass line-buffered-stream (ngray:fundamental-character-output-stream)
+  ((inner :initarg :inner :reader line-buffered-inner
+          :documentation "The underlying output stream to delegate to."))
+  (:documentation "A Gray stream wrapper that delegates all writes to INNER
+   and calls FORCE-OUTPUT on INNER after every #\\Newline character.
+   This gives line-buffered flushing semantics to any character stream."))
+
+(defmethod ngray:stream-write-char ((stream line-buffered-stream) char)
+  (let ((inner (line-buffered-inner stream)))
+    (write-char char inner)
+    (when (char= char #\Newline)
+      (force-output inner)))
+  char)
+
+(defmethod ngray:stream-finish-output ((stream line-buffered-stream))
+  (finish-output (line-buffered-inner stream))
+  nil)
+
+(defmethod ngray:stream-force-output ((stream line-buffered-stream))
+  (force-output (line-buffered-inner stream))
+  nil)
+
+(defmethod ngray:stream-line-column ((stream line-buffered-stream))
+  (ignore-errors
+    (ngray:stream-line-column (line-buffered-inner stream))))
+
+(defun make-line-buffered-stream (inner-stream)
+  "Wrap INNER-STREAM in a line-buffered-stream that flushes on newlines."
+  (make-instance 'line-buffered-stream :inner inner-stream))
+
+;;; ---------------------------------------------------------------------------
 ;;; Main Thread Dispatch
 ;;; ---------------------------------------------------------------------------
 
@@ -127,11 +176,16 @@
                        (jupyter:*thread-id*       ,saved-thread)
                        (jupyter:*html-output*     ,saved-html)
                        (jupyter:*markdown-output* ,saved-md)
-                       ;; Rebuild CL streams same as run-shell does
+                       ;; Rebuild CL streams same as run-shell does,
+                       ;; but wrap stdout/stderr in line-buffered streams
+                       ;; so output flushes on every newline (Phase 5d).
                        (*standard-input*  (make-synonym-stream 'jupyter::*stdin*))
-                       (*standard-output* (make-synonym-stream 'jupyter::*stdout*))
-                       (*error-output*    (make-synonym-stream 'jupyter::*stderr*))
-                       (*trace-output*    (make-synonym-stream 'jupyter::*stdout*)))
+                       (*standard-output* (make-line-buffered-stream
+                                           (make-synonym-stream 'jupyter::*stdout*)))
+                       (*error-output*    (make-line-buffered-stream
+                                           (make-synonym-stream 'jupyter::*stderr*)))
+                       (*trace-output*    (make-line-buffered-stream
+                                           (make-synonym-stream 'jupyter::*stdout*))))
                    (let ((*debug-io*    (make-two-way-stream *standard-input* *standard-output*))
                          (*query-io*    (make-two-way-stream *standard-input* *standard-output*))
                          (*terminal-io* (make-two-way-stream *standard-input* *standard-output*)))
@@ -228,6 +282,18 @@
    (cell-binding-snapshot :initform nil :accessor cell-binding-snapshot
                           :documentation "Alist of (sym . plist) snapshots
    taken before eval to detect raw CL-level side effects.")
+   ;; Pre-eval trust-tags snapshot for ttag tracking (Phase 5b)
+   (cell-ttags-before :initform nil :accessor cell-ttags-before
+                      :documentation "Snapshot of (global-val 'ttags-seen wrld)
+   taken before eval.  Diffed against post-eval value to find new trust tags.")
+   ;; Per-cell trust tags introduced (Phase 5b)
+   (cell-trust-tags :initform #() :accessor cell-trust-tags
+                    :documentation "Vector of JSON-ready trust-tag entries
+   introduced by this cell: [{\"tag\": \":foo\", \"books\": [...]}].")
+   ;; Per-cell raw include files detected (Phase 5a)
+   (cell-raw-includes :initform #() :accessor cell-raw-includes
+                      :documentation "Vector of filename strings from
+   include-raw forms found in the cell source.")
    ;; Existing slots
    (world-baseline  :initform *initial-world-baseline*
                     :accessor world-baseline
@@ -544,6 +610,12 @@
         (let ((snap (snapshot-bindings table)))
           (setf (cell-binding-snapshot k)
                 (append (cell-binding-snapshot k) snap)))
+        ;; Detect include-raw file references (Phase 5a)
+        (let ((raw-files (extract-include-raw-files (list form))))
+          (when raw-files
+            (setf (cell-raw-includes k)
+                  (concatenate 'vector (cell-raw-includes k)
+                               (coerce raw-files 'vector)))))
         table)
     (error () nil)))
 
@@ -601,13 +673,23 @@
 (defun collect-cell-events (k)
   "Diff post-world against world-baseline in kernel K.
    Updates cell-events, cell-forms, cell-package, world-baseline,
-   and extra-world metadata (dependencies, raw-defs)."
+   and extra-world metadata (dependencies, raw-defs, trust-tags).
+
+   Phase 5c: Always collects deep events internally for enrichment
+   (dependency analysis, re-definition detection).  The deep-events-p
+   flag controls only what is serialized into the output events/forms
+   arrays — internal consumers always get the full picture."
   (let* ((post-wrld (w *the-live-state*))
          (baseline  (world-baseline k))
          (scan      (if baseline (ldiff post-wrld baseline) post-wrld))
-         (tuples    (extract-event-tuples scan (deep-events-p k)))
-         (events    (format-event-tuples tuples (deep-events-p k)))
-         (forms     (when (event-forms-p k) (format-event-forms tuples))))
+         ;; Always collect ALL (deep) tuples for internal processing
+         (all-tuples    (extract-event-tuples scan t))
+         ;; Filter for output based on deep-events-p flag
+         (output-tuples (if (deep-events-p k)
+                            all-tuples
+                            (extract-event-tuples scan nil)))
+         (events    (format-event-tuples output-tuples (deep-events-p k)))
+         (forms     (when (event-forms-p k) (format-event-forms output-tuples))))
     (setf (cell-events k)   (coerce events 'vector)
           (cell-forms k)    (when forms (coerce forms 'vector))
           (cell-package k)  (acl2::current-package *the-live-state*)
@@ -620,13 +702,14 @@
         (error () nil))
       ;; Extra-world: build dependency edges via pre/post classify diff
       ;; + event tuple extraction (catches re-definitions in bootstrap pass 2)
+      ;; Uses all-tuples (deep) for maximum coverage of sub-events.
       (handler-case
-          (when (or (cell-kind-snapshot k) tuples (cell-source-forms k))
+          (when (or (cell-kind-snapshot k) all-tuples (cell-source-forms k))
             (let ((deps (build-source-dependencies
                          (cell-kind-snapshot k)
                          post-wrld
                          (cell-source-forms k)
-                         tuples)))
+                         all-tuples)))
               (when deps
                 (setf (cell-dependencies k) deps))))
         (error () nil))
@@ -650,8 +733,8 @@
                                  (when (cell-kind-snapshot k)
                                    (extract-newly-defined
                                     (cell-kind-snapshot k) post-wrld))
-                                 (when tuples
-                                   (extract-event-defined-names tuples))
+                                 (when all-tuples
+                                   (extract-event-defined-names all-tuples))
                                  :test #'eq)
                                 (extract-source-defined-names
                                  (cell-source-forms k))
@@ -669,6 +752,13 @@
                 (when unexpected
                   (setf (cell-raw-defs k)
                         (coerce unexpected 'vector))))))
+        (error () nil))
+      ;; Extra-world: diff trust tags (Phase 5b)
+      (handler-case
+          (let* ((post-ttags (acl2::global-val 'acl2::ttags-seen post-wrld))
+                 (new-ttags (diff-ttags-seen (cell-ttags-before k) post-ttags)))
+            (when new-ttags
+              (setf (cell-trust-tags k) (coerce new-ttags 'vector))))
         (error () nil)))))
 
 (defun send-cell-metadata (k)
@@ -687,7 +777,11 @@
       (when (plusp (length (cell-expansions k)))
         (push (cons "expansions" (cell-expansions k)) (cdr (last alist))))
       (when (plusp (length (cell-raw-defs k)))
-        (push (cons "raw_definitions" (cell-raw-defs k)) (cdr (last alist)))))
+        (push (cons "raw_definitions" (cell-raw-defs k)) (cdr (last alist))))
+      (when (plusp (length (cell-trust-tags k)))
+        (push (cons "trust_tags" (cell-trust-tags k)) (cdr (last alist))))
+      (when (plusp (length (cell-raw-includes k)))
+        (push (cons "raw_includes" (cell-raw-includes k)) (cdr (last alist)))))
     (jupyter::send-display-data
      (jupyter::kernel-iopub k)
      (list :object-plist
@@ -801,6 +895,13 @@
               (when deps
                 (setf (cell-dependencies k) deps)))
           (error () nil))
+        ;; Detect include-raw file references (Phase 5a)
+        (handler-case
+            (let ((raw-files (extract-include-raw-files forms)))
+              (when raw-files
+                (setf (cell-raw-includes k)
+                      (coerce raw-files 'vector))))
+          (error () nil))
         ;; Set package
         (setf (cell-package k) (acl2::current-package *the-live-state*)))
     (error () nil)))
@@ -828,6 +929,12 @@
                       :end1 (length *analyze-source-cl-directive*)))
     (analyze-source-cell k (subseq trimmed (length *analyze-source-cl-directive*)) t)
     (return-from eval-cell (values)))
+  ;; Snapshot ttags-seen before eval (Phase 5b)
+  (when (exworld-p k)
+    (handler-case
+        (setf (cell-ttags-before k)
+              (acl2::global-val 'acl2::ttags-seen (w *the-live-state*)))
+      (error () nil)))
   (acl2::with-suppression
       (with-acl2-output-to *standard-output*
         (let ((channel (make-string-input-channel trimmed)))
@@ -852,7 +959,10 @@
         (cell-raw-defs k)   #()
         (cell-source-forms k) nil
         (cell-kind-snapshot k) nil
-        (cell-binding-snapshot k) nil)
+        (cell-binding-snapshot k) nil
+        (cell-ttags-before k) nil
+        (cell-trust-tags k) #()
+        (cell-raw-includes k) #())
   (let ((trimmed (string-trim '(#\Space #\Tab #\Newline #\Return) code)))
     (when (plusp (length trimmed))
       (multiple-value-bind (ename evalue traceback)

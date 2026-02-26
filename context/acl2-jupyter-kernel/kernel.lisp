@@ -629,9 +629,7 @@
                          tuples)))
               (when deps
                 (setf (cell-dependencies k) deps))))
-        (error (c)
-          (format *error-output* "~&DBG deps error: ~A~%" c)
-          nil))
+        (error () nil))
       ;; Extra-world: detect raw CL-level side effects
       ;; Filter out symbols that were defined by the cell (expected fboundp)
       (handler-case
@@ -671,9 +669,7 @@
                 (when unexpected
                   (setf (cell-raw-defs k)
                         (coerce unexpected 'vector))))))
-        (error (c)
-          (format *error-output* "~&DBG raw-defs error: ~A~%" c)
-          nil)))))
+        (error () nil)))))
 
 (defun send-cell-metadata (k)
   "Send cell metadata as display_data with vendor MIME type.

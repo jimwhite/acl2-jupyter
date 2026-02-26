@@ -327,18 +327,6 @@
          ;; Union all three signals
          (newly-defined (union (union from-kind-diff from-events :test #'eq)
                                from-source :test #'eq)))
-    ;; TEMP DEBUG
-    (with-open-file (dbg "/tmp/deps-debug.log"
-                     :direction :output
-                     :if-exists :append
-                     :if-does-not-exist :create)
-      (format dbg "~&build-src-deps: kind=~S evts=~S src=~S union=~S nforms=~D~%"
-              from-kind-diff from-events from-source newly-defined
-              (length source-forms))
-      (dolist (f source-forms)
-        (format dbg "  form-head: ~S cadr: ~S~%"
-                (when (consp f) (car f))
-                (when (and (consp f) (consp (cdr f))) (cadr f)))))
     (when newly-defined
       ;; Pre-compute extract-symbols tables for each source form
       (let ((form-tables (mapcar (lambda (form)

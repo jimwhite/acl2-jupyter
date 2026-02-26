@@ -264,16 +264,55 @@
                 (pushnew name names :test #'eq)))))))
     (nreverse names)))
 
+(defun definition-form-head-p (sym)
+  "Return T if SYM names a form whose second element (cadr) is the name
+   being defined.  Covers defun variants, defmacro, defthm, defconst, etc.
+   Used to extract defined names directly from source forms."
+  (or (defun-like-p sym)          ; defun, defund, defmacro, defun$, etc.
+      (member sym '(acl2::defthm acl2::defthmd
+                   acl2::defconst
+                   acl2::defstobj acl2::defabsstobj
+                   acl2::deflabel
+                   acl2::add-macro-fn
+                   acl2::verify-termination-boot-strap
+                   acl2::verify-guards
+                   acl2::defchoose
+                   acl2::defattach
+                   acl2::defun-df)
+              :test #'eq)))
+
+(defun extract-source-defined-names (source-forms)
+  "Extract defined symbol names directly from source forms.
+   For forms like (defun NAME ...), (defmacro NAME ...), (defconst NAME ...),
+   etc., the second element is the name being defined.
+   This catches definitions that produce no event tuples in bootstrap pass 2
+   (redundant forms) and definitions whose event tuples use a non-symbol name
+   position (e.g. TABLE events with 0 in the name slot)."
+  (let ((names nil))
+    (dolist (form source-forms)
+      (when (and (consp form)
+                 (symbolp (car form))
+                 (definition-form-head-p (car form))
+                 (consp (cdr form))
+                 (symbolp (cadr form))
+                 (interesting-symbol-p (cadr form)))
+        (pushnew (cadr form) names :test #'eq)))
+    (nreverse names)))
+
 (defun build-source-dependencies (kind-snapshot post-wrld source-forms
                                   &optional event-tuples)
   "Build dependency edges using the pre/post classify diff approach,
-   augmented by event tuple extraction for bootstrap pass-2 re-definitions.
+   augmented by event tuple extraction and source-form analysis.
    KIND-SNAPSHOT is an alist of (sym . pre-eval-kind).
    POST-WRLD is the ACL2 world after eval.
    SOURCE-FORMS is a list of live s-expressions from the cell.
-   EVENT-TUPLES (optional) provides event-landmark tuples from the world diff;
-   defined names are extracted from these and unioned with the kind-snapshot
-   diff so that re-definitions (e.g. bootstrap pass 2) are also detected.
+   EVENT-TUPLES (optional) provides event-landmark tuples from the world diff.
+
+   Three signals are unioned to find what the cell defines:
+     1. Kind-snapshot diff — catches fresh definitions (unknown → known)
+     2. Event tuple names — catches re-defs that produce event landmarks
+     3. Source form heads — catches re-defs with no event landmarks and
+        forms whose event tuples use non-symbol names (e.g. TABLE events)
 
    For each defined symbol, find the source form that mentions it, walk that
    form to extract all referenced symbols, and emit an edge from the defined
@@ -284,8 +323,22 @@
   (let* ((from-kind-diff (extract-newly-defined kind-snapshot post-wrld))
          (from-events (when event-tuples
                         (extract-event-defined-names event-tuples)))
-         ;; Union: kind-diff catches fresh definitions, events catch re-defs
-         (newly-defined (union from-kind-diff from-events :test #'eq)))
+         (from-source (extract-source-defined-names source-forms))
+         ;; Union all three signals
+         (newly-defined (union (union from-kind-diff from-events :test #'eq)
+                               from-source :test #'eq)))
+    ;; TEMP DEBUG
+    (with-open-file (dbg "/tmp/deps-debug.log"
+                     :direction :output
+                     :if-exists :append
+                     :if-does-not-exist :create)
+      (format dbg "~&build-src-deps: kind=~S evts=~S src=~S union=~S nforms=~D~%"
+              from-kind-diff from-events from-source newly-defined
+              (length source-forms))
+      (dolist (f source-forms)
+        (format dbg "  form-head: ~S cadr: ~S~%"
+                (when (consp f) (car f))
+                (when (and (consp f) (consp (cdr f))) (cadr f)))))
     (when newly-defined
       ;; Pre-compute extract-symbols tables for each source form
       (let ((form-tables (mapcar (lambda (form)

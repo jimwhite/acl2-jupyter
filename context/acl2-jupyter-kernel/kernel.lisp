@@ -621,7 +621,7 @@
       ;; Extra-world: build dependency edges via pre/post classify diff
       ;; + event tuple extraction (catches re-definitions in bootstrap pass 2)
       (handler-case
-          (when (or (cell-kind-snapshot k) tuples)
+          (when (or (cell-kind-snapshot k) tuples (cell-source-forms k))
             (let ((deps (build-source-dependencies
                          (cell-kind-snapshot k)
                          post-wrld
@@ -629,7 +629,9 @@
                          tuples)))
               (when deps
                 (setf (cell-dependencies k) deps))))
-        (error () nil))
+        (error (c)
+          (format *error-output* "~&DBG deps error: ~A~%" c)
+          nil))
       ;; Extra-world: detect raw CL-level side effects
       ;; Filter out symbols that were defined by the cell (expected fboundp)
       (handler-case
@@ -640,17 +642,21 @@
               (let* ((changes (detect-raw-changes
                                (cell-binding-snapshot k) all-syms))
                      ;; Build set of defined names as "pkg::name" strings
-                     ;; Union of kind-diff + event-tuple extraction
+                     ;; Union of kind-diff + event-tuple + source-form extraction
                      (defined-names
                        (let ((names nil)
                              (*print-case* :downcase)
                              (defined-syms
                                (union
-                                (when (cell-kind-snapshot k)
-                                  (extract-newly-defined
-                                   (cell-kind-snapshot k) post-wrld))
-                                (when tuples
-                                  (extract-event-defined-names tuples))
+                                (union
+                                 (when (cell-kind-snapshot k)
+                                   (extract-newly-defined
+                                    (cell-kind-snapshot k) post-wrld))
+                                 (when tuples
+                                   (extract-event-defined-names tuples))
+                                 :test #'eq)
+                                (extract-source-defined-names
+                                 (cell-source-forms k))
                                 :test #'eq)))
                          (dolist (sym defined-syms names)
                            (push (format nil "~A::~A"
@@ -665,7 +671,9 @@
                 (when unexpected
                   (setf (cell-raw-defs k)
                         (coerce unexpected 'vector))))))
-        (error () nil)))))
+        (error (c)
+          (format *error-output* "~&DBG raw-defs error: ~A~%" c)
+          nil)))))
 
 (defun send-cell-metadata (k)
   "Send cell metadata as display_data with vendor MIME type.

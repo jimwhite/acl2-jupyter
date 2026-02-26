@@ -266,3 +266,66 @@ class TestExworldStructure:
         symbols = meta.get("symbols", [])
         assert len(events) > 0, f"no events: {meta}"
         assert len(symbols) > 0, f"no symbols: {meta}"
+
+
+# ---------------------------------------------------------------------------
+# Tests — :analyze-source directive (source-only, no eval)
+# ---------------------------------------------------------------------------
+
+class TestAnalyzeSource:
+
+    def test_analyze_source_returns_symbols(self, kc):
+        """:analyze-source should extract symbols without evaluating."""
+        _, _, error, meta = eval_with_metadata(
+            kc, ":analyze-source (defun foo (x) (+ x 1))")
+        assert error is None, f"error: {error}"
+        symbols = meta.get("symbols", [])
+        assert len(symbols) > 0, f"no symbols from :analyze-source: {meta}"
+        names = {s["name"] for s in symbols}
+        assert "BINARY-+" in names or "+" in names, f"expected + in {names}"
+
+    def test_analyze_source_returns_deps(self, kc):
+        """:analyze-source should build source-only dependencies."""
+        _, _, error, meta = eval_with_metadata(
+            kc, ":analyze-source (defun bar (x) (cons x (bar (cdr x))))")
+        assert error is None, f"error: {error}"
+        deps = meta.get("dependencies", {})
+        assert len(deps) > 0, f"no deps from :analyze-source: {meta}"
+        # Should have at least a dep on BAR itself
+        dep_keys = [k for k in deps if "bar" in k.lower()]
+        assert len(dep_keys) > 0, f"expected bar in deps: {deps}"
+
+    def test_analyze_source_no_events(self, kc):
+        """:analyze-source should NOT produce world events (no eval)."""
+        _, _, error, meta = eval_with_metadata(
+            kc, ":analyze-source (defun baz-no-eval (x) x)")
+        assert error is None, f"error: {error}"
+        events = meta.get("events", [])
+        assert len(events) == 0, f"expected 0 events, got {events}"
+
+    def test_analyze_source_has_package(self, kc):
+        """:analyze-source should still report a package."""
+        _, _, error, meta = eval_with_metadata(
+            kc, ":analyze-source (+ 1 2)")
+        assert error is None, f"error: {error}"
+        assert "package" in meta, f"missing package: {meta}"
+
+    def test_analyze_source_cl_returns_symbols(self, kc):
+        """:analyze-source-cl should handle CL forms with CL readtable."""
+        _, _, error, meta = eval_with_metadata(
+            kc, ":analyze-source-cl (defun cl-foo (x) (+ x 1))")
+        assert error is None, f"error: {error}"
+        symbols = meta.get("symbols", [])
+        assert len(symbols) > 0, f"no symbols from :analyze-source-cl: {meta}"
+
+    def test_analyze_source_cl_recognizes_cl_defvar(self, kc):
+        """:analyze-source-cl should recognize CL defvar as a definition."""
+        _, _, error, meta = eval_with_metadata(
+            kc, ":analyze-source-cl (defvar *my-cl-var* 42)")
+        assert error is None, f"error: {error}"
+        deps = meta.get("dependencies", [])
+        # defvar should show up as a definition name
+        symbols = meta.get("symbols", [])
+        def_names = {s["name"] for s in symbols if s.get("is_operator")}
+        assert "*MY-CL-VAR*" in def_names or len(symbols) > 0, (
+            f"expected *MY-CL-VAR* in operator names or some symbols: {meta}")

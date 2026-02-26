@@ -703,6 +703,16 @@
   "Sentinel string sent by build_boot_strap.py to trigger pass-2 transition.
    Matched literally in eval-cell before dispatching to the REPL.")
 
+(defvar *analyze-source-directive* ":analyze-source "
+  "Directive prefix for source-only analysis (no eval).
+   Sent by build_boot_strap.py to extract per-cell symbols and deps
+   for pass-1 and raw-CL notebooks.  The source code follows the prefix.
+   Use :analyze-source-cl for raw CL files (standard readtable).")
+
+(defvar *analyze-source-cl-directive* ":analyze-source-cl "
+  "Directive prefix for CL-mode source-only analysis (no eval).
+   Uses the standard CL readtable instead of ACL2's readtable.")
+
 (defun bootstrap-enter-pass-2 (state)
   "Transition from pass 1 to pass 2 during bootstrap.
    Replicates the effects of ACL2's enter-boot-strap-pass-2 without calling
@@ -745,6 +755,56 @@
   (f-put-global 'acl2::ld-skip-proofsp 'acl2::include-book state)
   (format t "~&;; [boot-strap] Pass 2 ready (default-defun-mode = :logic, ld-skip-proofsp = include-book).~%"))
 
+(defun analyze-source-cell (k source cl-mode-p)
+  "Analyze SOURCE text for symbols and dependencies without evaluation.
+   Reads forms using ACL2's reader (or standard CL reader when CL-MODE-P),
+   extracts symbol references, classifies them against the current world,
+   and builds source-only dependency edges.
+   Populates K's cell-symbols, cell-dependencies, and cell-source-forms.
+   Does NOT eval, does NOT modify the world or produce events."
+  (handler-case
+      (let* ((wrld (w *the-live-state*))
+             (forms nil))
+        ;; Read all forms from source
+        (if cl-mode-p
+            ;; CL mode: use standard readtable, ACL2 package
+            (let ((*package* (find-package "ACL2"))
+                  (*readtable* (copy-readtable nil)))
+              (with-input-from-string (stream source)
+                (loop for form = (read stream nil stream)
+                      until (eq form stream)
+                      do (push form forms))))
+            ;; ACL2 mode: use ACL2's reader via object channel
+            (let ((channel (make-string-input-channel source)))
+              (unwind-protect
+                  (loop
+                    (multiple-value-bind (eofp form state)
+                        (acl2::read-object channel *the-live-state*)
+                      (declare (ignore state))
+                      (when eofp (return))
+                      (push form forms)))
+                (close-string-input-channel channel))))
+        (setf forms (nreverse forms))
+        (setf (cell-source-forms k) forms)
+        ;; Extract symbols from each form and classify
+        (dolist (form forms)
+          (handler-case
+              (let ((table (extract-symbols form cl-mode-p)))
+                (let ((new-entries (symbols-table-to-json table wrld)))
+                  (when (plusp (length new-entries))
+                    (setf (cell-symbols k)
+                          (concatenate 'vector (cell-symbols k) new-entries)))))
+            (error () nil)))
+        ;; Build source-only dependencies (no kind-snapshot, no event-tuples)
+        (handler-case
+            (let ((deps (build-source-dependencies nil wrld forms nil)))
+              (when deps
+                (setf (cell-dependencies k) deps)))
+          (error () nil))
+        ;; Set package
+        (setf (cell-package k) (acl2::current-package *the-live-state*)))
+    (error () nil)))
+
 (defun eval-cell (k trimmed)
   "Evaluate TRIMMED code string through the appropriate REPL loop.
    Captures cell metadata (events, forms, package) into kernel K.
@@ -755,6 +815,18 @@
              (string= trimmed *bootstrap-pass2-directive*))
     (bootstrap-enter-pass-2 *the-live-state*)
     (collect-cell-events k)
+    (return-from eval-cell (values)))
+  ;; Source-only analysis directives (sent by build_boot_strap.py)
+  ;; These read and analyze source without evaluation.
+  (when (and (>= (length trimmed) (length *analyze-source-directive*))
+             (string= trimmed *analyze-source-directive*
+                      :end1 (length *analyze-source-directive*)))
+    (analyze-source-cell k (subseq trimmed (length *analyze-source-directive*)) nil)
+    (return-from eval-cell (values)))
+  (when (and (>= (length trimmed) (length *analyze-source-cl-directive*))
+             (string= trimmed *analyze-source-cl-directive*
+                      :end1 (length *analyze-source-cl-directive*)))
+    (analyze-source-cell k (subseq trimmed (length *analyze-source-cl-directive*)) t)
     (return-from eval-cell (values)))
   (acl2::with-suppression
       (with-acl2-output-to *standard-output*

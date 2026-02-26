@@ -53,9 +53,21 @@ PASS2_STEMS = [
 ]
 
 
+RAW_STEMS = [
+    "apply-raw", "float-raw", "futures-raw", "hons-raw",
+    "interface-raw", "memoize-raw", "multi-threading-raw",
+    "parallel-raw", "serialize-raw",
+]
+
+
 def get_file_lists() -> tuple[list[str], list[str]]:
     """Return (pass1_stems, pass2_stems)."""
     return list(PASS1_STEMS), list(PASS2_STEMS)
+
+
+def _is_raw_stem(stem: str) -> bool:
+    """Return True for raw Common Lisp source stems (e.g. ``hons-raw``)."""
+    return stem.endswith("-raw")
 
 
 # ── Kernel management ───────────────────────────────────────────────────────
@@ -437,6 +449,228 @@ def inject_pass1_metadata(pass1_stems: list[str], acl2_home: Path):
     log.info("Injected pass-1 metadata into %d notebooks.", injected)
 
 
+# ── Source-only enrichment (symbols + deps via :analyze-source) ──────────────
+
+def _analyze_cell_source(kc, source: str, cl_mode: bool = False,
+                         timeout: int = 60) -> list[dict]:
+    """Send source text to the kernel for analysis and return outputs.
+
+    Uses ``:analyze-source`` (ACL2 readtable) or ``:analyze-source-cl``
+    (standard CL readtable) directives.  The kernel reads the source,
+    extracts symbols/deps against the current world, and emits
+    display_data without evaluating any code.
+    """
+    directive = ":analyze-source-cl " if cl_mode else ":analyze-source "
+    return execute_cell(kc, type("C", (), {"source": directive + source})(),
+                        cell_idx=0, timeout=timeout)
+
+
+def _extract_events_mime(outputs: list[dict]) -> dict | None:
+    """Find and return the events MIME payload from cell outputs."""
+    for out in outputs:
+        if out.get("output_type") == "display_data":
+            data = out.get("data", {})
+            if EVENTS_MIME in data:
+                return data[EVENTS_MIME]
+    return None
+
+
+def _merge_events_payload(base: dict, extra: dict) -> dict:
+    """Merge *extra* keys into *base*, preferring *extra* for non-empty values."""
+    merged = dict(base)
+    for key in ("symbols", "dependencies"):
+        if key in extra and extra[key]:
+            merged[key] = extra[key]
+    return merged
+
+
+def enrich_pass1_notebooks(kc, pass1_stems: list[str], acl2_home: Path,
+                           dry_run: bool = False):
+    """Enrich pass-1 notebooks with per-cell symbols, deps, and events.
+
+    For each pass-1-only notebook (not in pass 2):
+    1. Distribute per-file events to individual cells using event_matching.
+    2. Send each cell's source via ``:analyze-source`` to extract symbols/deps.
+    3. Merge events + symbols + deps into per-cell display_data outputs.
+    4. Remove the old ``; pass-1-metadata`` summary cell if present.
+
+    Must be called while the kernel is still alive (post-pass-2 world).
+    """
+    from .event_matching import match_events_to_cells
+
+    pass2_set = set(PASS2_STEMS)
+    enriched = 0
+
+    for stem in pass1_stems:
+        if stem in pass2_set:
+            # Pass-2 execution already captured per-cell metadata.
+            continue
+
+        nb_path = acl2_home / f"{stem}.ipynb"
+        if not nb_path.exists():
+            continue
+
+        nb = nbformat.read(str(nb_path), as_version=4)
+        code_cells = [(i, c) for i, c in enumerate(nb.cells)
+                      if c.cell_type == "code"
+                      and c.source.strip() != "; pass-1-metadata"]
+
+        if not code_cells:
+            continue
+
+        # --- Event distribution from pass-1 JSON ---
+        json_path = PASS1_EVENTS_DIR / f"{stem}.json"
+        file_events: list[str] = []
+        file_forms: list[str] | None = None
+        file_package: str = "ACL2"
+
+        if json_path.exists():
+            try:
+                with open(json_path) as f:
+                    meta = json.load(f)
+                file_events = meta.get("events", [])
+                file_forms = meta.get("forms") or None
+                file_package = meta.get("package", "ACL2")
+            except Exception as e:
+                log.warning("  %s: failed to read pass-1 JSON: %s", stem, e)
+
+        # Build dicts for match_events_to_cells (needs list[dict] with "source")
+        cell_dicts = []
+        for _, cell in code_cells:
+            src = cell.source if isinstance(cell.source, str) else "".join(cell.source)
+            cell_dicts.append({"source": src, "cell_type": "code"})
+
+        per_cell_events: list[list[str]] = [[] for _ in code_cells]
+        per_cell_forms: list[list[str]] = [[] for _ in code_cells]
+
+        if file_events:
+            result = match_events_to_cells(file_events, cell_dicts,
+                                           forms=file_forms)
+            if file_forms is not None:
+                per_cell_events, per_cell_forms = result
+            else:
+                per_cell_events = result
+
+        log.info("  %s: enriching %d code cells (%d events to distribute)",
+                 stem, len(code_cells), len(file_events))
+
+        if dry_run:
+            continue
+
+        # --- Per-cell symbol/dep extraction via :analyze-source ---
+        for ci, (nb_idx, cell) in enumerate(code_cells):
+            src = cell.source if isinstance(cell.source, str) else "".join(cell.source)
+            if not src.strip():
+                continue
+
+            # Get symbols/deps from kernel
+            analysis_outputs = _analyze_cell_source(kc, src, cl_mode=False)
+            analysis_payload = _extract_events_mime(analysis_outputs)
+
+            # Build per-cell metadata
+            cell_meta = {
+                "events": per_cell_events[ci],
+                "package": file_package,
+            }
+            if per_cell_forms[ci]:
+                cell_meta["forms"] = per_cell_forms[ci]
+
+            # Merge in symbols/deps from analysis
+            if analysis_payload:
+                cell_meta = _merge_events_payload(cell_meta, analysis_payload)
+
+            # Set cell outputs
+            n_events = len(per_cell_events[ci])
+            n_symbols = len(cell_meta.get("symbols", []))
+            cell.outputs = [nbformat.v4.new_output(
+                output_type="display_data",
+                data={
+                    EVENTS_MIME: cell_meta,
+                    "text/plain": (
+                        f"{n_events} events, {n_symbols} symbols"
+                        f" (pass 1, {file_package})"
+                    ),
+                },
+                metadata={"pass": 1},
+            )]
+
+        # Remove old pass-1-metadata summary cell if present
+        nb.cells = [c for c in nb.cells
+                     if not (c.cell_type == "code"
+                             and c.source.strip() == "; pass-1-metadata")]
+
+        nbformat.write(nb, str(nb_path))
+        enriched += 1
+
+    log.info("Enriched %d pass-1 notebooks with per-cell metadata.", enriched)
+
+
+def enrich_raw_notebooks(kc, acl2_home: Path, dry_run: bool = False):
+    """Enrich raw CL notebooks with per-cell symbols and deps.
+
+    For each ``*-raw.ipynb`` notebook:
+    1. Send each cell's source via ``:analyze-source-cl`` (CL readtable).
+    2. Write symbols/deps as display_data outputs.
+    3. Fix notebook language tag from ``acl2`` to ``common-lisp``.
+
+    Must be called while the kernel is still alive (post-pass-2 world).
+    """
+    enriched = 0
+
+    for stem in RAW_STEMS:
+        nb_path = acl2_home / f"{stem}.ipynb"
+        if not nb_path.exists():
+            log.debug("  SKIP %s: no .ipynb found", stem)
+            continue
+
+        nb = nbformat.read(str(nb_path), as_version=4)
+        code_cells = [(i, c) for i, c in enumerate(nb.cells)
+                      if c.cell_type == "code"]
+        if not code_cells:
+            continue
+
+        log.info("  %s: enriching %d code cells (raw CL)", stem, len(code_cells))
+
+        if dry_run:
+            continue
+
+        for ci, (nb_idx, cell) in enumerate(code_cells):
+            src = cell.source if isinstance(cell.source, str) else "".join(cell.source)
+            if not src.strip():
+                continue
+
+            # Get symbols/deps from kernel using CL readtable
+            analysis_outputs = _analyze_cell_source(kc, src, cl_mode=True)
+            analysis_payload = _extract_events_mime(analysis_outputs)
+
+            if analysis_payload:
+                n_symbols = len(analysis_payload.get("symbols", []))
+                cell.outputs = [nbformat.v4.new_output(
+                    output_type="display_data",
+                    data={
+                        EVENTS_MIME: analysis_payload,
+                        "text/plain": (
+                            f"{n_symbols} symbols (raw CL)"
+                        ),
+                    },
+                    metadata={"source_type": "raw_common_lisp"},
+                )]
+
+        # Fix language tag: raw CL files should be common-lisp, not acl2
+        nb.metadata.setdefault("kernelspec", {}).update({
+            "display_name": "Common Lisp",
+            "language": "common-lisp",
+            "name": "common-lisp",
+        })
+        if "language_info" in nb.metadata:
+            nb.metadata["language_info"]["name"] = "common-lisp"
+
+        nbformat.write(nb, str(nb_path))
+        enriched += 1
+
+    log.info("Enriched %d raw CL notebooks with per-cell metadata.", enriched)
+
+
 # ── Build orchestration ──────────────────────────────────────────────────────
 
 def run_build(pass1_stems: list[str], pass2_stems: list[str],
@@ -478,6 +712,14 @@ def run_build(pass1_stems: list[str], pass2_stems: list[str],
             execute_pass(kc, 2, pass2_stems, acl2_home,
                          dry_run=dry_run, cell_timeout=cell_timeout,
                          only_stem=only_stem)
+        
+        # ── Enrichment phases (kernel must be alive with post-pass-2 world) ──
+        if do_pass2 and not dry_run:
+            log.info("=== Enrichment: pass-1 notebooks ===")
+            enrich_pass1_notebooks(kc, pass1_stems, acl2_home)
+            
+            log.info("=== Enrichment: raw CL notebooks ===")
+            enrich_raw_notebooks(kc, acl2_home)
     
     except KeyboardInterrupt:
         log.warning("Interrupted! Shutting down kernel ...")
@@ -490,8 +732,10 @@ def run_build(pass1_stems: list[str], pass2_stems: list[str],
         except Exception:
             pass
     
-    # Inject pass-1 metadata into notebooks (after kernel is shut down)
-    if pass2_only and not dry_run:
+    # Legacy fallback: inject pass-1 summary if enrichment didn't run.
+    # Enrichment requires the post-pass-2 world (do_pass2 && !dry_run);
+    # when only pass 1 was executed we still have the per-file JSONs.
+    if not do_pass2 and not dry_run:
         inject_pass1_metadata(pass1_stems, acl2_home)
 
 

@@ -28,14 +28,33 @@
                 acl2::define)
           :test #'eq))
 
-(defun extract-symbols (form)
+(defun cl-defun-like-p (sym)
+  "Return T if SYM names a CL definition form whose second argument is
+   a name (and optionally third is a formal parameter list).
+   Covers standard CL definition forms beyond ACL2's set."
+  (or (defun-like-p sym)
+      (member sym '(cl:defun cl:defmacro cl:defgeneric cl:defmethod
+                   cl:deftype cl:defstruct cl:defclass) :test #'eq)))
+
+(defun cl-definition-form-head-p (sym)
+  "Like definition-form-head-p but extended for Common Lisp forms.
+   Used for raw CL source analysis."
+  (or (definition-form-head-p sym)  ; all ACL2 forms
+      (member sym '(cl:defvar cl:defparameter cl:defconstant
+                   cl:defstruct cl:defclass cl:defgeneric
+                   cl:defmethod cl:deftype
+                   cl:define-condition cl:define-compiler-macro)
+              :test #'eq)))
+
+(defun extract-symbols (form &optional cl-mode-p)
   "Walk FORM recursively, collecting every symbol into a hash table.
    Keys are symbols; values are plists with collected info:
      :OPERATOR T  — appeared in function position (car of a form)
      :ARGUMENT T  — appeared as an argument (non-car position)
    A symbol can have both :OPERATOR and :ARGUMENT set.
    Argument lists of definition forms (defun, defmacro, etc.) are
-   walked as flat data so formal parameters are never marked operator."
+   walked as flat data so formal parameters are never marked operator.
+   When CL-MODE-P is T, uses cl-defun-like-p for broader coverage."
   (let ((table (make-hash-table :test 'eq)))
     (labels
         ((record (sym operator-p)
@@ -55,7 +74,10 @@
               ;; walk the formals list as flat data (all :argument, no :operator).
               (let ((head (car x)))
                 (cond
-                  ((and (symbolp head) (defun-like-p head))
+                  ((and (symbolp head)
+                        (if cl-mode-p
+                            (cl-defun-like-p head)
+                            (defun-like-p head)))
                    ;; head = defun-like operator
                    (record head t)
                    ;; second element = name being defined

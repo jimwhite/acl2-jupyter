@@ -237,10 +237,15 @@
        (list ,channel ,channel ,channel)
      (progn ,@forms)))
 
+(defvar *output-channel-symbol*
+  (intern "ACL2-JUPYTER-OUT" :acl2-jupyter-kernel)
+  "Single interned symbol used as the ACL2 output channel for all cells.
+   Its plist is updated per-cell to point to the current iopub stream.")
+
 (defmacro with-acl2-output-to (stream &body forms)
   "Redirect all ACL2 output channels AND CL streams to STREAM."
   (let ((channel (gensym "CHANNEL")))
-    `(let* ((,channel (gensym "ACL2-JUPYTER-OUT")))
+    `(let ((,channel *output-channel-symbol*))
        (setf (get ,channel *open-output-channel-type-key*) :character)
        (setf (get ,channel *open-output-channel-key*) ,stream)
        (unwind-protect
@@ -354,11 +359,16 @@
 ;;; stream.  This lets ACL2's own reader (read-object) handle all reader
 ;;; macros, package prefixes, keyword commands, etc.
 
+(defvar *input-channel-symbol*
+  (intern "JUPYTER-INPUT" :acl2-jupyter-kernel)
+  "Single interned symbol used as the ACL2 input channel for all cells.
+   Its plist is updated per-cell to point to the current string stream.")
+
 (defun make-string-input-channel (string)
   "Create an ACL2 :object input channel reading from STRING.
    Returns the channel symbol.  Caller must call close-string-input-channel
    when done."
-  (let ((channel (gensym "JUPYTER-INPUT")))
+  (let ((channel *input-channel-symbol*))
     (setf (get channel *open-input-channel-type-key*) :object)
     (setf (get channel *open-input-channel-key*)
           (make-string-input-stream string))

@@ -38,3 +38,6 @@
 [submodule "context/acl2-mcp"]
 	path = context/acl2-mcp
 	url = https://github.com/jimwhite/acl2-mcp.git
+[submodule "context/acl2-jupyter-kernel"]
+	path = context/acl2-jupyter-kernel
+	url = https://github.com/jimwhite/acl2-jupyter-kernel.git

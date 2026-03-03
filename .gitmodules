@@ -32,3 +32,9 @@
 [submodule "context/rewrite-cl"]
 	path = context/rewrite-cl
 	url = https://github.com/atgreen/rewrite-cl.git
+[submodule "context/acl2-kg-mcp"]
+	path = context/acl2-kg-mcp
+	url = https://github.com/wiki3-ai/acl2-kg-mcp.git
+[submodule "context/acl2-mcp"]
+	path = context/acl2-mcp
+	url = https://github.com/jimwhite/acl2-mcp.git

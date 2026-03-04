@@ -40,4 +40,5 @@
 	url = https://github.com/jimwhite/acl2-mcp.git
 [submodule "context/acl2-jupyter-kernel"]
 	path = context/acl2-jupyter-kernel
-	url = https://github.com/jimwhite/acl2-jupyter-kernel.git        branch = main
+	url = https://github.com/jimwhite/acl2-jupyter-kernel.git
+	branch = main

@@ -25,13 +25,6 @@
 [submodule "context/stp"]
 	path = context/stp
 	url = https://github.com/jimwhite/stp.git
-[submodule "context/tree-sitter-commonlisp"]
-	path = context/tree-sitter-commonlisp
-	url = https://github.com/jimwhite/tree-sitter-commonlisp.git
-	branch = comment-fix-v0.4.2
-[submodule "context/rewrite-cl"]
-	path = context/rewrite-cl
-	url = https://github.com/atgreen/rewrite-cl.git
 [submodule "context/acl2-kg-mcp"]
 	path = context/acl2-kg-mcp
 	url = https://github.com/wiki3-ai/acl2-kg-mcp.git

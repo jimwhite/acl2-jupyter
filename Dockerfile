@@ -64,10 +64,13 @@ RUN apt-get update && \
         ca-certificates \
         cmake \
         curl \
+        file \
         flex \
         g++ \
         gcc \
         git \
+        git-lfs \
+        hashalot \
         libboost-program-options-dev \
         libcurl4-openssl-dev \
         libczmq-dev \
@@ -84,6 +87,7 @@ RUN apt-get update && \
         python3-dev \
         retry \
         rlwrap \
+        rsync \
         sbcl \
         unzip \
         wget \
@@ -164,18 +168,8 @@ USER ${USER}
 # ACL2 Jupyter kernel (Common Lisp, built on common-lisp-jupyter)
 COPY acl2-jupyter-kernel quicklisp/local-projects/acl2-jupyter-kernel
 
-# script2notebook sources are copied to /tmp for install as jovyan later
-COPY --chown=${USER}:users tree-sitter-commonlisp /tmp/tree-sitter-commonlisp
-COPY --chown=${USER}:users script2notebook /tmp/script2notebook
-
 # VSCode extension for ACL2/Common Lisp language support and notebook renderer
 COPY extension/acl2-language /opt/acl2/vscode-extensions/acl2-language
-
-# script2notebook: tree-sitter-based .lisp → .ipynb converter
-# Uses local fork of tree-sitter-commonlisp with block comment fix (not on PyPI).
-RUN pipx install /tmp/script2notebook \
-    && pipx inject script2notebook /tmp/tree-sitter-commonlisp \
-    && rm -rf /tmp/script2notebook /tmp/tree-sitter-commonlisp
 
 RUN sbcl --non-interactive --load quicklisp.lisp \
       --eval "(quicklisp-quickstart:install)" --eval "(ql-util:without-prompting (ql:add-to-init-file))" \

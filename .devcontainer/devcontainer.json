@@ -15,8 +15,7 @@
         "RESTARTABLE": "yes",
         "USER": "jovyan"
     },
-    "postCreateCommand": "pip install -e /workspaces/acl2-jupyter/context/acl2-kg-mcp",
-    "postStartCommand": "ln -sfn /opt/acl2/vscode-extensions/acl2-language ~/.vscode-server/extensions/acl2-jupyter.acl2-language-0.1.0 2>/dev/null || true",
+    "postCreateCommand": "ln -sfn /opt/acl2/vscode-extensions/acl2-language ~/.vscode-server/extensions/acl2-jupyter.acl2-language-0.1.0 || true",
     "customizations": {
         "vscode": {
             "mcp": {
@@ -31,13 +30,6 @@
                             "SBCL_USER_ARGS": "--noinform",
                             "VIRTUAL_ENV": "${containerWorkspaceFolder}/.venv",
                             "PATH": "${containerWorkspaceFolder}/.venv/bin:/opt/acl2/bin:/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-                        }
-                    },
-                    "acl2-kg-mcp": {
-                        "command": "${containerWorkspaceFolder}/.venv/bin/acl2-kg-mcp",
-                        "args": [],
-                        "env": {
-                            "WEAVIATE_HOST": "host.docker.internal"
                         }
                     }
                 }

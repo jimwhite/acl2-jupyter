@@ -254,7 +254,7 @@ RUN --mount=type=bind,from=z3-builder,target=/tmp/z3-stage \
         cp /tmp/z3-stage/usr/local/bin/z3 /usr/local/bin/z3 \
         && find /tmp/z3-stage/usr/local/lib -name 'libz3*' -exec cp {} /usr/local/lib/ \; \
         && ldconfig \
-        && conda install -y z3-solver; \
+        && HOME=/root conda install -y z3-solver; \
     fi
 
 # Install STP (optional, statically compiled).  No layer cost when WITH_STP=0.

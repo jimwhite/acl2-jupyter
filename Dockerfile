@@ -106,7 +106,7 @@ RUN mkdir /build-z3 \
     && wget "https://github.com/Z3Prover/z3/archive/refs/tags/z3-${Z3_VERSION}.tar.gz" \
          -O z3.tar.gz -q \
     && tar -xzf z3.tar.gz --strip-components=1 \
-    && ./configure \
+    && ./configure --prefix=/usr/local \
     && cd build \
     && make -j$(nproc) \
     && make install \
@@ -133,6 +133,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libm4ri-dev \
         libtinfo-dev \
         pkg-config \
+        zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY stp /build-stp
@@ -202,10 +203,10 @@ USER ${USER}
 # Build ACL2 (optionally with real-number support via ACL2_REAL=acl2r)
 RUN cd ${ACL2_HOME} \
     && if [ "${WITH_REAL}" = "1" ]; then \
-           make LISP="${LISP}" ACL2_REAL=acl2r ${ACL2_BUILD_OPTS} \
+           make LISP="${LISP}" ACL2_REAL=acl2r ACL2_SNAPSHOT_INFO="${ACL2_COMMIT}" ${ACL2_BUILD_OPTS} \
                || (tail -500 make.log && false); \
        else \
-           make LISP="${LISP}" ${ACL2_BUILD_OPTS} \
+           make LISP="${LISP}" ACL2_SNAPSHOT_INFO="${ACL2_COMMIT}" ${ACL2_BUILD_OPTS} \
                || (tail -500 make.log && false); \
        fi
 
@@ -234,7 +235,9 @@ RUN --mount=type=bind,from=lisp,target=/tmp/lisp-stage \
     fi
 
 # libczmq-dev: required by common-lisp-jupyter's ZMQ bindings
+# build-essential: required by cffi-grovel (pzmq dependency) to run cc
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
         libczmq-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -368,6 +371,9 @@ USER ${USER}
 # Copy Quicklisp and pre-built common-lisp-jupyter from quicklisp-builder
 COPY --from=quicklisp-builder --chown=${USER}:users \
     /home/jovyan/quicklisp /home/jovyan/quicklisp
+# Copy the SBCL fasl cache so cffi-grovel doesn't need to recompile pzmq
+COPY --from=quicklisp-builder --chown=${USER}:users \
+    /home/jovyan/.cache /home/jovyan/.cache
 
 ENV QUICKLISP=1
 

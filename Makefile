@@ -1,14 +1,22 @@
 all: build
-.PHONY: all build push push-ghcr build-multiplatform build-multiplatform-ghcr build-arm64 build-arm64-ghcr \
+.PHONY: all build build-books push push-ghcr \
+        build-multiplatform build-multiplatform-ghcr \
+        build-multiplatform-books build-multiplatform-books-ghcr \
+        build-arm64 build-arm64-ghcr \
         notebooks notebooks-convert notebooks-execute notebooks-force notebooks-dir install-script2notebook \
         lisp2nb lisp2nb-force lisp2nb-books sanitize-lisp \
         test-lisp2nb test-lisp2nb-annotations test-lisp2nb-all
 
 # By default this builds the latest commit from the main branch of https://github.com/jimwhite/acl2
-# TODO: Default/easy selection of released version.
 ACL2_GITHUB_REPO ?= jimwhite/acl2
 ACL2_BRANCH ?= main
 ACL2_COMMIT ?= $(shell curl --silent https://api.github.com/repos/$(ACL2_GITHUB_REPO)/commits/$(ACL2_BRANCH) | jq -r .sha)
+
+# ACL2_REF: the human-readable label for this build (release tag like "8.7", or branch name).
+# Used as the <source> component of the image/kernel ID.
+# If ACL2_REF starts with a digit it is used verbatim; otherwise the first 8 chars of
+# ACL2_COMMIT are used instead (see Dockerfile kernel-rename step).
+ACL2_REF ?= $(ACL2_BRANCH)
 
 BASE_IMAGE ?= quay.io/jupyter/minimal-notebook:latest
 IMAGE_NAME ?= acl2-jupyter
@@ -20,20 +28,39 @@ GHCR_IMAGE_NAME ?= ghcr.io/jimwhite/$(IMAGE_NAME)
 # Tried to use podman but had more flakiness in book certification, even with single job.
 DOCKER ?= docker
 DOCKERFILE ?= Dockerfile
+# CCL is x86_64 only — override with PLATFORM=linux/amd64 when LISP=ccl
 PLATFORM ?= linux/amd64,linux/arm64
 BUILD_CACHE ?=
 
-ACL2_SAFETY ?= 
+# --- Lisp implementation ---------------------------------------------------
+# LISP=sbcl (default) or LISP=ccl (x86_64 only; use PLATFORM=linux/amd64)
+LISP ?= sbcl
+SBCL_VERSION ?= 2.6.1
+CCL_VERSION ?= 1.12.2
+
+# --- ACL2 variant ----------------------------------------------------------
+# WITH_REAL=1 builds ACL2(r) with support for real numbers
+WITH_REAL ?= 0
+
+ACL2_SAFETY ?=
 ACL2_BUILD_OPTS ?= "ACL2_SAFETY=$(ACL2_SAFETY)"
 
+# --- Optional solver tools -------------------------------------------------
+# Set to 0 to omit from the image (no layer cost thanks to --mount in Dockerfile)
+WITH_Z3 ?= 1
+WITH_STP ?= 1
+Z3_VERSION ?= 4.15.7
+# GitHub runner gets OOM running parallel STP build
+STP_BUILD_JOBS ?=
+
+# --- Book certification ---------------------------------------------------
 # ACL2_CERT_JOBS ?= 1
-# Some books like acl2s and centaur will sometimes fail certification when using multiple jobs.
+# Some books like acl2s and centaur will sometimes fail certification with multiple jobs.
 # Make sure Docker has enough memory allocated if using max jobs.
 # ACL2_CERT_JOBS ?= $(shell nproc)
 # `shell nproc` didn't work for multiplatform on MacOS.
 ACL2_CERT_JOBS ?= 6
 ACL2_CERTIFY_TARGETS ?= basic acl2s centaur/bridge/top.cert projects/smtlink/top.cert
-# ACL2 Bridge is CCL-only so we don't really need anything other than basic.
 # ACL2_CERTIFY_TARGETS ?= regression acl2s centaur/bridge
 # ACL2_CERTIFY_TARGETS ?= all
 ACL2_CERTIFY_OPTS ?= "-k -j $(ACL2_CERT_JOBS)"
@@ -54,43 +81,82 @@ ACL2_CERTIFY_OPTS ?= "-k -j $(ACL2_CERT_JOBS)"
 # git submodule add https://github.com/yitzchak/resizable-box-clj.git context/quicklisp/local-projects/resizable-box-clj
 # git submodule add https://github.com/yitzchak/ngl-clj.git context/quicklisp/local-projects/ngl-clj
 
+# Common --build-arg block shared by all docker buildx invocations
+DOCKER_BUILD_ARGS = \
+	--build-arg BASE_IMAGE=$(BASE_IMAGE) \
+	--build-arg LISP=$(LISP) \
+	--build-arg SBCL_VERSION=$(SBCL_VERSION) \
+	--build-arg CCL_VERSION=$(CCL_VERSION) \
+	--build-arg ACL2_GITHUB_REPO=$(ACL2_GITHUB_REPO) \
+	--build-arg ACL2_COMMIT=$(ACL2_COMMIT) \
+	--build-arg ACL2_REF=$(ACL2_REF) \
+	--build-arg ACL2_BUILD_OPTS=$(ACL2_BUILD_OPTS) \
+	--build-arg WITH_REAL=$(WITH_REAL) \
+	--build-arg WITH_Z3=$(WITH_Z3) \
+	--build-arg WITH_STP=$(WITH_STP) \
+	--build-arg Z3_VERSION=$(Z3_VERSION) \
+	--build-arg "STP_BUILD_JOBS=$(STP_BUILD_JOBS)" \
+	--build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) \
+	--build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)"
+
 git-submodules:
 	git submodule update --init --remote
 	git submodule foreach --recursive 'git submodule update --init'
 
+# --- Base image (--target jupyter) ----------------------------------------
+
 build-multiplatform:
-	$(DOCKER) buildx build --platform=$(PLATFORM) $(BUILD_CACHE) -t $(DOCKERHUB_IMAGE_NAME):$(IMAGE_VERSION) context \
-		--build-arg BASE_IMAGE=$(BASE_IMAGE) --build-arg ACL2_BUILD_OPTS=$(ACL2_BUILD_OPTS) \
-		--build-arg ACL2_GITHUB_REPO=$(ACL2_GITHUB_REPO) --build-arg ACL2_COMMIT=$(ACL2_COMMIT) \
-		--build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" \
-		-f $(DOCKERFILE) --push
+	$(DOCKER) buildx build --platform=$(PLATFORM) $(BUILD_CACHE) \
+		-t $(DOCKERHUB_IMAGE_NAME):$(IMAGE_VERSION) \
+		--target jupyter $(DOCKER_BUILD_ARGS) \
+		-f $(DOCKERFILE) context --push
 
 build-multiplatform-ghcr:
-	$(DOCKER) buildx build --platform=$(PLATFORM) $(BUILD_CACHE) -t $(GHCR_IMAGE_NAME):$(IMAGE_VERSION) context \
-		--build-arg BASE_IMAGE=$(BASE_IMAGE) --build-arg ACL2_BUILD_OPTS=$(ACL2_BUILD_OPTS) \
-		--build-arg ACL2_GITHUB_REPO=$(ACL2_GITHUB_REPO) --build-arg ACL2_COMMIT=$(ACL2_COMMIT) \
-		--build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" \
-		-f $(DOCKERFILE) --push
+	$(DOCKER) buildx build --platform=$(PLATFORM) $(BUILD_CACHE) \
+		-t $(GHCR_IMAGE_NAME):$(IMAGE_VERSION) \
+		--target jupyter $(DOCKER_BUILD_ARGS) \
+		-f $(DOCKERFILE) context --push
 
 build-arm64:
-	$(DOCKER) buildx build --platform=linux/arm64 $(BUILD_CACHE) -t $(DOCKERHUB_IMAGE_NAME):$(IMAGE_VERSION) context \
-		--build-arg BASE_IMAGE=$(BASE_IMAGE) --build-arg ACL2_BUILD_OPTS=$(ACL2_BUILD_OPTS) \
-		--build-arg ACL2_GITHUB_REPO=$(ACL2_GITHUB_REPO) --build-arg ACL2_COMMIT=$(ACL2_COMMIT) \
-		--build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" \
-		-f $(DOCKERFILE) --push
+	$(DOCKER) buildx build --platform=linux/arm64 $(BUILD_CACHE) \
+		-t $(DOCKERHUB_IMAGE_NAME):$(IMAGE_VERSION) \
+		--target jupyter $(DOCKER_BUILD_ARGS) \
+		-f $(DOCKERFILE) context --push
 
 build-arm64-ghcr:
-	$(DOCKER) buildx build --platform=linux/arm64 $(BUILD_CACHE) -t $(GHCR_IMAGE_NAME):$(IMAGE_VERSION) context \
-		--build-arg BASE_IMAGE=$(BASE_IMAGE) --build-arg ACL2_BUILD_OPTS=$(ACL2_BUILD_OPTS) \
-		--build-arg ACL2_GITHUB_REPO=$(ACL2_GITHUB_REPO) --build-arg ACL2_COMMIT=$(ACL2_COMMIT) \
-		--build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" \
-		-f $(DOCKERFILE) --push
+	$(DOCKER) buildx build --platform=linux/arm64 $(BUILD_CACHE) \
+		-t $(GHCR_IMAGE_NAME):$(IMAGE_VERSION) \
+		--target jupyter $(DOCKER_BUILD_ARGS) \
+		-f $(DOCKERFILE) context --push
 
+# Local build of base image (no push)
 build:
-	$(DOCKER) buildx build context $(BUILD_CACHE) -t $(IMAGE_NAME):$(IMAGE_VERSION) \
-		--build-arg BASE_IMAGE=$(BASE_IMAGE) --build-arg ACL2_BUILD_OPTS=$(ACL2_BUILD_OPTS) \
-		--build-arg ACL2_GITHUB_REPO=$(ACL2_GITHUB_REPO) --build-arg ACL2_COMMIT=$(ACL2_COMMIT) \
-		--build-arg ACL2_CERTIFY_OPTS=$(ACL2_CERTIFY_OPTS) --build-arg "ACL2_CERTIFY_TARGETS=$(ACL2_CERTIFY_TARGETS)" \
+	$(DOCKER) buildx build context $(BUILD_CACHE) \
+		-t $(IMAGE_NAME):$(IMAGE_VERSION) \
+		--target jupyter $(DOCKER_BUILD_ARGS) \
+		-f $(DOCKERFILE)
+
+# --- Books image (--target books) -----------------------------------------
+# Image name convention: <base-image-name>-<books-slug>
+# e.g. acl2-8.7-basic, acl2-8.7-ccl-regression
+
+build-multiplatform-books:
+	$(DOCKER) buildx build --platform=$(PLATFORM) $(BUILD_CACHE) \
+		-t $(DOCKERHUB_IMAGE_NAME):$(IMAGE_VERSION)-books \
+		--target books $(DOCKER_BUILD_ARGS) \
+		-f $(DOCKERFILE) context --push
+
+build-multiplatform-books-ghcr:
+	$(DOCKER) buildx build --platform=$(PLATFORM) $(BUILD_CACHE) \
+		-t $(GHCR_IMAGE_NAME):$(IMAGE_VERSION)-books \
+		--target books $(DOCKER_BUILD_ARGS) \
+		-f $(DOCKERFILE) context --push
+
+# Local build of books image (no push)
+build-books:
+	$(DOCKER) buildx build context $(BUILD_CACHE) \
+		-t $(IMAGE_NAME):$(IMAGE_VERSION)-books \
+		--target books $(DOCKER_BUILD_ARGS) \
 		-f $(DOCKERFILE)
 
 push:

@@ -337,16 +337,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Lisp runtime from the lisp stage (no build tools retained)
-RUN --mount=type=bind,from=lisp,target=/tmp/lisp-stage \
+# Install Lisp runtime from acl2-builder (not from lisp/sbcl-builder directly).
+# This guarantees the runtime binary is identical to the one that compiled saved_acl2:
+# SBCL embeds the build-host name into its binary, so loading saved_acl2 with any
+# other SBCL binary — even the same version compiled at a different time — causes a
+# "core was built for runtime X but this is Y" fatal error.  Taking SBCL from the
+# same stage that built the core is the simplest way to avoid that mismatch.
+RUN --mount=type=bind,from=acl2-builder,target=/tmp/acl2-stage \
     if [ "${LISP}" = "sbcl" ]; then \
-        cp /tmp/lisp-stage/usr/local/bin/sbcl /usr/local/bin/sbcl \
+        cp /tmp/acl2-stage/usr/local/bin/sbcl /usr/local/bin/sbcl \
         && mkdir -p /usr/local/lib \
-        && cp -r /tmp/lisp-stage/usr/local/lib/sbcl /usr/local/lib/sbcl \
+        && cp -r /tmp/acl2-stage/usr/local/lib/sbcl /usr/local/lib/sbcl \
         && ldconfig; \
     elif [ "${LISP}" = "ccl" ]; then \
         mkdir -p /usr/local/ccl \
-        && cp -r /tmp/lisp-stage/usr/local/ccl/. /usr/local/ccl/ \
+        && cp -r /tmp/acl2-stage/usr/local/ccl/. /usr/local/ccl/ \
         && ln -sf /usr/local/ccl/lx86cl64 /usr/local/bin/ccl; \
     fi
 

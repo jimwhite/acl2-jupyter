@@ -385,9 +385,17 @@ RUN mkdir -p /opt/acl2/bin \
 
 USER ${USER}
 
-# Copy Quicklisp and pre-built common-lisp-jupyter from quicklisp-builder
+# Copy Quicklisp (packages, local-projects, dist archives) from quicklisp-builder
 COPY --from=quicklisp-builder --chown=${USER}:users \
     /home/jovyan/quicklisp /home/jovyan/quicklisp
+
+# Copy the saved common-lisp-jupyter kernel created by (clj:install :implementation t).
+# The kernel lives at ~/.local/share/jupyter/kernels/common-lisp/ and is NOT under
+# ~/quicklisp/, so without this COPY it was silently discarded — the design problem
+# that caused kekule-clj and friends to appear downloaded-but-unused.
+COPY --from=quicklisp-builder --chown=${USER}:users \
+    /home/jovyan/.local/share/jupyter/kernels \
+    /home/jovyan/.local/share/jupyter/kernels
 
 ENV QUICKLISP=1
 

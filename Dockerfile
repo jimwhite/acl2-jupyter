@@ -299,24 +299,41 @@ RUN echo 'jovyan ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers \
     && chown -R ${USER}:acl2 /opt/acl2 \
     && chmod -R g+rx /opt/acl2
 
-# Runtime-only packages — no compilers or build toolchains
+# Runtime packages (mirrors the pre-revamp single-stage package set)
 # nodejs and npm for Claude Code (TODO: switch to Deno)
 # retry may be used to retry flaky book certification makefiles
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        autoconf \
+        automake \
+        bison \
+        build-essential \
         ca-certificates \
+        cmake \
+        curl \
+        file \
+        flex \
+        git \
+        git-lfs \
         hashalot \
+        libboost-program-options-dev \
+        libcurl4-openssl-dev \
         libczmq-dev \
         libgmp-dev \
         libm4ri-dev \
+        libssl-dev \
         libtinfo-dev \
         libzstd-dev \
         make \
         nodejs npm \
         perl \
         pipx \
+        pkg-config \
+        python3-dev \
         retry \
         rlwrap \
         rsync \
+        unzip \
+        wget \
         zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -371,9 +388,6 @@ USER ${USER}
 # Copy Quicklisp and pre-built common-lisp-jupyter from quicklisp-builder
 COPY --from=quicklisp-builder --chown=${USER}:users \
     /home/jovyan/quicklisp /home/jovyan/quicklisp
-# Copy the SBCL fasl cache so cffi-grovel doesn't need to recompile pzmq
-COPY --from=quicklisp-builder --chown=${USER}:users \
-    /home/jovyan/.cache /home/jovyan/.cache
 
 ENV QUICKLISP=1
 

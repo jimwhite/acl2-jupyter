@@ -12,17 +12,42 @@ on:
         required: false
         default: 'main'
       acl2_tag:
-        description: 'ACL2 release tag (e.g., 8.6) or "latest" for latest commit on branch'
+        description: 'ACL2 release tag (e.g., 8.7) or "latest" for latest commit on branch'
         required: false
         default: 'latest'
+      lisp:
+        description: 'Lisp implementation: sbcl (default) or ccl (x86_64 only — skips arm64 build)'
+        required: false
+        default: 'sbcl'
+      with_real:
+        description: 'Build ACL2(r) with real-number support: 0 (standard, default) or 1'
+        required: false
+        default: '0'
+      with_z3:
+        description: 'Include Z3 SMT solver: 1 (default) or 0'
+        required: false
+        default: '1'
+      with_stp:
+        description: 'Include STP SAT solver: 1 (default) or 0'
+        required: false
+        default: '1'
+      build_books:
+        description: 'Also build a books image that certifies ACL2 books'
+        required: false
+        default: false
+        type: boolean
       books_target:
-        description: 'Books certification target (e.g., all, basic, centaur)'
+        description: 'Books certification target(s) (used when build_books is true)'
         required: false
         default: 'basic acl2s centaur/bridge/top.cert projects/smtlink/top.cert'
       sbcl_version:
         description: 'SBCL version'
         required: false
         default: '2.6.1'
+      ccl_version:
+        description: 'CCL version (used when lisp=ccl)'
+        required: false
+        default: '1.12.2'
       z3_version:
         description: 'Z3 version'
         required: false
@@ -37,14 +62,18 @@ permissions:
   packages: write
 
 jobs:
-  # Get ACL2 commit hash and determine image tag - shared across all jobs
+  # ---------------------------------------------------------------------------
+  # Resolve ACL2 commit hash and compute image/kernel ID
+  # ---------------------------------------------------------------------------
   prepare:
     runs-on: ubuntu-latest
     outputs:
       acl2-commit: ${{ steps.acl2-commit.outputs.commit }}
-      acl2-ref: ${{ steps.acl2-commit.outputs.ref }}
-      acl2-repo: ${{ steps.acl2-commit.outputs.repo }}
-      image-tag: ${{ steps.meta.outputs.tag }}
+      acl2-ref:    ${{ steps.acl2-commit.outputs.ref }}
+      acl2-repo:   ${{ steps.acl2-commit.outputs.repo }}
+      image-id:    ${{ steps.image-id.outputs.id }}
+      platforms:   ${{ steps.image-id.outputs.platforms }}
+      amd64-only:  ${{ steps.image-id.outputs.amd64-only }}
     steps:
       - name: Get ACL2 commit hash
         id: acl2-commit
@@ -52,48 +81,75 @@ jobs:
           ACL2_REPO="${{ github.event.inputs.acl2_repo }}"
           ACL2_BRANCH="${{ github.event.inputs.acl2_branch }}"
           ACL2_REF="${{ github.event.inputs.acl2_tag }}"
-          
+
           if [[ "$ACL2_REF" == "latest" ]]; then
-            # Get the latest commit from the specified branch
             echo "Using ACL2 latest (${ACL2_REPO}@${ACL2_BRANCH})"
-            HTTP_RESPONSE=$(curl --silent --write-out "\n%{http_code}" https://api.github.com/repos/${ACL2_REPO}/commits/${ACL2_BRANCH})
+            HTTP_RESPONSE=$(curl --silent --write-out "\n%{http_code}" \
+              https://api.github.com/repos/${ACL2_REPO}/commits/${ACL2_BRANCH})
             HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -n1)
             RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
-            
             if [[ "$HTTP_CODE" != "200" ]]; then
               echo "Error: GitHub API request failed with HTTP status $HTTP_CODE"
               exit 1
             fi
-            
             ACL2_COMMIT=$(echo "$RESPONSE_BODY" | jq -r .sha)
           else
-            # Get the commit for the specified release tag
             echo "Using ACL2 release tag: ${ACL2_REF} from ${ACL2_REPO}"
-            HTTP_RESPONSE=$(curl --silent --write-out "\n%{http_code}" https://api.github.com/repos/${ACL2_REPO}/tags)
+            HTTP_RESPONSE=$(curl --silent --write-out "\n%{http_code}" \
+              https://api.github.com/repos/${ACL2_REPO}/tags)
             HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -n1)
             RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
-            
             if [[ "$HTTP_CODE" != "200" ]]; then
-              echo "Error: GitHub API request failed with HTTP status $HTTP_CODE for release tag '${ACL2_REF}'"
+              echo "Error: GitHub API request failed with HTTP status $HTTP_CODE"
               exit 1
             fi
-            ACL2_COMMIT=$(echo "$RESPONSE_BODY" | jq -r --arg ref "$ACL2_REF" '.[] | select(.name==$ref) | .commit.sha')
+            ACL2_COMMIT=$(echo "$RESPONSE_BODY" | \
+              jq -r --arg ref "$ACL2_REF" '.[] | select(.name==$ref) | .commit.sha')
           fi
-          
+
           echo "commit=$ACL2_COMMIT" >> $GITHUB_OUTPUT
-          echo "ref=$ACL2_REF" >> $GITHUB_OUTPUT
-          echo "repo=$ACL2_REPO" >> $GITHUB_OUTPUT
-          echo "ACL2 repo: $ACL2_REPO"
+          echo "ref=$ACL2_REF"       >> $GITHUB_OUTPUT
+          echo "repo=$ACL2_REPO"     >> $GITHUB_OUTPUT
+          echo "ACL2 repo:   $ACL2_REPO"
           echo "ACL2 commit: $ACL2_COMMIT"
 
-      - name: Determine image tag
-        id: meta
+      - name: Compute image/kernel ID
+        id: image-id
         run: |
-          TAG="${{ github.event.inputs.acl2_tag }}"
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "Image tag: $TAG"
+          # <source> = release tag if it starts with a digit, else first 8 chars of commit hash
+          ACL2_REF="${{ github.event.inputs.acl2_tag }}"
+          ACL2_COMMIT="${{ steps.acl2-commit.outputs.commit }}"
+          if echo "$ACL2_REF" | grep -qE '^[0-9]'; then
+            SOURCE_ID="$ACL2_REF"
+          else
+            SOURCE_ID="${ACL2_COMMIT:0:8}"
+          fi
 
-  # Build AMD64 image on native runner
+          LISP="${{ github.event.inputs.lisp }}"
+          LISP_SUFFIX=$([ "$LISP" != "sbcl" ] && echo "-$LISP" || echo "")
+
+          REAL_SUFFIX=$([ "${{ github.event.inputs.with_real }}" = "1" ] && echo "-real" || echo "")
+
+          TOOLS_SUFFIX=""
+          [ "${{ github.event.inputs.with_z3  }}" = "1" ] && TOOLS_SUFFIX="${TOOLS_SUFFIX}-z3"
+          [ "${{ github.event.inputs.with_stp }}" = "1" ] && TOOLS_SUFFIX="${TOOLS_SUFFIX}-stp"
+
+          IMAGE_ID="acl2-${SOURCE_ID}${LISP_SUFFIX}${REAL_SUFFIX}${TOOLS_SUFFIX}"
+          echo "id=$IMAGE_ID" >> $GITHUB_OUTPUT
+
+          # Platforms: CCL is x86_64 only so no arm64 build
+          if [[ "$LISP" == "ccl" ]]; then
+            echo "platforms=linux/amd64" >> $GITHUB_OUTPUT
+            echo "amd64-only=true"       >> $GITHUB_OUTPUT
+          else
+            echo "platforms=linux/amd64, linux/arm64" >> $GITHUB_OUTPUT
+            echo "amd64-only=false"                   >> $GITHUB_OUTPUT
+          fi
+          echo "Image ID: $IMAGE_ID"
+
+  # ---------------------------------------------------------------------------
+  # Build base image (--target jupyter) for AMD64
+  # ---------------------------------------------------------------------------
   build-amd64:
     needs: prepare
     runs-on: ubuntu-latest
@@ -116,32 +172,43 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push AMD64 image
+      - name: Build and push AMD64 base image
         id: build
         uses: docker/build-push-action@v5
         with:
           context: context
           file: Dockerfile
+          target: jupyter
           platforms: linux/amd64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image-tag }}-amd64
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image-id }}-amd64
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.description=A Docker image for running the ACL2 theorem proving system and books in JupyterLab
+            org.opencontainers.image.description=A Docker image for running the ACL2 theorem proving system in JupyterLab
             org.opencontainers.image.licenses=BSD-3-Clause
           build-args: |
             BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest
-            ACL2_COMMIT=${{ needs.prepare.outputs.acl2-commit }}
-            ACL2_CERTIFY_TARGETS=${{ github.event.inputs.books_target }}
+            LISP=${{ github.event.inputs.lisp }}
             SBCL_VERSION=${{ github.event.inputs.sbcl_version }}
+            CCL_VERSION=${{ github.event.inputs.ccl_version }}
+            ACL2_GITHUB_REPO=${{ needs.prepare.outputs.acl2-repo }}
+            ACL2_COMMIT=${{ needs.prepare.outputs.acl2-commit }}
+            ACL2_REF=${{ github.event.inputs.acl2_tag }}
+            WITH_REAL=${{ github.event.inputs.with_real }}
+            WITH_Z3=${{ github.event.inputs.with_z3 }}
+            WITH_STP=${{ github.event.inputs.with_stp }}
             Z3_VERSION=${{ github.event.inputs.z3_version }}
             STP_BUILD_JOBS=
-          cache-from: type=gha,scope=amd64
-          cache-to: type=gha,mode=max,scope=amd64
+          cache-from: type=gha,scope=amd64-${{ needs.prepare.outputs.image-id }}
+          cache-to:   type=gha,mode=max,scope=amd64-${{ needs.prepare.outputs.image-id }}
 
-  # Build ARM64 image on native arm64 runner
+  # ---------------------------------------------------------------------------
+  # Build base image (--target jupyter) for ARM64
+  # Skipped when LISP=ccl because CCL is x86_64 only.
+  # ---------------------------------------------------------------------------
   build-arm64:
     needs: prepare
+    if: ${{ github.event.inputs.lisp != 'ccl' }}
     runs-on: [self-hosted, ARM64]
     permissions:
       contents: read
@@ -162,31 +229,41 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push ARM64 image
+      - name: Build and push ARM64 base image
         id: build
         uses: docker/build-push-action@v5
         with:
           context: context
           file: Dockerfile
+          target: jupyter
           platforms: linux/arm64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image-tag }}-arm64
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image-id }}-arm64
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.description=A Docker image for running the ACL2 theorem proving system and books in JupyterLab
+            org.opencontainers.image.description=A Docker image for running the ACL2 theorem proving system in JupyterLab
             org.opencontainers.image.licenses=BSD-3-Clause
           build-args: |
             BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest
-            ACL2_COMMIT=${{ needs.prepare.outputs.acl2-commit }}
-            ACL2_CERTIFY_TARGETS=${{ github.event.inputs.books_target }}
+            LISP=${{ github.event.inputs.lisp }}
             SBCL_VERSION=${{ github.event.inputs.sbcl_version }}
+            ACL2_GITHUB_REPO=${{ needs.prepare.outputs.acl2-repo }}
+            ACL2_COMMIT=${{ needs.prepare.outputs.acl2-commit }}
+            ACL2_REF=${{ github.event.inputs.acl2_tag }}
+            WITH_REAL=${{ github.event.inputs.with_real }}
+            WITH_Z3=${{ github.event.inputs.with_z3 }}
+            WITH_STP=${{ github.event.inputs.with_stp }}
             Z3_VERSION=${{ github.event.inputs.z3_version }}
-          cache-from: type=gha,scope=arm64
-          cache-to: type=gha,mode=max,scope=arm64
+          cache-from: type=gha,scope=arm64-${{ needs.prepare.outputs.image-id }}
+          cache-to:   type=gha,mode=max,scope=arm64-${{ needs.prepare.outputs.image-id }}
 
-  # Create and push multiarch manifest
+  # ---------------------------------------------------------------------------
+  # Create multiarch manifest for base image
+  # When LISP=ccl only the amd64 image exists, so only one tag is listed.
+  # ---------------------------------------------------------------------------
   create-manifest:
     needs: [prepare, build-amd64, build-arm64]
+    if: always() && needs.build-amd64.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -199,26 +276,184 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create and push multiarch manifest
+      - name: Create and push multiarch manifest for base image
         run: |
-          # Create manifest list with both platform images
-          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image-tag }} \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image-tag }}-amd64 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image-tag }}-arm64
+          IMAGE_ID="${{ needs.prepare.outputs.image-id }}"
+          REGISTRY_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+
+          if [[ "${{ needs.prepare.outputs.amd64-only }}" == "true" ]]; then
+            # CCL: amd64 only
+            docker buildx imagetools create \
+              -t ${REGISTRY_IMAGE}:${IMAGE_ID} \
+              ${REGISTRY_IMAGE}:${IMAGE_ID}-amd64
+          else
+            docker buildx imagetools create \
+              -t ${REGISTRY_IMAGE}:${IMAGE_ID} \
+              ${REGISTRY_IMAGE}:${IMAGE_ID}-amd64 \
+              ${REGISTRY_IMAGE}:${IMAGE_ID}-arm64
+          fi
 
       - name: Generate build summary
         run: |
-          echo "## Docker Multiarch Image Build Summary" >> $GITHUB_STEP_SUMMARY
+          IMAGE_ID="${{ needs.prepare.outputs.image-id }}"
+          PLATFORMS="${{ needs.prepare.outputs.platforms }}"
+          echo "## Docker Image Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image Tag:** ${{ needs.prepare.outputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
-          echo "**ACL2 Repository:** ${{ needs.prepare.outputs.acl2-repo }}" >> $GITHUB_STEP_SUMMARY
-          echo "**ACL2 Version:** ${{ needs.prepare.outputs.acl2-ref }}" >> $GITHUB_STEP_SUMMARY
-          echo "**ACL2 Commit:** ${{ needs.prepare.outputs.acl2-commit }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Platforms:** linux/amd64, linux/arm64" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Image ID** | \`${IMAGE_ID}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Lisp** | ${{ github.event.inputs.lisp }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **ACL2(r)** | ${{ github.event.inputs.with_real }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Z3** | ${{ github.event.inputs.with_z3 }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **STP** | ${{ github.event.inputs.with_stp }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **ACL2 Repo** | ${{ needs.prepare.outputs.acl2-repo }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **ACL2 Commit** | \`${{ needs.prepare.outputs.acl2-commit }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Platforms** | ${PLATFORMS} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Pull command:**" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_ID}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Note:** This is a multiarch image supporting both amd64 and arm64. Docker will automatically pull the correct architecture for your system." >> $GITHUB_STEP_SUMMARY
+
+  # ---------------------------------------------------------------------------
+  # Build books image (--target books) for AMD64 — only when build_books=true
+  # ---------------------------------------------------------------------------
+  build-books-amd64:
+    needs: prepare
+    if: ${{ github.event.inputs.build_books == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push AMD64 books image
+        uses: docker/build-push-action@v5
+        with:
+          context: context
+          file: Dockerfile
+          target: books
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image-id }}-books-amd64
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=A Docker image for running the ACL2 theorem proving system and certified books in JupyterLab
+            org.opencontainers.image.licenses=BSD-3-Clause
+          build-args: |
+            BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest
+            LISP=${{ github.event.inputs.lisp }}
+            SBCL_VERSION=${{ github.event.inputs.sbcl_version }}
+            CCL_VERSION=${{ github.event.inputs.ccl_version }}
+            ACL2_GITHUB_REPO=${{ needs.prepare.outputs.acl2-repo }}
+            ACL2_COMMIT=${{ needs.prepare.outputs.acl2-commit }}
+            ACL2_REF=${{ github.event.inputs.acl2_tag }}
+            WITH_REAL=${{ github.event.inputs.with_real }}
+            WITH_Z3=${{ github.event.inputs.with_z3 }}
+            WITH_STP=${{ github.event.inputs.with_stp }}
+            Z3_VERSION=${{ github.event.inputs.z3_version }}
+            STP_BUILD_JOBS=
+            ACL2_CERTIFY_TARGETS=${{ github.event.inputs.books_target }}
+          cache-from: type=gha,scope=amd64-${{ needs.prepare.outputs.image-id }}
+          cache-to:   type=gha,mode=max,scope=amd64-${{ needs.prepare.outputs.image-id }}
+
+  # ---------------------------------------------------------------------------
+  # Build books image (--target books) for ARM64 — skipped for CCL
+  # ---------------------------------------------------------------------------
+  build-books-arm64:
+    needs: prepare
+    if: ${{ github.event.inputs.build_books == 'true' && github.event.inputs.lisp != 'ccl' }}
+    runs-on: [self-hosted, ARM64]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ARM64 books image
+        uses: docker/build-push-action@v5
+        with:
+          context: context
+          file: Dockerfile
+          target: books
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image-id }}-books-arm64
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=A Docker image for running the ACL2 theorem proving system and certified books in JupyterLab
+            org.opencontainers.image.licenses=BSD-3-Clause
+          build-args: |
+            BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest
+            LISP=${{ github.event.inputs.lisp }}
+            SBCL_VERSION=${{ github.event.inputs.sbcl_version }}
+            ACL2_GITHUB_REPO=${{ needs.prepare.outputs.acl2-repo }}
+            ACL2_COMMIT=${{ needs.prepare.outputs.acl2-commit }}
+            ACL2_REF=${{ github.event.inputs.acl2_tag }}
+            WITH_REAL=${{ github.event.inputs.with_real }}
+            WITH_Z3=${{ github.event.inputs.with_z3 }}
+            WITH_STP=${{ github.event.inputs.with_stp }}
+            Z3_VERSION=${{ github.event.inputs.z3_version }}
+            ACL2_CERTIFY_TARGETS=${{ github.event.inputs.books_target }}
+          cache-from: type=gha,scope=arm64-${{ needs.prepare.outputs.image-id }}
+          cache-to:   type=gha,mode=max,scope=arm64-${{ needs.prepare.outputs.image-id }}
+
+  # ---------------------------------------------------------------------------
+  # Create multiarch manifest for books image
+  # ---------------------------------------------------------------------------
+  create-books-manifest:
+    needs: [prepare, build-books-amd64, build-books-arm64]
+    if: always() && needs.build-books-amd64.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push multiarch manifest for books image
+        run: |
+          IMAGE_ID="${{ needs.prepare.outputs.image-id }}"
+          REGISTRY_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+
+          if [[ "${{ needs.prepare.outputs.amd64-only }}" == "true" ]]; then
+            docker buildx imagetools create \
+              -t ${REGISTRY_IMAGE}:${IMAGE_ID}-books \
+              ${REGISTRY_IMAGE}:${IMAGE_ID}-books-amd64
+          else
+            docker buildx imagetools create \
+              -t ${REGISTRY_IMAGE}:${IMAGE_ID}-books \
+              ${REGISTRY_IMAGE}:${IMAGE_ID}-books-amd64 \
+              ${REGISTRY_IMAGE}:${IMAGE_ID}-books-arm64
+          fi

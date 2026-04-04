@@ -5,6 +5,14 @@
 #   --target jupyter  (default) — ACL2 + Jupyter kernel, without certified books
 #   --target books             — extends jupyter with certified books
 #
+# Builder stages (the only multi-stage layers used):
+#   sbcl-builder / ccl-builder  compile/download the Lisp implementation
+#   z3-builder                  compile Z3 SMT solver
+#   stp-builder                 compile STP SAT solver (static binary)
+#
+# ACL2 and Quicklisp are built directly in the jupyter stage so that
+# saved_acl2 and all Lisp binaries share a single consistent environment.
+#
 # Key build arguments:
 #   LISP                  sbcl (default) | ccl  (ccl is x86_64 only)
 #   ACL2_GITHUB_REPO      ACL2 source repository (owner/repo)
@@ -149,123 +157,11 @@ RUN cd /build-stp \
     && rm -rf /build-stp
 
 # ============================================================================
-# Stage: acl2-builder — download and compile ACL2
-# ============================================================================
-FROM ${BASE_IMAGE} AS acl2-builder
-
-ARG LISP=sbcl
-ARG ACL2_GITHUB_REPO=jimwhite/acl2
-ARG ACL2_COMMIT=0
-ARG WITH_REAL=0
-ARG ACL2_BUILD_OPTS=""
-ARG USER=jovyan
-ENV HOME=/home/${USER}
-ENV ACL2_HOME=/home/acl2
-
-USER root
-
-# Install the selected Lisp from the lisp stage
-RUN --mount=type=bind,from=lisp,target=/tmp/lisp-stage \
-    if [ "${LISP}" = "sbcl" ]; then \
-        cp /tmp/lisp-stage/usr/local/bin/sbcl /usr/local/bin/sbcl \
-        && mkdir -p /usr/local/lib \
-        && cp -r /tmp/lisp-stage/usr/local/lib/sbcl /usr/local/lib/sbcl \
-        && ldconfig; \
-    elif [ "${LISP}" = "ccl" ]; then \
-        mkdir -p /usr/local/ccl \
-        && cp -r /tmp/lisp-stage/usr/local/ccl/. /usr/local/ccl/ \
-        && ln -sf /usr/local/ccl/lx86cl64 /usr/local/bin/ccl; \
-    fi
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential \
-        ca-certificates \
-        perl \
-        unzip \
-        wget \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN groupadd acl2 \
-    && mkdir -p ${ACL2_HOME} \
-    && chown -R ${USER}:acl2 ${ACL2_HOME} \
-    && chmod -R g+rx ${ACL2_HOME}
-
-RUN wget "https://api.github.com/repos/${ACL2_GITHUB_REPO}/zipball/${ACL2_COMMIT}" \
-         -O /tmp/acl2.zip -q \
-    && unzip -qq /tmp/acl2.zip -d /tmp/acl2_extract \
-    && mv -T /tmp/acl2_extract/$(ls /tmp/acl2_extract) ${ACL2_HOME} \
-    && rmdir /tmp/acl2_extract \
-    && rm /tmp/acl2.zip \
-    && chown -R ${USER}:acl2 ${ACL2_HOME}
-
-USER ${USER}
-
-# Build ACL2 (optionally with real-number support via ACL2_REAL=acl2r)
-RUN cd ${ACL2_HOME} \
-    && if [ "${WITH_REAL}" = "1" ]; then \
-           make LISP="${LISP}" ACL2_REAL=acl2r ACL2_SNAPSHOT_INFO="${ACL2_COMMIT}" ${ACL2_BUILD_OPTS} \
-               || (tail -500 make.log && false); \
-       else \
-           make LISP="${LISP}" ACL2_SNAPSHOT_INFO="${ACL2_COMMIT}" ${ACL2_BUILD_OPTS} \
-               || (tail -500 make.log && false); \
-       fi
-
-# ============================================================================
-# Stage: quicklisp-builder — install Quicklisp and common-lisp-jupyter
-# ============================================================================
-FROM ${BASE_IMAGE} AS quicklisp-builder
-
-ARG LISP=sbcl
-ARG USER=jovyan
-ENV HOME=/home/${USER}
-
-USER root
-
-# Install the selected Lisp from the lisp stage
-RUN --mount=type=bind,from=lisp,target=/tmp/lisp-stage \
-    if [ "${LISP}" = "sbcl" ]; then \
-        cp /tmp/lisp-stage/usr/local/bin/sbcl /usr/local/bin/sbcl \
-        && mkdir -p /usr/local/lib \
-        && cp -r /tmp/lisp-stage/usr/local/lib/sbcl /usr/local/lib/sbcl \
-        && ldconfig; \
-    elif [ "${LISP}" = "ccl" ]; then \
-        mkdir -p /usr/local/ccl \
-        && cp -r /tmp/lisp-stage/usr/local/ccl/. /usr/local/ccl/ \
-        && ln -sf /usr/local/ccl/lx86cl64 /usr/local/bin/ccl; \
-    fi
-
-# libczmq-dev: required by common-lisp-jupyter's ZMQ bindings
-# build-essential: required by cffi-grovel (pzmq dependency) to run cc
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential \
-        libczmq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-USER ${USER}
-
-COPY --chown=${USER}:users quicklisp.lisp quicklisp.lisp
-COPY --chown=${USER}:users quicklisp quicklisp/
-COPY --chown=${USER}:users acl2-jupyter-kernel quicklisp/local-projects/acl2-jupyter-kernel
-
-RUN if [ "${LISP}" = "sbcl" ]; then \
-        sbcl --non-interactive --load quicklisp.lisp \
-            --eval "(quicklisp-quickstart:install)" \
-            --eval "(ql-util:without-prompting (ql:add-to-init-file))" \
-            --eval "(ql:quickload '(:common-lisp-jupyter :cytoscape-clj :kekule-clj :resizable-box-clj :ngl-clj :delta-vega))" \
-            --eval "(clj:install :implementation t)"; \
-    elif [ "${LISP}" = "ccl" ]; then \
-        ccl --load quicklisp.lisp \
-            --eval "(quicklisp-quickstart:install)" \
-            --eval "(ql-util:without-prompting (ql:add-to-init-file))" \
-            --eval "(ql:quickload '(:common-lisp-jupyter :cytoscape-clj :kekule-clj :resizable-box-clj :ngl-clj :delta-vega))" \
-            --eval "(clj:install :implementation t)" \
-            --eval "(ccl:quit)"; \
-    fi
-
-ENV QUICKLISP=1
-
-# ============================================================================
 # Stage: jupyter — final runtime image (ACL2 + Jupyter kernel, no books)
+#
+# ACL2 is compiled here directly so that saved_acl2 and the Lisp runtime
+# share the same filesystem — no cross-stage binary compatibility issues.
+# Quicklisp packages are also installed here for the same reason.
 # ============================================================================
 FROM ${BASE_IMAGE} AS jupyter
 LABEL org.opencontainers.image.source="https://github.com/jimwhite/acl2-jupyter"
@@ -280,6 +176,7 @@ ARG ACL2_REF=latest
 ARG WITH_REAL=0
 ARG WITH_Z3=1
 ARG WITH_STP=1
+ARG ACL2_BUILD_OPTS=""
 ARG USER=jovyan
 
 ENV HOME=/home/${USER}
@@ -337,21 +234,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Lisp runtime from acl2-builder (not from lisp/sbcl-builder directly).
-# This guarantees the runtime binary is identical to the one that compiled saved_acl2:
-# SBCL embeds the build-host name into its binary, so loading saved_acl2 with any
-# other SBCL binary — even the same version compiled at a different time — causes a
-# "core was built for runtime X but this is Y" fatal error.  Taking SBCL from the
-# same stage that built the core is the simplest way to avoid that mismatch.
-RUN --mount=type=bind,from=acl2-builder,target=/tmp/acl2-stage \
+# Install Lisp from the lisp builder stage.  ACL2 will be compiled directly
+# below using this same binary, so saved_acl2 and the runtime are consistent.
+RUN --mount=type=bind,from=lisp,target=/tmp/lisp-stage \
     if [ "${LISP}" = "sbcl" ]; then \
-        cp /tmp/acl2-stage/usr/local/bin/sbcl /usr/local/bin/sbcl \
+        cp /tmp/lisp-stage/usr/local/bin/sbcl /usr/local/bin/sbcl \
         && mkdir -p /usr/local/lib \
-        && cp -r /tmp/acl2-stage/usr/local/lib/sbcl /usr/local/lib/sbcl \
+        && cp -r /tmp/lisp-stage/usr/local/lib/sbcl /usr/local/lib/sbcl \
         && ldconfig; \
     elif [ "${LISP}" = "ccl" ]; then \
         mkdir -p /usr/local/ccl \
-        && cp -r /tmp/acl2-stage/usr/local/ccl/. /usr/local/ccl/ \
+        && cp -r /tmp/lisp-stage/usr/local/ccl/. /usr/local/ccl/ \
         && ln -sf /usr/local/ccl/lx86cl64 /usr/local/bin/ccl; \
     fi
 
@@ -361,7 +254,7 @@ RUN --mount=type=bind,from=z3-builder,target=/tmp/z3-stage \
         cp /tmp/z3-stage/usr/local/bin/z3 /usr/local/bin/z3 \
         && find /tmp/z3-stage/usr/local/lib -name 'libz3*' -exec cp {} /usr/local/lib/ \; \
         && ldconfig \
-        && conda install -y z3-solver; \
+        && HOME=/root conda install -y z3-solver; \
     fi
 
 # Install STP (optional, statically compiled).  No layer cost when WITH_STP=0.
@@ -370,13 +263,33 @@ RUN --mount=type=bind,from=stp-builder,target=/tmp/stp-stage \
         cp /tmp/stp-stage/usr/local/bin/stp /usr/local/bin/stp; \
     fi
 
-# Copy ACL2 from acl2-builder
-COPY --from=acl2-builder /home/acl2 /home/acl2
+# Set up ACL2 home directory, download ACL2, and build it directly in this stage.
+# Keeping the Lisp runtime and ACL2 build in the same environment ensures
+# saved_acl2 (a shell script invoking the Lisp binary) can always execute.
+RUN mkdir -p ${ACL2_HOME} \
+    && chown -R ${USER}:acl2 ${ACL2_HOME} \
+    && chmod -R g+rx ${ACL2_HOME}
 
-RUN chown -R ${USER}:users ${HOME} ${ACL2_HOME} \
-    && touch ${ACL2_HOME}/../foo \
-    && chmod a-w ${ACL2_HOME}/../foo \
-    && chown ${USER}:users ${ACL2_HOME}/../foo
+RUN wget "https://api.github.com/repos/${ACL2_GITHUB_REPO}/zipball/${ACL2_COMMIT}" \
+         -O /tmp/acl2.zip -q \
+    && unzip -qq /tmp/acl2.zip -d /tmp/acl2_extract \
+    && mv -T /tmp/acl2_extract/$(ls /tmp/acl2_extract) ${ACL2_HOME} \
+    && rmdir /tmp/acl2_extract \
+    && rm /tmp/acl2.zip \
+    && chown -R ${USER}:acl2 ${ACL2_HOME}
+
+USER ${USER}
+
+RUN cd ${ACL2_HOME} \
+    && if [ "${WITH_REAL}" = "1" ]; then \
+           make LISP="${LISP}" ACL2_REAL=acl2r ACL2_SNAPSHOT_INFO="${ACL2_COMMIT}" ${ACL2_BUILD_OPTS} \
+               || (tail -500 make.log && false); \
+       else \
+           make LISP="${LISP}" ACL2_SNAPSHOT_INFO="${ACL2_COMMIT}" ${ACL2_BUILD_OPTS} \
+               || (tail -500 make.log && false); \
+       fi
+
+USER root
 
 ENV PATH="/opt/acl2/bin:${PATH}"
 ENV ACL2="/opt/acl2/bin/saved_acl2"
@@ -390,17 +303,25 @@ RUN mkdir -p /opt/acl2/bin \
 
 USER ${USER}
 
-# Copy Quicklisp (packages, local-projects, dist archives) from quicklisp-builder
-COPY --from=quicklisp-builder --chown=${USER}:users \
-    /home/jovyan/quicklisp /home/jovyan/quicklisp
+# Install Quicklisp and common-lisp-jupyter directly in this stage.
+COPY --chown=${USER}:users quicklisp.lisp quicklisp.lisp
+COPY --chown=${USER}:users quicklisp quicklisp/
+COPY --chown=${USER}:users acl2-jupyter-kernel quicklisp/local-projects/acl2-jupyter-kernel
 
-# Copy the saved common-lisp-jupyter kernel created by (clj:install :implementation t).
-# The kernel lives at ~/.local/share/jupyter/kernels/common-lisp/ and is NOT under
-# ~/quicklisp/, so without this COPY it was silently discarded — the design problem
-# that caused kekule-clj and friends to appear downloaded-but-unused.
-COPY --from=quicklisp-builder --chown=${USER}:users \
-    /home/jovyan/.local/share/jupyter/kernels \
-    /home/jovyan/.local/share/jupyter/kernels
+RUN if [ "${LISP}" = "sbcl" ]; then \
+        sbcl --non-interactive --load quicklisp.lisp \
+            --eval "(quicklisp-quickstart:install)" \
+            --eval "(ql-util:without-prompting (ql:add-to-init-file))" \
+            --eval "(ql:quickload '(:common-lisp-jupyter :cytoscape-clj :kekule-clj :resizable-box-clj :ngl-clj :delta-vega))" \
+            --eval "(clj:install :implementation t)"; \
+    elif [ "${LISP}" = "ccl" ]; then \
+        ccl --load quicklisp.lisp \
+            --eval "(quicklisp-quickstart:install)" \
+            --eval "(ql-util:without-prompting (ql:add-to-init-file))" \
+            --eval "(ql:quickload '(:common-lisp-jupyter :cytoscape-clj :kekule-clj :resizable-box-clj :ngl-clj :delta-vega))" \
+            --eval "(clj:install :implementation t)" \
+            --eval "(ccl:quit)"; \
+    fi
 
 ENV QUICKLISP=1
 

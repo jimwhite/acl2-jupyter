@@ -282,7 +282,7 @@ USER ${USER}
 
 RUN cd ${ACL2_HOME} \
     && if [ "${WITH_REAL}" = "1" ]; then \
-           make LISP="${LISP}" ACL2_REAL=acl2r ACL2_SNAPSHOT_INFO="${ACL2_COMMIT}" ${ACL2_BUILD_OPTS} \
+           make LISP="${LISP}" ACL2_REAL=r ACL2_SNAPSHOT_INFO="${ACL2_COMMIT}" ${ACL2_BUILD_OPTS} \
                || (tail -500 make.log && false); \
        else \
            make LISP="${LISP}" ACL2_SNAPSHOT_INFO="${ACL2_COMMIT}" ${ACL2_BUILD_OPTS} \
@@ -291,15 +291,16 @@ RUN cd ${ACL2_HOME} \
 
 USER root
 
-ENV PATH="/opt/acl2/bin:${PATH}"
-ENV ACL2="/opt/acl2/bin/saved_acl2"
-
-RUN mkdir -p /opt/acl2/bin \
-    && ln -s ${ACL2_HOME}/saved_acl2   /opt/acl2/bin/acl2 \
-    && ln -s ${ACL2_HOME}/saved_acl2   /opt/acl2/bin/saved_acl2 \
+RUN if [ "${WITH_REAL}" = "1" ]; then saved=saved_acl2r; else saved=saved_acl2; fi \
+    && mkdir -p /opt/acl2/bin \
+    && ln -s ${ACL2_HOME}/${saved}   /opt/acl2/bin/acl2 \
+    && ln -s ${ACL2_HOME}/${saved}   /opt/acl2/bin/saved_acl2 \
     && ln -s ${ACL2_HOME}/books/build/cert.pl     /opt/acl2/bin/cert.pl \
     && ln -s ${ACL2_HOME}/books/build/clean.pl    /opt/acl2/bin/clean.pl \
     && ln -s ${ACL2_HOME}/books/build/critpath.pl /opt/acl2/bin/critpath.pl
+
+ENV PATH="/opt/acl2/bin:${PATH}"
+ENV ACL2="/opt/acl2/bin/saved_acl2"
 
 USER ${USER}
 
@@ -379,7 +380,8 @@ ARG USER=jovyan
 SHELL ["/bin/bash", "-c"]
 USER ${USER}
 
-RUN cd ${ACL2_HOME}/books \
-    && make ACL2=${ACL2_HOME}/saved_acl2 ${ACL2_CERTIFY_OPTS} ${ACL2_CERTIFY_TARGETS} \
+RUN if [ "${WITH_REAL}" = "1" ]; then saved=saved_acl2r; else saved=saved_acl2; fi \
+    && cd ${ACL2_HOME}/books \
+    && make ACL2=${ACL2_HOME}/${saved} ${ACL2_CERTIFY_OPTS} ${ACL2_CERTIFY_TARGETS} \
        >make-books.stdout.log 2> >(tee make-books.stderr.log >&2) ; \
     find * -type f -name "*.cert.out" | tar -czvf make-books-cert-out.tar.gz -T -

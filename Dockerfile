@@ -148,6 +148,13 @@ RUN mkdir /build-z3 \
     && wget "https://github.com/Z3Prover/z3/archive/refs/tags/z3-${Z3_VERSION}.tar.gz" \
          -O z3.tar.gz -q \
     && tar -xzf z3.tar.gz --strip-components=1 \
+    && if [ ! -f ./configure ]; then \
+           echo "ERROR: Z3 ${Z3_VERSION} does not ship ./configure, so this recipe cannot build it." >&2; \
+           echo "       Z3 dropped configure in newer releases.  Pick a version that has both ./configure" >&2; \
+           echo "       and a matching conda-forge z3-solver (5.1.0 is the newest of those -- the Python" >&2; \
+           echo "       bindings are required because ACL2's SMT-LINK drives Z3 from Python)." >&2; \
+           exit 1; \
+       fi \
     && ./configure --prefix=/usr/local \
     && cd build \
     && make -j$(nproc) \

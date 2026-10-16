@@ -8,11 +8,11 @@ on:
         required: false
         default: 'jimwhite/acl2'
       acl2_branch:
-        description: 'ACL2 branch name (used when acl2_tag is "latest")'
+        description: 'Branch whose tip is built when acl2_tag is "latest"'
         required: false
         default: 'main'
       acl2_tag:
-        description: 'ACL2 release tag (e.g., 8.7) or "latest" for latest commit on branch'
+        description: 'ACL2 release tag (e.g. 8.7), branch name, or commit SHA; "latest" builds the tip of acl2_branch'
         required: false
         default: 'latest'
       lisp:
@@ -49,9 +49,9 @@ on:
         required: false
         default: '1.12.2'
       z3_version:
-        description: 'Z3 version'
+        description: 'Z3 version; must exist on GitHub as z3-<version> and in conda-forge as z3-solver'
         required: false
-        default: '4.15.7'
+        default: '5.1.0'
 
 env:
   REGISTRY: ghcr.io
@@ -83,35 +83,42 @@ jobs:
           ACL2_BRANCH="${{ github.event.inputs.acl2_branch }}"
           ACL2_REF="${{ github.event.inputs.acl2_tag }}"
 
+          # "latest" means the tip of acl2_branch.  Any other value is resolved as a
+          # ref, so a release tag (8.7), a branch name (milawa) or a commit SHA all
+          # work in the acl2_tag field.  Resolve through /commits/ so every kind of
+          # ref works: the previous tags-list lookup silently produced an empty
+          # commit for anything that was not a tag, which then built the default
+          # branch under a misleading name (e.g. acl2--z3-stp).
           if [[ "$ACL2_REF" == "latest" ]]; then
+            RESOLVE="$ACL2_BRANCH"
             echo "Using ACL2 latest (${ACL2_REPO}@${ACL2_BRANCH})"
-            HTTP_RESPONSE=$(curl --silent --write-out "\n%{http_code}" \
-              https://api.github.com/repos/${ACL2_REPO}/commits/${ACL2_BRANCH})
-            HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -n1)
-            RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
-            if [[ "$HTTP_CODE" != "200" ]]; then
-              echo "Error: GitHub API request failed with HTTP status $HTTP_CODE"
-              exit 1
-            fi
-            ACL2_COMMIT=$(echo "$RESPONSE_BODY" | jq -r .sha)
           else
-            echo "Using ACL2 release tag: ${ACL2_REF} from ${ACL2_REPO}"
-            HTTP_RESPONSE=$(curl --silent --write-out "\n%{http_code}" \
-              https://api.github.com/repos/${ACL2_REPO}/tags)
-            HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -n1)
-            RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
-            if [[ "$HTTP_CODE" != "200" ]]; then
-              echo "Error: GitHub API request failed with HTTP status $HTTP_CODE"
-              exit 1
-            fi
-            ACL2_COMMIT=$(echo "$RESPONSE_BODY" | \
-              jq -r --arg ref "$ACL2_REF" '.[] | select(.name==$ref) | .commit.sha')
+            RESOLVE="$ACL2_REF"
+            echo "Using ACL2 ref: ${ACL2_REF} in ${ACL2_REPO}"
+          fi
+
+          HTTP_RESPONSE=$(curl --silent --write-out "\n%{http_code}" \
+            "https://api.github.com/repos/${ACL2_REPO}/commits/${RESOLVE}")
+          HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -n1)
+          RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
+
+          if [[ "$HTTP_CODE" != "200" ]]; then
+            echo "::error::Cannot resolve '${RESOLVE}' in ${ACL2_REPO} (GitHub API HTTP ${HTTP_CODE})."
+            echo "acl2_tag takes a release tag, a branch name or a commit SHA; use 'latest' to build the tip of acl2_branch."
+            exit 1
+          fi
+
+          ACL2_COMMIT=$(echo "$RESPONSE_BODY" | jq -r .sha)
+          if [[ -z "$ACL2_COMMIT" || "$ACL2_COMMIT" == "null" ]]; then
+            echo "::error::No commit resolved for '${RESOLVE}' in ${ACL2_REPO}."
+            exit 1
           fi
 
           echo "commit=$ACL2_COMMIT" >> $GITHUB_OUTPUT
           echo "ref=$ACL2_REF"       >> $GITHUB_OUTPUT
           echo "repo=$ACL2_REPO"     >> $GITHUB_OUTPUT
           echo "ACL2 repo:   $ACL2_REPO"
+          echo "ACL2 ref:    $RESOLVE"
           echo "ACL2 commit: $ACL2_COMMIT"
 
       - name: Compute image/kernel ID

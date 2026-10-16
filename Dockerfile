@@ -103,7 +103,7 @@ USER root
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
-        cmake \
+        'cmake=3.*' \
         ca-certificates \
         python3-dev \
         wget \
@@ -133,7 +133,7 @@ USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
         bison \
         build-essential \
-        cmake \
+        'cmake=3.*' \
         flex \
         g++ \
         libboost-program-options-dev \
@@ -151,7 +151,6 @@ RUN cd /build-stp \
     && ./scripts/deps/setup-minisat.sh \
     && mkdir build && cd build \
     && cmake .. -DENABLE_TESTING=ON -DSTATICCOMPILE=ON -DFORCE_CMS=ON \
-        -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     && cmake --build . ${STP_BUILD_JOBS} \
     && cmake --install . \
     && cd / \
@@ -206,7 +205,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         bison \
         build-essential \
         ca-certificates \
-        cmake \
+        'cmake=3.*' \
         curl \
         file \
         flex \

@@ -241,13 +241,22 @@ By default, the "basic" book selection is certified. This can be changed by over
 
 ### SBCL versions
 
-SBCL is compiled from source during the image build; override the version with the `SBCL_VERSION` build argument (for example `make SBCL_VERSION=2.6.9`).
+SBCL is compiled from source during the image build. The version defaults to `2.6.9` and can be overridden with the `SBCL_VERSION` build argument. That default appears in three places -- the `Makefile`, the `SBCL_VERSION` ARG in the Dockerfile, and the `sbcl_version` input of the release workflow -- so keep them in sync when changing it.
 
 Note that `context/quicklisp/local-projects/common-lisp-jupyter` is a fork of https://github.com/yitzchak/common-lisp-jupyter (see [Sources](#sources)) which carries ACL2-specific fixes that upstream does not have. As of the SBCL 2.6.9 update that patch replaces `SB-IMPL::MAKE-EVAL-LAMBDA`, which SBCL 2.6.9 removed; without it the image build fails while reading `src/cl-jupyter/kernel.lisp` with:
 
     Lock on package SB-IMPL violated when interning MAKE-EVAL-LAMBDA while in package JUPYTER/COMMON-LISP.
 
 Do not drop that patch when updating the submodule. Also keep in mind that the build only *compiles* this code -- it runs when a notebook cell is evaluated -- so verify an SBCL bump by building the image and then evaluating a form (for example `(+ 1 2)`) in the resulting `acl2-<source>-<tools>` kernel.
+
+### Z3 versions
+
+`Z3_VERSION` pins Z3 for both of its users in the image, and the two must agree:
+
+* the `z3` binary (and `libz3`) compiled from source into `/usr/local/bin`, and
+* the Python bindings, because ACL2's SMT-LINK drives Z3 from Python (`books/projects/smtlink/z3_interface/ACL2_to_Z3.py` starts with `from z3 import *`); those come from the conda-forge `z3-solver` package.
+
+So the Dockerfile pins `z3-solver` to the same version as the source build. Note that `/opt/conda/bin` precedes `/usr/local/bin` on `PATH`, so a conda Z3 of a different version would shadow the pinned binary -- which is exactly what happened while the conda install was unpinned. The pin uses conda's prefix matching, so `Z3_VERSION=4.15.7` selects conda-forge `z3-solver 4.15.7.0`; if conda-forge has no matching build the image build fails rather than silently using a different Z3.
 
 ## Sources
 

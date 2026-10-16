@@ -43,7 +43,7 @@ on:
       sbcl_version:
         description: 'SBCL version'
         required: false
-        default: '2.6.1'
+        default: '2.6.9'
       ccl_version:
         description: 'CCL version (used when lisp=ccl)'
         required: false

@@ -35,7 +35,7 @@ BUILD_CACHE ?=
 # --- Lisp implementation ---------------------------------------------------
 # LISP=sbcl (default) or LISP=ccl (x86_64 only; use PLATFORM=linux/amd64)
 LISP ?= sbcl
-SBCL_VERSION ?= 2.6.1
+SBCL_VERSION ?= 2.6.9
 CCL_VERSION ?= 1.12.2
 
 # --- ACL2 variant ----------------------------------------------------------

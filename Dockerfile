@@ -23,7 +23,7 @@
 #   WITH_STP              1 (default) | 0  — include STP SAT solver
 #   SBCL_VERSION          SBCL version to compile (LISP=sbcl only)
 #   CCL_VERSION           CCL version to download  (LISP=ccl only)
-#   Z3_VERSION            Z3 version to compile    (WITH_Z3=1 only)
+#   Z3_VERSION            Z3 version to compile and to pin the Python bindings (WITH_Z3=1 only)
 #   CMAKE_VERSION         CMake version to install (3.31.12 by default)
 #   STP_BUILD_JOBS        Parallelism flag for STP cmake build
 #   ACL2_BUILD_OPTS       Extra options passed to ACL2 make
@@ -62,7 +62,7 @@ RUN set -eu; \
 # ============================================================================
 FROM ${BASE_IMAGE} AS sbcl-builder
 
-ARG SBCL_VERSION=2.6.1
+ARG SBCL_VERSION=2.6.9
 USER root
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -279,12 +279,22 @@ RUN --mount=type=bind,from=lisp,target=/tmp/lisp-stage \
     fi
 
 # Install Z3 (optional).  Uses --mount so no layer cost when WITH_Z3=0.
+#
+# Two pieces of Z3 are installed and they must be the same version:
+#   - the pinned `z3` binary (and libz3) built from source by z3-builder, and
+#   - the Python bindings, because ACL2's SMT-LINK drives Z3 from Python
+#     (books/projects/smtlink/z3_interface/ACL2_to_Z3.py does `from z3 import *`).
+# The conda pin uses prefix matching, so Z3_VERSION=4.15.7 selects conda-forge's
+# z3-solver 4.15.7.0 rather than whatever is current.  Without the pin the Python
+# bindings silently disagreed with the pinned binary (so Z3_VERSION had no effect
+# on what SMT-LINK actually ran); if conda-forge has no build for the requested
+# version the build now fails instead of drifting.
 RUN --mount=type=bind,from=z3-builder,target=/tmp/z3-stage \
     if [ "${WITH_Z3}" = "1" ]; then \
         cp /tmp/z3-stage/usr/local/bin/z3 /usr/local/bin/z3 \
         && find /tmp/z3-stage/usr/local/lib -name 'libz3*' -exec cp {} /usr/local/lib/ \; \
         && ldconfig \
-        && HOME=/root conda install -y z3-solver; \
+        && HOME=/root conda install -y "z3-solver=${Z3_VERSION}"; \
     fi
 
 # Install STP (optional, statically compiled).  No layer cost when WITH_STP=0.

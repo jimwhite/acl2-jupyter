@@ -6,6 +6,10 @@ Use *A Computational Logic for Applicative Common Lisp (ACL2)* in Jupyter notebo
 
 This image is available on the GitHub Container Registry at [`jimwhite/acl2-jupyter`](https://ghcr.io/jimwhite/acl2-jupyter).
 
+Published tags are descriptive and reproducible: `acl2-<source>[-<lisp>][-real][-z3][-stp]`, where `<source>` is the ACL2 release tag (e.g. `8.7`) or, for snapshot builds such as the `latest` ACL2 branch, the first 8 characters of the ACL2 commit. The books image adds a `-books` suffix. The same identifier names the kernel inside the image, so the tag you pull and the kernel you pick in JupyterLab always correspond.
+
+When the release workflow is run for ACL2 `latest` with the default options it additionally publishes the moving `latest` tag (`latest-books` for the books image), which is what the examples below use. A workflow run for a variant (different Lisp, ACL2(r), Z3 or STP off) never moves `latest`.
+
 The project source is at https://github.com/jimwhite/acl2-jupyter.
 
 ## Examples

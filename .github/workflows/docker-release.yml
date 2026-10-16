@@ -68,12 +68,13 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     outputs:
-      acl2-commit: ${{ steps.acl2-commit.outputs.commit }}
-      acl2-ref:    ${{ steps.acl2-commit.outputs.ref }}
-      acl2-repo:   ${{ steps.acl2-commit.outputs.repo }}
-      image-id:    ${{ steps.image-id.outputs.id }}
-      platforms:   ${{ steps.image-id.outputs.platforms }}
-      amd64-only:  ${{ steps.image-id.outputs.amd64-only }}
+      acl2-commit:  ${{ steps.acl2-commit.outputs.commit }}
+      acl2-ref:     ${{ steps.acl2-commit.outputs.ref }}
+      acl2-repo:    ${{ steps.acl2-commit.outputs.repo }}
+      image-id:     ${{ steps.image-id.outputs.id }}
+      platforms:    ${{ steps.image-id.outputs.platforms }}
+      amd64-only:   ${{ steps.image-id.outputs.amd64-only }}
+      latest-alias: ${{ steps.image-id.outputs.latest-alias }}
     steps:
       - name: Get ACL2 commit hash
         id: acl2-commit
@@ -131,7 +132,7 @@ jobs:
           REAL_SUFFIX=$([ "${{ github.event.inputs.with_real }}" = "1" ] && echo "-real" || echo "")
 
           TOOLS_SUFFIX=""
-          [ "${{ github.event.inputs.with_z3  }}" = "1" ] && TOOLS_SUFFIX="${TOOLS_SUFFIX}-z3"
+          [ "${{ github.event.inputs.with_z3 }}" = "1" ] && TOOLS_SUFFIX="${TOOLS_SUFFIX}-z3"
           [ "${{ github.event.inputs.with_stp }}" = "1" ] && TOOLS_SUFFIX="${TOOLS_SUFFIX}-stp"
 
           IMAGE_ID="acl2-${SOURCE_ID}${LISP_SUFFIX}${REAL_SUFFIX}${TOOLS_SUFFIX}"
@@ -146,6 +147,22 @@ jobs:
             echo "amd64-only=false"                   >> $GITHUB_OUTPUT
           fi
           echo "Image ID: $IMAGE_ID"
+
+          # The mutable :latest alias tracks the newest default build only: ACL2
+          # "latest" with the standard options (sbcl, no ACL2(r), Z3 and STP on).
+          # The descriptive $IMAGE_ID tag (which encodes the ACL2 commit) is always
+          # published, so images stay reproducible and running the workflow for a
+          # variant can never clobber :latest.
+          if [[ "$ACL2_REF" == "latest" &&
+                "$LISP" == "sbcl" &&
+                "${{ github.event.inputs.with_real }}" == "0" &&
+                "${{ github.event.inputs.with_z3 }}" == "1" &&
+                "${{ github.event.inputs.with_stp }}" == "1" ]]; then
+            echo "latest-alias=true"  >> $GITHUB_OUTPUT
+            echo "Also tagging as: latest"
+          else
+            echo "latest-alias=false" >> $GITHUB_OUTPUT
+          fi
 
   # ---------------------------------------------------------------------------
   # Build base image (--target jupyter) for AMD64
@@ -281,14 +298,19 @@ jobs:
           IMAGE_ID="${{ needs.prepare.outputs.image-id }}"
           REGISTRY_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
 
+          ALIASES=()
+          if [[ "${{ needs.prepare.outputs.latest-alias }}" == "true" ]]; then
+            ALIASES+=(-t "${REGISTRY_IMAGE}:latest")
+          fi
+
           if [[ "${{ needs.prepare.outputs.amd64-only }}" == "true" ]]; then
             # CCL: amd64 only
             docker buildx imagetools create \
-              -t ${REGISTRY_IMAGE}:${IMAGE_ID} \
+              -t ${REGISTRY_IMAGE}:${IMAGE_ID} "${ALIASES[@]}" \
               ${REGISTRY_IMAGE}:${IMAGE_ID}-amd64
           else
             docker buildx imagetools create \
-              -t ${REGISTRY_IMAGE}:${IMAGE_ID} \
+              -t ${REGISTRY_IMAGE}:${IMAGE_ID} "${ALIASES[@]}" \
               ${REGISTRY_IMAGE}:${IMAGE_ID}-amd64 \
               ${REGISTRY_IMAGE}:${IMAGE_ID}-arm64
           fi
@@ -309,6 +331,9 @@ jobs:
           echo "| **ACL2 Repo** | ${{ needs.prepare.outputs.acl2-repo }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **ACL2 Commit** | \`${{ needs.prepare.outputs.acl2-commit }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Platforms** | ${PLATFORMS} |" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ needs.prepare.outputs.latest-alias }}" == "true" ]]; then
+            echo "| **Also tagged** | \`latest\` |" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_ID}" >> $GITHUB_STEP_SUMMARY
@@ -447,13 +472,18 @@ jobs:
           IMAGE_ID="${{ needs.prepare.outputs.image-id }}"
           REGISTRY_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
 
+          ALIASES=()
+          if [[ "${{ needs.prepare.outputs.latest-alias }}" == "true" ]]; then
+            ALIASES+=(-t "${REGISTRY_IMAGE}:latest-books")
+          fi
+
           if [[ "${{ needs.prepare.outputs.amd64-only }}" == "true" ]]; then
             docker buildx imagetools create \
-              -t ${REGISTRY_IMAGE}:${IMAGE_ID}-books \
+              -t ${REGISTRY_IMAGE}:${IMAGE_ID}-books "${ALIASES[@]}" \
               ${REGISTRY_IMAGE}:${IMAGE_ID}-books-amd64
           else
             docker buildx imagetools create \
-              -t ${REGISTRY_IMAGE}:${IMAGE_ID}-books \
+              -t ${REGISTRY_IMAGE}:${IMAGE_ID}-books "${ALIASES[@]}" \
               ${REGISTRY_IMAGE}:${IMAGE_ID}-books-amd64 \
               ${REGISTRY_IMAGE}:${IMAGE_ID}-books-arm64
           fi

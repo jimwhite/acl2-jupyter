@@ -114,10 +114,11 @@ RUN mkdir /build-z3 \
     && wget "https://github.com/Z3Prover/z3/archive/refs/tags/z3-${Z3_VERSION}.tar.gz" \
          -O z3.tar.gz -q \
     && tar -xzf z3.tar.gz --strip-components=1 \
-    && ./configure --prefix=/usr/local \
-    && cd build \
-    && make -j$(nproc) \
-    && make install \
+    && cmake -S . -B build \
+         -DCMAKE_BUILD_TYPE=Release \
+         -DCMAKE_INSTALL_PREFIX=/usr/local \
+    && cmake --build build --parallel "$(nproc)" \
+    && cmake --install build \
     && cd / \
     && rm -rf /build-z3
 

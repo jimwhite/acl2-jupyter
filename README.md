@@ -239,6 +239,16 @@ To provide additional arguments to the `make` command that will be used to build
 
 By default, the "basic" book selection is certified. This can be changed by overriding the `ACL2_CERTIFY_TARGETS` build argument. Multiple targets can be provided to this argument if desired.
 
+### SBCL versions
+
+SBCL is compiled from source during the image build; override the version with the `SBCL_VERSION` build argument (for example `make SBCL_VERSION=2.6.9`).
+
+Note that `context/quicklisp/local-projects/common-lisp-jupyter` is a fork of https://github.com/yitzchak/common-lisp-jupyter (see [Sources](#sources)) which carries ACL2-specific fixes that upstream does not have. As of the SBCL 2.6.9 update that patch replaces `SB-IMPL::MAKE-EVAL-LAMBDA`, which SBCL 2.6.9 removed; without it the image build fails while reading `src/cl-jupyter/kernel.lisp` with:
+
+    Lock on package SB-IMPL violated when interning MAKE-EVAL-LAMBDA while in package JUPYTER/COMMON-LISP.
+
+Do not drop that patch when updating the submodule. Also keep in mind that the build only *compiles* this code -- it runs when a notebook cell is evaluated -- so verify an SBCL bump by building the image and then evaluating a form (for example `(+ 1 2)`) in the resulting `acl2-<source>-<tools>` kernel.
+
 ## Sources
 
 ```bash
@@ -254,6 +264,8 @@ git submodule add https://github.com/yitzchak/ngl-clj.git context/quicklisp/loca
 ```
 
 * https://github.com/jimwhite/acl2-kernel.git context/acl2-kernel is forked from https://github.com/tani/acl2-kernel to bring it up-to-date.
+
+* https://github.com/jimwhite/common-lisp-jupyter.git is a fork of https://github.com/yitzchak/common-lisp-jupyter used in `context/quicklisp/local-projects/common-lisp-jupyter` to carry ACL2-specific fixes (currently an SBCL 2.6.9 compatibility patch in `src/cl-jupyter/kernel.lisp`; see [SBCL versions](#sbcl-versions)).
 
 * https://github.com/jimwhite/acl2-jupyter itself is forked from https://github.com/mister-walter/acl2-docker (and was unforked due to a GitHub permissions confusion and can't be undone).
 

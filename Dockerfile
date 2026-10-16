@@ -103,7 +103,7 @@ USER root
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
-        cmake \
+        'cmake=3.*' \
         ca-certificates \
         python3-dev \
         wget \
@@ -133,7 +133,7 @@ USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
         bison \
         build-essential \
-        cmake \
+        'cmake=3.*' \
         flex \
         g++ \
         libboost-program-options-dev \
@@ -205,7 +205,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         bison \
         build-essential \
         ca-certificates \
-        cmake \
+        'cmake=3.*' \
         curl \
         file \
         flex \

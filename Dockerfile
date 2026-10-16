@@ -123,7 +123,7 @@ FROM ${LISP}-builder AS lisp
 # ============================================================================
 FROM ${BASE_IMAGE} AS z3-builder
 
-ARG Z3_VERSION=4.15.7
+ARG Z3_VERSION=5.1.0
 USER root
 COPY --from=cmake-builder /usr/local/bin/cmake /usr/local/bin/cmake
 COPY --from=cmake-builder /usr/local/share/cmake-3.31 /usr/local/share/cmake-3.31
@@ -278,31 +278,6 @@ RUN --mount=type=bind,from=lisp,target=/tmp/lisp-stage \
         && ln -sf /usr/local/ccl/lx86cl64 /usr/local/bin/ccl; \
     fi
 
-# Install Z3 (optional).  Uses --mount so no layer cost when WITH_Z3=0.
-#
-# Two pieces of Z3 are installed and they must be the same version:
-#   - the pinned `z3` binary (and libz3) built from source by z3-builder, and
-#   - the Python bindings, because ACL2's SMT-LINK drives Z3 from Python
-#     (books/projects/smtlink/z3_interface/ACL2_to_Z3.py does `from z3 import *`).
-# The conda pin uses prefix matching, so Z3_VERSION=4.15.7 selects conda-forge's
-# z3-solver 4.15.7.0 rather than whatever is current.  Without the pin the Python
-# bindings silently disagreed with the pinned binary (so Z3_VERSION had no effect
-# on what SMT-LINK actually ran); if conda-forge has no build for the requested
-# version the build now fails instead of drifting.
-RUN --mount=type=bind,from=z3-builder,target=/tmp/z3-stage \
-    if [ "${WITH_Z3}" = "1" ]; then \
-        cp /tmp/z3-stage/usr/local/bin/z3 /usr/local/bin/z3 \
-        && find /tmp/z3-stage/usr/local/lib -name 'libz3*' -exec cp {} /usr/local/lib/ \; \
-        && ldconfig \
-        && HOME=/root conda install -y "z3-solver=${Z3_VERSION}"; \
-    fi
-
-# Install STP (optional, statically compiled).  No layer cost when WITH_STP=0.
-RUN --mount=type=bind,from=stp-builder,target=/tmp/stp-stage \
-    if [ "${WITH_STP}" = "1" ]; then \
-        cp /tmp/stp-stage/usr/local/bin/stp /usr/local/bin/stp; \
-    fi
-
 # Set up ACL2 home directory, download ACL2, and build it directly in this stage.
 # Keeping the Lisp runtime and ACL2 build in the same environment ensures
 # saved_acl2 (a shell script invoking the Lisp binary) can always execute.
@@ -338,6 +313,42 @@ RUN if [ "${WITH_REAL}" = "1" ]; then saved=saved_acl2r; else saved=saved_acl2; 
     && ln -s ${ACL2_HOME}/books/build/cert.pl     /opt/acl2/bin/cert.pl \
     && ln -s ${ACL2_HOME}/books/build/clean.pl    /opt/acl2/bin/clean.pl \
     && ln -s ${ACL2_HOME}/books/build/critpath.pl /opt/acl2/bin/critpath.pl
+
+# --- Optional solver tools -------------------------------------------------
+# Deliberately placed AFTER the ACL2 build so that changing Z3_VERSION or
+# STP_BUILD_JOBS does not invalidate the expensive ACL2 build layer above.
+#
+# Nothing in ACL2's own build looks for Z3 or STP: its Makefile, GNUmakefile,
+# Makefile-generic, acl2-init.lisp and acl2-check.lisp contain no reference to
+# either, so saved_acl2 never records whether they were present.  What does need
+# them on PATH is *books certification*, which happens later in the `books`
+# stage -- cert.pl gates books that declare `uses-smtlink` / `uses-stp` on them
+# (and on WITH_Z3 / WITH_STP).
+
+# Install Z3 (optional).  Uses --mount so no layer cost when WITH_Z3=0.
+#
+# Two pieces of Z3 are installed and they must be the same version:
+#   - the pinned `z3` binary (and libz3) built from source by z3-builder, and
+#   - the Python bindings, because ACL2's SMT-LINK drives Z3 from Python
+#     (books/projects/smtlink/z3_interface/ACL2_to_Z3.py does `from z3 import *`).
+# The conda pin uses prefix matching, so Z3_VERSION=5.1.0 selects conda-forge's
+# z3-solver 5.1.0.0 rather than whatever is current.  Without the pin the Python
+# bindings silently disagreed with the pinned binary (so Z3_VERSION had no effect
+# on what SMT-LINK actually ran); if conda-forge has no build for the requested
+# version the build now fails instead of drifting.
+RUN --mount=type=bind,from=z3-builder,target=/tmp/z3-stage \
+    if [ "${WITH_Z3}" = "1" ]; then \
+        cp /tmp/z3-stage/usr/local/bin/z3 /usr/local/bin/z3 \
+        && find /tmp/z3-stage/usr/local/lib -name 'libz3*' -exec cp {} /usr/local/lib/ \; \
+        && ldconfig \
+        && HOME=/root conda install -y "z3-solver=${Z3_VERSION}"; \
+    fi
+
+# Install STP (optional, statically compiled).  No layer cost when WITH_STP=0.
+RUN --mount=type=bind,from=stp-builder,target=/tmp/stp-stage \
+    if [ "${WITH_STP}" = "1" ]; then \
+        cp /tmp/stp-stage/usr/local/bin/stp /usr/local/bin/stp; \
+    fi
 
 ENV PATH="/opt/acl2/bin:${PATH}"
 ENV ACL2="/opt/acl2/bin/saved_acl2"

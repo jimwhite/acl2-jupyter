@@ -49,7 +49,7 @@ ACL2_BUILD_OPTS ?= "ACL2_SAFETY=$(ACL2_SAFETY)"
 # Set to 0 to omit from the image (no layer cost thanks to --mount in Dockerfile)
 WITH_Z3 ?= 1
 WITH_STP ?= 1
-Z3_VERSION ?= 4.15.7
+Z3_VERSION ?= 5.1.0
 # GitHub runner gets OOM running parallel STP build
 STP_BUILD_JOBS ?=
 

@@ -256,7 +256,9 @@ Do not drop that patch when updating the submodule. Also keep in mind that the b
 * the `z3` binary (and `libz3`) compiled from source into `/usr/local/bin`, and
 * the Python bindings, because ACL2's SMT-LINK drives Z3 from Python (`books/projects/smtlink/z3_interface/ACL2_to_Z3.py` starts with `from z3 import *`); those come from the conda-forge `z3-solver` package.
 
-So the Dockerfile pins `z3-solver` to the same version as the source build. Note that `/opt/conda/bin` precedes `/usr/local/bin` on `PATH`, so a conda Z3 of a different version would shadow the pinned binary -- which is exactly what happened while the conda install was unpinned. The pin uses conda's prefix matching, so `Z3_VERSION=4.15.7` selects conda-forge `z3-solver 4.15.7.0`; if conda-forge has no matching build the image build fails rather than silently using a different Z3.
+So the Dockerfile pins `z3-solver` to the same version as the source build. Note that `/opt/conda/bin` precedes `/usr/local/bin` on `PATH`, so a conda Z3 of a different version would shadow the pinned binary -- which is exactly what happened while the conda install was unpinned. The pin uses conda's prefix matching, so `Z3_VERSION=5.1.0` (the default) selects conda-forge `z3-solver 5.1.0.0`; if conda-forge has no matching build the image build fails rather than silently using a different Z3.
+
+The Z3 and STP installs run *after* the ACL2 build on purpose. Nothing in ACL2's own build probes for either (its Makefile/GNUmakefile/acl2-init.lisp/acl2-check.lisp never mention them), and only books certification -- the separate `books` stage -- needs them on `PATH`. Keeping them below the ACL2 build means changing `Z3_VERSION` or `STP_BUILD_JOBS` does not invalidate the ACL2 build layer.
 
 ## Sources
 

@@ -151,6 +151,7 @@ RUN cd /build-stp \
     && ./scripts/deps/setup-minisat.sh \
     && mkdir build && cd build \
     && cmake .. -DENABLE_TESTING=ON -DSTATICCOMPILE=ON -DFORCE_CMS=ON \
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     && cmake --build . ${STP_BUILD_JOBS} \
     && cmake --install . \
     && cd / \

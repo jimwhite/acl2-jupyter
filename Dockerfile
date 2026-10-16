@@ -24,7 +24,8 @@
 #   SBCL_VERSION          SBCL version to compile (LISP=sbcl only)
 #   CCL_VERSION           CCL version to download  (LISP=ccl only)
 #   Z3_VERSION            Z3 version to compile and to pin the Python bindings (WITH_Z3=1 only)
-#   CMAKE_VERSION         CMake version to install (3.31.12 by default)
+#   CMAKE_VERSION         CMake 3.x version used to build STP (3.31.12 by default);
+#                         Z3 and the runtime image use the current CMake instead
 #   STP_BUILD_JOBS        Parallelism flag for STP cmake build
 #   ACL2_BUILD_OPTS       Extra options passed to ACL2 make
 #   ACL2_CERTIFY_TARGETS  Books make targets      (books target only)
@@ -34,9 +35,15 @@ ARG BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest
 ARG LISP=sbcl
 
 # ============================================================================
-# Stage: cmake-builder — install a consistent CMake version on all platforms
+# Stage: cmake3-builder — CMake 3.x, needed only to build STP
+#
+# STP's vendored dependencies (gtest, cryptominisat, minisat, ...) declare
+# cmake_minimum_required versions below the 3.5 floor that CMake 4 dropped, so
+# CMake 4 refuses to configure them.  Z3 and everything else build fine with a
+# current CMake, so this pinned 3.x is scoped to stp-builder and never reaches
+# the runtime image.
 # ============================================================================
-FROM ${BASE_IMAGE} AS cmake-builder
+FROM ${BASE_IMAGE} AS cmake3-builder
 
 ARG CMAKE_VERSION=3.31.12
 USER root
@@ -125,15 +132,16 @@ FROM ${BASE_IMAGE} AS z3-builder
 
 ARG Z3_VERSION=5.1.0
 USER root
-COPY --from=cmake-builder /usr/local/bin/cmake /usr/local/bin/cmake
-COPY --from=cmake-builder /usr/local/share/cmake-3.31 /usr/local/share/cmake-3.31
 
+# Z3 builds with a current CMake (verified with 4.4.4), so unlike STP it uses
+# whatever CMake conda provides rather than the pinned 3.x above.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
         python3-dev \
         wget \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && HOME=/root conda install -y cmake
 
 RUN mkdir /build-z3 \
     && cd /build-z3 \
@@ -155,8 +163,8 @@ FROM ${BASE_IMAGE} AS stp-builder
 # GitHub runner gets OOM running parallel build
 ARG STP_BUILD_JOBS="--parallel"
 USER root
-COPY --from=cmake-builder /usr/local/bin/cmake /usr/local/bin/cmake
-COPY --from=cmake-builder /usr/local/share/cmake-3.31 /usr/local/share/cmake-3.31
+COPY --from=cmake3-builder /usr/local/bin/cmake /usr/local/bin/cmake
+COPY --from=cmake3-builder /usr/local/share/cmake-3.31 /usr/local/share/cmake-3.31
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         bison \
@@ -195,9 +203,6 @@ FROM ${BASE_IMAGE} AS jupyter
 LABEL org.opencontainers.image.source="https://github.com/jimwhite/acl2-jupyter"
 LABEL org.opencontainers.image.description="A Docker image for running the ACL2 theorem proving system in JupyterLab"
 LABEL org.opencontainers.image.licenses=BSD-3-Clause
-
-COPY --from=cmake-builder /usr/local/bin/cmake /usr/local/bin/cmake
-COPY --from=cmake-builder /usr/local/share/cmake-3.31 /usr/local/share/cmake-3.31
 
 ARG LISP=sbcl
 ARG ACL2_GITHUB_REPO=jimwhite/acl2
@@ -349,6 +354,15 @@ RUN --mount=type=bind,from=stp-builder,target=/tmp/stp-stage \
     if [ "${WITH_STP}" = "1" ]; then \
         cp /tmp/stp-stage/usr/local/bin/stp /usr/local/bin/stp; \
     fi
+
+# Current CMake, for ad-hoc use inside the container.
+#
+# Nothing the image ships needs it: ACL2's build never invokes cmake, and book
+# certification does not either (there is no CMakeLists.txt under books/ and no
+# cmake reference in books/build).  CMake 3.x is therefore no longer pinned into
+# the runtime image -- only stp-builder needs 3.x now -- so this is purely for
+# convenience.
+RUN HOME=/root conda install -y cmake
 
 ENV PATH="/opt/acl2/bin:${PATH}"
 ENV ACL2="/opt/acl2/bin/saved_acl2"

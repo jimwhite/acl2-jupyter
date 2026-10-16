@@ -24,6 +24,7 @@
 #   SBCL_VERSION          SBCL version to compile (LISP=sbcl only)
 #   CCL_VERSION           CCL version to download  (LISP=ccl only)
 #   Z3_VERSION            Z3 version to compile    (WITH_Z3=1 only)
+#   CMAKE_VERSION         CMake version to install (3.31.12 by default)
 #   STP_BUILD_JOBS        Parallelism flag for STP cmake build
 #   ACL2_BUILD_OPTS       Extra options passed to ACL2 make
 #   ACL2_CERTIFY_TARGETS  Books make targets      (books target only)
@@ -31,6 +32,30 @@
 
 ARG BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest
 ARG LISP=sbcl
+
+# ============================================================================
+# Stage: cmake-builder — install a consistent CMake version on all platforms
+# ============================================================================
+FROM ${BASE_IMAGE} AS cmake-builder
+
+ARG CMAKE_VERSION=3.31.12
+USER root
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        wget \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN set -eu; \
+    case "$(dpkg --print-architecture)" in \
+        amd64) cmake_arch=x86_64 ;; \
+        arm64) cmake_arch=aarch64 ;; \
+        *) echo "Unsupported architecture for CMake: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac; \
+    wget "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-${cmake_arch}.tar.gz" \
+        -O /tmp/cmake.tar.gz; \
+    tar -xzf /tmp/cmake.tar.gz --strip-components=1 -C /usr/local; \
+    rm /tmp/cmake.tar.gz
 
 # ============================================================================
 # Stage: sbcl-builder — compile SBCL from source
@@ -100,10 +125,11 @@ FROM ${BASE_IMAGE} AS z3-builder
 
 ARG Z3_VERSION=4.15.7
 USER root
+COPY --from=cmake-builder /usr/local/bin/cmake /usr/local/bin/cmake
+COPY --from=cmake-builder /usr/local/share/cmake-3.31 /usr/local/share/cmake-3.31
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
-        'cmake=3.*' \
         ca-certificates \
         python3-dev \
         wget \
@@ -129,11 +155,12 @@ FROM ${BASE_IMAGE} AS stp-builder
 # GitHub runner gets OOM running parallel build
 ARG STP_BUILD_JOBS="--parallel"
 USER root
+COPY --from=cmake-builder /usr/local/bin/cmake /usr/local/bin/cmake
+COPY --from=cmake-builder /usr/local/share/cmake-3.31 /usr/local/share/cmake-3.31
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         bison \
         build-essential \
-        'cmake=3.*' \
         flex \
         g++ \
         libboost-program-options-dev \
@@ -151,6 +178,7 @@ RUN cd /build-stp \
     && ./scripts/deps/setup-minisat.sh \
     && mkdir build && cd build \
     && cmake .. -DENABLE_TESTING=ON -DSTATICCOMPILE=ON -DFORCE_CMS=ON \
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     && cmake --build . ${STP_BUILD_JOBS} \
     && cmake --install . \
     && cd / \
@@ -167,6 +195,9 @@ FROM ${BASE_IMAGE} AS jupyter
 LABEL org.opencontainers.image.source="https://github.com/jimwhite/acl2-jupyter"
 LABEL org.opencontainers.image.description="A Docker image for running the ACL2 theorem proving system in JupyterLab"
 LABEL org.opencontainers.image.licenses=BSD-3-Clause
+
+COPY --from=cmake-builder /usr/local/bin/cmake /usr/local/bin/cmake
+COPY --from=cmake-builder /usr/local/share/cmake-3.31 /usr/local/share/cmake-3.31
 
 ARG LISP=sbcl
 ARG ACL2_GITHUB_REPO=jimwhite/acl2
@@ -205,7 +236,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         bison \
         build-essential \
         ca-certificates \
-        'cmake=3.*' \
         curl \
         file \
         flex \

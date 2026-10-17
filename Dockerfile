@@ -70,17 +70,38 @@ RUN set -eu; \
 FROM ${BASE_IMAGE} AS sbcl-builder
 
 ARG SBCL_VERSION=2.6.9
-# Size of SBCL's binding stack, in megabytes.  0 (the default) means "do not
-# customize" -- SBCL's built-in default (1 MB) is used.
+# Build the "big binding stack" SBCL variant: 1 = yes, 0 (default) = stock.
 #
-# A larger value is needed for Milawa's ACL2 bootstrapping: SBCL's default is
-# too small, so bootstrap/level10/crewrite-iffp aborts with "Binding stack
+# Milawa's ACL2 bootstrapping needs a binding stack far bigger than SBCL's
+# built-in 1 MB: bootstrap/level10/crewrite-iffp aborts with "Binding stack
 # exhausted" during CREWRITE-ALL.  The analogous stack (CCL's value stack) is
-# sized to 128 MB by Milawa itself in Sources/milawa.lsp; 256 MB is a good
-# value on 64-bit, since SBCL binding frames are wider there.  This is a
-# compile-time constant in SBCL (src/runtime/validate.h: BINDING_STACK_SIZE),
-# so it cannot be set at runtime.
-ARG SBCL_BINDING_STACK_MB=0
+# sized to 128 MB by Milawa itself in Sources/milawa.lsp.
+#
+# BINDING_STACK_SIZE is a compile-time constant of the C runtime
+# (src/runtime/validate.h) and has no runtime switch -- --control-stack-size
+# does NOT affect it -- so the only way to get a bigger one is to build a
+# separate SBCL.  Setting this to 1 selects that build; the size is
+# 2,000,000 binding frames, set as `big_mb=32` in the RUN below (16.03 bytes
+# per frame x 2M frames = 32 MB; measured on a 32 MB runtime: depth 2,080,000
+# survives, 2,100,000 aborts).
+#
+# Choosing the size: one special-variable rebinding frame costs ~16 bytes of
+# binding stack (measured on aarch64), so 1 MB aborts at ~65k frames while
+# 32 MB allows ~2M.  We size by FRAME COUNT (2,000,000) rather than by gut
+# feel: 2M frames is ~30x what the stock 1 MB stack provides, and it is what
+# the Milawa CCL port asks for in the same spirit (Sources/milawa.lsp sizes
+# CCL's value stack explicitly, because the default is far too small).
+#
+# 16 bytes is the *cheapest* possible frame (one special binding).  Code that
+# binds several specials per recursion level consumes more per level, so 32 MB
+# buys fewer than 2M recursion levels in that case; if a future workload ever
+# exhausts it, raise big_mb and see
+# books/projects/milawa/ACL2/MILAWA-BUILD-AND-PROOF-GAPS.md section 5.0.2.
+#
+# The stack is reserved virtual address space and only touched pages commit.
+# It is allocated PER THREAD, so the size does multiply by thread count --
+# which is the reason to keep it modest rather than arbitrarily large.
+ARG SBCL_BIG_BINDING_STACK=0
 USER root
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -93,13 +114,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# When SBCL_BINDING_STACK_MB is nonzero, rebuild SBCL with that binding stack
-# size; otherwise build SBCL with its stock defaults.
+# When SBCL_BIG_BINDING_STACK=1, build the big-stack variant (2,000,000
+# binding frames ~= 32 MB); otherwise build SBCL with its stock 1 MB stack.
 #
 # SBCL defines BINDING_STACK_SIZE in src/runtime/validate.h.  In some releases
 # (e.g. 2.6.9) that #define is NOT guarded by #ifndef, so a -DBINDING_STACK_SIZE
-# on the command line is silently ignored.  When customizing, wrap it in an
-# #ifndef guard first (the grep makes this a no-op on releases that already
+# on the command line is silently ignored.  The big-stack build wraps it in an
+# #ifndef guard first (the grep makes that a no-op on releases that already
 # guard it).
 RUN mkdir /build-sbcl \
     && cd /build-sbcl \
@@ -108,17 +129,18 @@ RUN mkdir /build-sbcl \
     && tar -xzf sbcl.tar.gz \
     && rm sbcl.tar.gz \
     && cd sbcl-* \
-    && if [ "${SBCL_BINDING_STACK_MB}" != "0" ]; then \
+    && big_mb=32 \
+    && if [ "${SBCL_BIG_BINDING_STACK}" = "1" ]; then \
            if ! grep -q '^#ifndef BINDING_STACK_SIZE' src/runtime/validate.h; then \
                sed -i \
                  -e 's|^\(#define BINDING_STACK_SIZE .*\)$|#ifndef BINDING_STACK_SIZE\n\1\n#endif|' \
                  src/runtime/validate.h; \
            fi; \
            grep -A2 '^#ifndef BINDING_STACK_SIZE' src/runtime/validate.h; \
-           echo "Building SBCL with BINDING_STACK_SIZE=${SBCL_BINDING_STACK_MB}MB"; \
-           export CFLAGS="-DBINDING_STACK_SIZE=$((SBCL_BINDING_STACK_MB*1024*1024))"; \
+           echo "Building big-stack SBCL: BINDING_STACK_SIZE=${big_mb}MB"; \
+           export CFLAGS="-DBINDING_STACK_SIZE=$((big_mb*1024*1024))"; \
        else \
-           echo "Building SBCL with its stock BINDING_STACK_SIZE (no override)"; \
+           echo "Building stock SBCL (1 MB binding stack)"; \
        fi \
     && sh make.sh \
          --without-immobile-space \

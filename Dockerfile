@@ -271,6 +271,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         retry \
         rlwrap \
         rsync \
+        ruby \
         unzip \
         wget \
         zlib1g-dev \

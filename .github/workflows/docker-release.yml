@@ -44,6 +44,10 @@ on:
         description: 'SBCL version'
         required: false
         default: '2.6.9'
+      sbcl_binding_stack_mb:
+        description: 'SBCL binding stack size in MB. 0 (default) leaves SBCL''s built-in default (1 MB) unchanged; 256 is a good value for Milawa bootstrapping on 64-bit'
+        required: false
+        default: '0'
       ccl_version:
         description: 'CCL version (used when lisp=ccl)'
         required: false
@@ -214,6 +218,7 @@ jobs:
             BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest
             LISP=${{ github.event.inputs.lisp }}
             SBCL_VERSION=${{ github.event.inputs.sbcl_version }}
+            SBCL_BINDING_STACK_MB=${{ github.event.inputs.sbcl_binding_stack_mb }}
             CCL_VERSION=${{ github.event.inputs.ccl_version }}
             ACL2_GITHUB_REPO=${{ needs.prepare.outputs.acl2-repo }}
             ACL2_COMMIT=${{ needs.prepare.outputs.acl2-commit }}
@@ -271,6 +276,7 @@ jobs:
             BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest
             LISP=${{ github.event.inputs.lisp }}
             SBCL_VERSION=${{ github.event.inputs.sbcl_version }}
+            SBCL_BINDING_STACK_MB=${{ github.event.inputs.sbcl_binding_stack_mb }}
             ACL2_GITHUB_REPO=${{ needs.prepare.outputs.acl2-repo }}
             ACL2_COMMIT=${{ needs.prepare.outputs.acl2-commit }}
             ACL2_REF=${{ github.event.inputs.acl2_tag }}
@@ -332,6 +338,7 @@ jobs:
           echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| **Image ID** | \`${IMAGE_ID}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Lisp** | ${{ github.event.inputs.lisp }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **SBCL binding stack (MB)** | ${{ github.event.inputs.sbcl_binding_stack_mb }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **ACL2(r)** | ${{ github.event.inputs.with_real }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Z3** | ${{ github.event.inputs.with_z3 }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **STP** | ${{ github.event.inputs.with_stp }} |" >> $GITHUB_STEP_SUMMARY
@@ -389,6 +396,7 @@ jobs:
             BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest
             LISP=${{ github.event.inputs.lisp }}
             SBCL_VERSION=${{ github.event.inputs.sbcl_version }}
+            SBCL_BINDING_STACK_MB=${{ github.event.inputs.sbcl_binding_stack_mb }}
             CCL_VERSION=${{ github.event.inputs.ccl_version }}
             ACL2_GITHUB_REPO=${{ needs.prepare.outputs.acl2-repo }}
             ACL2_COMMIT=${{ needs.prepare.outputs.acl2-commit }}
@@ -445,6 +453,7 @@ jobs:
             BASE_IMAGE=quay.io/jupyter/minimal-notebook:latest
             LISP=${{ github.event.inputs.lisp }}
             SBCL_VERSION=${{ github.event.inputs.sbcl_version }}
+            SBCL_BINDING_STACK_MB=${{ github.event.inputs.sbcl_binding_stack_mb }}
             ACL2_GITHUB_REPO=${{ needs.prepare.outputs.acl2-repo }}
             ACL2_COMMIT=${{ needs.prepare.outputs.acl2-commit }}
             ACL2_REF=${{ github.event.inputs.acl2_tag }}

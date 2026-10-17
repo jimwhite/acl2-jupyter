@@ -70,6 +70,17 @@ RUN set -eu; \
 FROM ${BASE_IMAGE} AS sbcl-builder
 
 ARG SBCL_VERSION=2.6.9
+# Size of SBCL's binding stack, in megabytes.  0 (the default) means "do not
+# customize" -- SBCL's built-in default (1 MB) is used.
+#
+# A larger value is needed for Milawa's ACL2 bootstrapping: SBCL's default is
+# too small, so bootstrap/level10/crewrite-iffp aborts with "Binding stack
+# exhausted" during CREWRITE-ALL.  The analogous stack (CCL's value stack) is
+# sized to 128 MB by Milawa itself in Sources/milawa.lsp; 256 MB is a good
+# value on 64-bit, since SBCL binding frames are wider there.  This is a
+# compile-time constant in SBCL (src/runtime/validate.h: BINDING_STACK_SIZE),
+# so it cannot be set at runtime.
+ARG SBCL_BINDING_STACK_MB=0
 USER root
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -82,6 +93,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# When SBCL_BINDING_STACK_MB is nonzero, rebuild SBCL with that binding stack
+# size; otherwise build SBCL with its stock defaults.
+#
+# SBCL defines BINDING_STACK_SIZE in src/runtime/validate.h.  In some releases
+# (e.g. 2.6.9) that #define is NOT guarded by #ifndef, so a -DBINDING_STACK_SIZE
+# on the command line is silently ignored.  When customizing, wrap it in an
+# #ifndef guard first (the grep makes this a no-op on releases that already
+# guard it).
 RUN mkdir /build-sbcl \
     && cd /build-sbcl \
     && wget "https://github.com/sbcl/sbcl/archive/refs/tags/sbcl-${SBCL_VERSION}.tar.gz" \
@@ -89,6 +108,18 @@ RUN mkdir /build-sbcl \
     && tar -xzf sbcl.tar.gz \
     && rm sbcl.tar.gz \
     && cd sbcl-* \
+    && if [ "${SBCL_BINDING_STACK_MB}" != "0" ]; then \
+           if ! grep -q '^#ifndef BINDING_STACK_SIZE' src/runtime/validate.h; then \
+               sed -i \
+                 -e 's|^\(#define BINDING_STACK_SIZE .*\)$|#ifndef BINDING_STACK_SIZE\n\1\n#endif|' \
+                 src/runtime/validate.h; \
+           fi; \
+           grep -A2 '^#ifndef BINDING_STACK_SIZE' src/runtime/validate.h; \
+           echo "Building SBCL with BINDING_STACK_SIZE=${SBCL_BINDING_STACK_MB}MB"; \
+           export CFLAGS="-DBINDING_STACK_SIZE=$((SBCL_BINDING_STACK_MB*1024*1024))"; \
+       else \
+           echo "Building SBCL with its stock BINDING_STACK_SIZE (no override)"; \
+       fi \
     && sh make.sh \
          --without-immobile-space \
          --without-immobile-code \

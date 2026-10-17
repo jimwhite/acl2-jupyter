@@ -35,3 +35,7 @@
 	path = context/acl2-jupyter-kernel
 	url = https://github.com/jimwhite/acl2-jupyter-kernel.git
 	branch = main
+[submodule "context/acl2"]
+	path = context/acl2
+	url = https://github.com/jimwhite/acl2.git
+	branch = milawa

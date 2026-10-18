@@ -435,6 +435,28 @@ COPY --chown=${USER}:users quicklisp.lisp quicklisp.lisp
 COPY --chown=${USER}:users quicklisp quicklisp/
 COPY --chown=${USER}:users acl2-jupyter-kernel quicklisp/local-projects/acl2-jupyter-kernel
 
+# SBCL 2.6.9 removed SB-IMPL:MAKE-EVAL-LAMBDA; preserve its wrapper behavior.
+RUN python3 - <<'PY'
+from pathlib import Path
+
+kernel = Path("quicklisp/local-projects/common-lisp-jupyter/src/cl-jupyter/kernel.lisp")
+source = kernel.read_text()
+old = "(sb-impl::make-eval-lambda form)"
+new = """(let* ((lambda-form
+             (if (typep form '(cons (eql function) (cons t null)))
+                 (cadr form)
+                 form)))
+  (if (typep lambda-form '(cons (member lambda named-lambda)))
+      lambda-form
+      `(lambda ()
+         ,(if (and (consp form) (eq (car form) 'declare))
+              `(progn ,form)
+              form))))"""
+if source.count(old) != 1:
+    raise SystemExit(f"Expected one SBCL eval-lambda reference in {kernel}")
+kernel.write_text(source.replace(old, new))
+PY
+
 RUN if [ "${LISP}" = "sbcl" ]; then \
         sbcl --non-interactive --load quicklisp.lisp \
             --eval "(quicklisp-quickstart:install)" \
